@@ -64,12 +64,19 @@ function annotate(level, title, message) {
   console.log(`::${level} title=${prop(title)}::${data(message)}`);
 }
 
+// Which checks passed before the failure — the run's log can be unreachable
+// (artifact/log CDNs are blocked in some workspaces), but annotations aren't.
+const recentChecks = [];
 function assert(cond, label) {
   if (!cond) {
     console.error(`[smoke] ✗ FAIL: ${label}`);
+    annotate("error", "Smoke test", `FAILED: ${label}`);
+    if (recentChecks.length) annotate("notice", "Smoke test", `The last checks that passed: ${recentChecks.join(" ⇢ ")}`);
     process.exit(1);
   }
   console.log(`[smoke] ✓ ${label}`);
+  recentChecks.push(label);
+  if (recentChecks.length > 6) recentChecks.shift();
 }
 
 // The agent's brain talks to a fake Gemini on loopback (no real key in CI).
