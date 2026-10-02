@@ -193,6 +193,9 @@ jobs:
         with:
           name: soundwave-ai-windows
           path: desktop/release/*.exe
+          # The installer is ~450 MB; keep runs short-lived so the repo's
+          # Actions storage doesn't fill up again (the old account ran out).
+          retention-days: 7
           if-no-files-found: error
 
       # Drive the packaged app like a person: fake microphone → the Command
@@ -212,6 +215,7 @@ jobs:
         with:
           name: desktop-e2e-screenshots
           path: desktop/e2e-shots/*.png
+          retention-days: 3
           if-no-files-found: ignore
 
       - name: Attach installers to the GitHub Release (tags only)

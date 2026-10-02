@@ -143,6 +143,7 @@ jobs:
         with:
           name: soundwave-companion-apk
           path: dist/SoundwaveCompanion-*.apk
+          retention-days: 14
           if-no-files-found: error
 
       - name: Upload the debug APK (for the emulator test)
@@ -242,4 +243,5 @@ jobs:
         with:
           name: companion-e2e-screenshots
           path: mobile/e2e-shots
+          retention-days: 3
           if-no-files-found: ignore
