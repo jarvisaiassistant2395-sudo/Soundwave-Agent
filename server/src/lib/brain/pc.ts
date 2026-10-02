@@ -13,6 +13,11 @@ import { config } from "../../config.js";
 interface DesktopHost {
   openExternal(url: string): Promise<void>;
   openPath(target: string): Promise<string>;
+  /** Electron's clipboard (the Ghost Operator macros copy and read back text). */
+  readClipboard?(): string;
+  writeClipboard?(text: string): void;
+  /** A Windows notification from the app itself. Returns false when they're turned off. */
+  notify?(opts: { title: string; body: string; route?: string }): boolean;
 }
 
 function desktopHost(): DesktopHost | null {
@@ -338,4 +343,48 @@ export async function openApp(query: string): Promise<{ ok: true; name: string }
 
 export function resetPcForTests(): void {
   appsCache = null;
+}
+
+// ── Clipboard and notifications (the Ghost Operator macros) ─────────────────
+// Both go through Electron's own modules: reading somebody's clipboard from a
+// plain Node process is impossible on Windows, so without the desktop host the
+// caller gets an honest "only inside the desktop app" instead of silence.
+
+export type ClipboardResult = { ok: true; text: string } | { ok: false; error: string };
+
+/** The text on this PC's clipboard (desktop app only). */
+export function readClipboard(): ClipboardResult {
+  const host = desktopHost();
+  if (!host?.readClipboard) return { ok: false, error: "the clipboard can only be read inside the Soundwave desktop app" };
+  try {
+    return { ok: true, text: String(host.readClipboard() ?? "") };
+  } catch (err) {
+    return { ok: false, error: `the clipboard couldn't be read: ${(err as Error).message}` };
+  }
+}
+
+/** Puts text on this PC's clipboard (desktop app only). */
+export function writeClipboard(text: string): { ok: true; chars: number } | { ok: false; error: string } {
+  const host = desktopHost();
+  if (!host?.writeClipboard) return { ok: false, error: "the clipboard can only be written inside the Soundwave desktop app" };
+  const value = String(text ?? "");
+  try {
+    host.writeClipboard(value);
+    return { ok: true, chars: value.length };
+  } catch (err) {
+    return { ok: false, error: `the clipboard couldn't be written: ${(err as Error).message}` };
+  }
+}
+
+/** A Windows notification from the app (desktop app only; off when the user turned notifications off). */
+export function desktopNotify(opts: { title: string; body: string; route?: string }): { ok: true } | { ok: false; error: string } {
+  const host = desktopHost();
+  if (!host?.notify) return { ok: false, error: "notifications need the Soundwave desktop app" };
+  try {
+    return host.notify(opts) === false
+      ? { ok: false, error: "notifications are turned off in Settings → Voice & Desktop" }
+      : { ok: true };
+  } catch (err) {
+    return { ok: false, error: `the notification couldn't be shown: ${(err as Error).message}` };
+  }
 }

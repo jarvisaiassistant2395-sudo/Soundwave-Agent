@@ -259,6 +259,56 @@ try {
   const facts = fakeGemini.seen.filter((r) => r.url.endsWith(":generateContent")).at(-1)?.body?.contents?.[0]?.parts?.[0]?.text ?? "";
   assert(briefing.status === 200 && briefing.body.reply === FAKE_MORNING && /Weather: In Kruševac it's 14°C/.test(facts), "Morning Setup: a briefing written by Gemini from real facts (weather included)");
   annotate("notice", "Memory and Morning Setup", `Note saved and seen by Gemini; Morning Setup briefing from facts: ${facts.split("\n").slice(0, 2).join(" ")}`);
+  // Ghost Operator macros: saved multi-step automations that really run.
+  // (This is the assembled server, not Electron, so the PC-only steps — the
+  // clipboard, notifications — must say so instead of pretending.)
+  const macros = JSON.parse((await get(`${appUrl}/api/v1/ghost/macros`)).body);
+  assert(
+    macros.macros?.some((m) => m.id === "workspace_cleanup_diagnostics") && macros.capabilities?.real?.includes("file_processor"),
+    `Ghost Operator: the built-in macros are listed with their real steps (${macros.macros?.map((m) => m.id).join(", ")})`,
+  );
+  const macro = await send("POST", `${appUrl}/api/v1/ghost/execute`, { macroId: "workspace_cleanup_diagnostics" });
+  const steps = macro.body?.report?.stepResults ?? [];
+  const scanned = steps[0]?.output ?? "";
+  const sysFacts = steps[1]?.output ?? "";
+  assert(
+    macro.status === 200 && steps.length === 3 && steps.every((s) => s.status === "SUCCESS"),
+    `Ghost Operator: the diagnostics macro ran for real — ${macro.body?.report?.summary}`,
+  );
+  assert(
+    scanned.includes(path.join(userDataDir, "data")) && /file\(s\)/.test(scanned),
+    `Ghost Operator: it really scanned the workspace folder — ${scanned.slice(0, 160)}`,
+  );
+  assert(
+    sysFacts.includes(os.hostname()) && /cores/.test(sysFacts) && !/4\.2GB|16\.0GB|Host Healthy/.test(sysFacts),
+    `Ghost Operator: the system step reads this PC, not a template — ${sysFacts.slice(0, 160)}`,
+  );
+  assert(/agent's memory/.test(steps[2]?.output ?? ""), `Ghost Operator: the memory step read the agent's memory — ${(steps[2]?.output ?? "").slice(0, 140)}`);
+  const clipboardMacro = await send("POST", `${appUrl}/api/v1/ghost/execute`, {
+    workflow: {
+      id: "smoke_clipboard",
+      name: "Clipboard check",
+      description: "copy and read back",
+      category: "custom",
+      triggerPhrases: [],
+      steps: [
+        { id: "s1", action: "clipboard", params: { operation: "set", text: "hello" }, description: "Copy hello" },
+        { id: "s2", action: "computer_settings", params: { setting: "mute" }, description: "Mute the sound" },
+      ],
+      createdAt: new Date().toISOString(),
+    },
+  });
+  const clipboardSteps = clipboardMacro.body?.report?.stepResults ?? [];
+  assert(
+    clipboardSteps[0]?.status === "SKIPPED" && /desktop app/.test(clipboardSteps[0]?.output ?? "") && clipboardSteps[1]?.status === "SKIPPED" && /volume/.test(clipboardSteps[1]?.output ?? ""),
+    "Ghost Operator: outside the desktop app (and for things it can't do) every step is skipped with the reason — never faked",
+  );
+  annotate(
+    "notice",
+    "Ghost Operator macros",
+    `Built-ins listed; the diagnostics macro ran for real (${scanned.slice(0, 90)} | ${sysFacts.slice(0, 90)}); PC-only steps skip honestly without Electron.`,
+  );
+
   const removed = await send("DELETE", `${appUrl}/api/v1/brain/key`);
   assert(removed.status === 200 && removed.body.configured === false, "brain: the key can be removed again");
   await fakeGemini.close();

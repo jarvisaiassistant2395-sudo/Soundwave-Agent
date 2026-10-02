@@ -20,6 +20,7 @@ const {
   Menu,
   Notification,
   Tray,
+  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -502,8 +503,9 @@ async function main() {
   registerIpc();
 
   // The agent's hands on this PC (server/src/lib/brain/pc.ts): it opens web
-  // pages in the default browser and Start menu shortcuts — http(s) only, the
-  // server checks before asking.
+  // pages in the default browser, Start menu shortcuts, and — for the Ghost
+  // Operator macros — the clipboard and Windows notifications. http(s) only,
+  // the server checks before asking.
   globalThis.__soundwaveDesktopHost = {
     openExternal: (url) => {
       const parsed = new URL(url);
@@ -511,6 +513,16 @@ async function main() {
       return shell.openExternal(parsed.toString());
     },
     openPath: (target) => shell.openPath(target),
+    readClipboard: () => clipboard.readText(),
+    writeClipboard: (text) => clipboard.writeText(String(text ?? "")),
+    // Returns false when the user turned notifications off (Settings → Voice & Desktop).
+    notify: (payload) => {
+      if (!settings.notifications) return false;
+      const n = sanitizeNotification(payload);
+      if (!n) return false;
+      notify(n);
+      return true;
+    },
   };
 
   // Import the bundled server (ESM) — this starts listening on loopback.

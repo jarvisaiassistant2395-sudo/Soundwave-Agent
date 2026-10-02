@@ -51,20 +51,20 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Install the phone app's dependencies
         working-directory: mobile
@@ -139,7 +139,7 @@ jobs:
           echo "::notice title=Soundwave phone app::SoundwaveCompanion-$version.apk ($size) — $pkg, Android ${min}+ (target API $target), permissions: $perms"
 
       - name: Upload the APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soundwave-companion-apk
           path: dist/SoundwaveCompanion-*.apk
@@ -147,7 +147,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload the debug APK (for the emulator test)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: companion-debug-apk
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
@@ -159,15 +159,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: server/package-lock.json
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: companion-debug-apk
           path: ${{ runner.temp }}/apk
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload emulator screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: companion-e2e-screenshots
           path: mobile/e2e-shots

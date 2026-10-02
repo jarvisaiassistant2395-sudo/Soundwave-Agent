@@ -13,18 +13,31 @@ import {
   deleteCustomMacro,
   decomposeNaturalLanguage,
   executeWorkflow,
+  defaultGhostContext,
   BUILTIN_MACROS,
+  REAL_ACTIONS,
+  NOT_BUILT_YET,
   type MacroWorkflow,
 } from "../lib/ghostOperator.js";
+import { getConversation } from "../lib/conversation.js";
+import { config } from "../config.js";
 
 const router = Router();
+
+/** The real capabilities behind a macro step, for the panel and for callers. */
+function capabilities() {
+  return {
+    real: [...REAL_ACTIONS],
+    notYet: Object.keys(NOT_BUILT_YET),
+  };
+}
 
 // ── 1. GET /macros ──────────────────────────────────────────────────────────
 router.get("/macros", optionalAuth, async (req, res, next) => {
   try {
     const userId = req.user?.id || "local-user";
     const macros = await listMacros(userId);
-    res.json({ macros });
+    res.json({ macros, capabilities: capabilities() });
   } catch (e) {
     next(e);
   }
@@ -169,8 +182,18 @@ router.post("/execute", optionalAuth, validate({ body: executeSchema }), async (
       throw new ApiError(400, "INVALID_REQUEST", "Provide macroId, workflow, or instruction to execute.");
     }
 
-    const report = await executeWorkflow(targetWorkflow);
+    // The steps really run on this PC: the desktop app can open things, use the
+    // clipboard and post notifications; a bare server (development, tests) can
+    // still scan files, read the PC's facts and touch the agent's memory.
+    const ctx = defaultGhostContext({
+      userId,
+      desktop: config.desktopApp,
+      voice: getConversation().voice || "en-US-GuyNeural",
+    });
+
+    const report = await executeWorkflow(targetWorkflow, ctx);
     res.json({
+      // A skipped step isn't an error — success means nothing failed.
       success: report.allSuccess,
       report,
     });

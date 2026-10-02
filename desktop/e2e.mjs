@@ -11,7 +11,10 @@
 // background, its turn shows up in the Command Center, Settings → Phone opens
 // the phone listener, Settings → Brain saves and tests a Gemini key (a fake
 // Gemini on loopback) and the chat is then answered through it, and closing
-// the window keeps the app in the tray. Needs playwright-core (CI: npm i --no-save).
+// the window keeps the app in the tray, and a Ghost Operator macro run from
+// the Workflow panel really copies to the clipboard (verified in Electron) and
+// skips — with the reason — the steps Soundwave can't do yet. Needs
+// playwright-core (CI: npm i --no-save).
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -298,6 +301,52 @@ try {
   await main.screenshot({ path: path.join(shotsDir, "10-youtube-tab.png"), timeout: 15_000 }).catch(() => {});
   await main.keyboard.press("Escape");
   ok('Memory tab: a note added in the app is in the agent\'s memory; the YouTube tab has "Connect YouTube account" and the steps');
+
+  // ── 3e. Ghost Operator macros really run: a clipboard round trip through ──
+  // Electron, and an honest skip for what Soundwave can't do yet.
+  const macroName = "E2E clipboard round trip";
+  const clipText = `Soundwave E2E ${Date.now()}`;
+  const created = await main.evaluate(
+    async (payload) =>
+      (
+        await fetch("/api/v1/ghost/macros", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      ).json(),
+    {
+      name: macroName,
+      description: "Copies text, reads it back, and asks for the system volume (not built yet)",
+      category: "custom",
+      triggerPhrases: [],
+      steps: [
+        { id: "s1", action: "clipboard", params: { operation: "set", text: clipText }, description: "Copy the test text" },
+        { id: "s2", action: "clipboard", params: { operation: "get" }, description: "Read the clipboard back" },
+        { id: "s3", action: "computer_settings", params: { setting: "mute" }, description: "Mute the sound" },
+      ],
+    },
+  );
+  const macroId = created?.macro?.id;
+  if (!macroId) await fail(`Ghost Operator: the custom macro wasn't saved (${JSON.stringify(created).slice(0, 200)})`);
+  await main.goto(`${appBase}/agent`);
+  await main.locator('button[title="Ghost Operator Macro Automations"]').click();
+  await main.waitForFunction(() => /really run on this PC/.test(document.body.innerText), null, { timeout: 30_000 });
+  await main.locator(`h4:text-is("${macroName}")`).locator("xpath=..").locator('button:has-text("Run")').click();
+  await main.waitForFunction((t) => document.body.innerText.includes(t), `Ghost Operator — ${macroName}`, { timeout: 60_000 });
+  const report = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+  if (!report.includes(clipText)) await fail(`Ghost Operator: the read-back step didn't show the copied text: ${report.slice(-400)}`);
+  if (!/⏭ Mute the sound/.test(report) || !/volume/.test(report)) await fail(`Ghost Operator: the step it can't do wasn't skipped with its reason: ${report.slice(-400)}`);
+  const onClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
+  if (onClipboard !== clipText) await fail(`Ghost Operator: the clipboard holds "${onClipboard}" instead of "${clipText}"`);
+  await main.screenshot({ path: path.join(shotsDir, "11-macro-run.png"), timeout: 15_000 }).catch(() => {});
+  ok("Ghost Operator: a saved macro ran from the Workflow panel — the clipboard really copied (verified in Electron), the read-back step saw it, and the volume step was skipped with the reason");
+  annotate(
+    "notice",
+    "Desktop E2E: Ghost Operator",
+    `Ran “${macroName}” from the panel: real clipboard round trip (${clipText.length} chars, verified via Electron's clipboard), and “Mute the sound” was skipped with the reason instead of faking it.`,
+  );
+  await main.evaluate((id) => fetch(`/api/v1/ghost/macros/${id}`, { method: "DELETE" }), macroId);
 
   // ── 4. Tray behaviour + notifications bridge ──────────────────────────────
   await app.evaluate(() => {

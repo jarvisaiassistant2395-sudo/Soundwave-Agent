@@ -325,11 +325,11 @@ cd frontend && npm run build     # production build
 | GET | `/api/v1/agent/transcribe/status` | — | whether voice input is available here (and why not) |
 | GET | `/api/v1/agent/niches` | — | 7 viral niches with hooks & sample scripts |
 | POST | `/api/v1/agent/generate-script`| — | generate high-retention viral scripts on demand |
-| GET | `/api/v1/ghost/macros` | — | list built-in and user custom automation macros |
-| POST | `/api/v1/ghost/macros` | — | create/save custom sequential macro workflow |
-| DELETE | `/api/v1/ghost/macros/:id` | — | remove user custom automation macro |
-| POST | `/api/v1/ghost/decompose` | — | NLP step decomposer for natural language instructions |
-| POST | `/api/v1/ghost/execute` | — | run sequential automation macro with step telemetry |
+| GET | `/api/v1/ghost/macros` | — | list the built-in and custom Ghost Operator macros, plus what steps can really do (`capabilities`) |
+| POST | `/api/v1/ghost/macros` | — | create/save a custom macro workflow |
+| DELETE | `/api/v1/ghost/macros/:id` | — | remove a custom macro |
+| POST | `/api/v1/ghost/decompose` | — | turn plain English into real steps (unbuildable ones come back as `unsupported` with the reason) |
+| POST | `/api/v1/ghost/execute` | — | run a macro (`macroId`), a saved `workflow`, or an `instruction` — really: every step's output is what happened on this PC |
 | POST | `/api/v1/creator/jump-cut` | — | auto-edit jump cut silence removal with FFmpeg |
 | POST | `/api/v1/creator/screen-frame` | — | screen recording framing with rounded corners & shadow |
 | GET/PATCH | `/api/v1/user/me` | ✓ | profile + password change |

@@ -320,8 +320,12 @@ In the Command Center, the gear button opens Assistant Configuration: General & 
   {
     id: "workflow-macros",
     title: "The Workflow button (Ghost Operator macros)",
-    summary: "what the macros panel is, honestly",
-    text: `The workflow icon in the dock opens "Ghost Operator Macros", a panel of saved multi-step automations. The built-in ones there (Viral Production Autopilot, Workspace & System Diagnostics) and custom macros are demos: they show the steps but don't control the PC yet, so don't rely on them. The real automations are the agent's own abilities — making shorts, opening websites and apps, checking the PC — and Morning Setup.`,
+    summary: "saved multi-step automations that really run on the PC — and what they can't do yet",
+    text: `The workflow icon in the dock opens "Ghost Operator Macros": saved multi-step automations that really run on this PC.
+- Built in: "🎬 1-Click Viral Short" (starts a real short and reminds you to check it) and "🧹 Workspace & System Diagnostics" (scans the Soundwave data folder for real — size, biggest files, what hasn't been touched in 30+ days — then reports the PC's live CPU, memory, disk and uptime and reads your memory; nothing is deleted).
+- Steps can really: open a web page or an app, search the web in the browser, read the PC's live status, scan a folder, read the clipboard, set a reminder (a chat message now, a Windows notification when it's due), start a short, run Morning Setup, and read the agent's memory.
+- Steps Soundwave can't do yet — changing the system volume, screenshots, moving windows, running code — are skipped and the reason is shown. Nothing is faked.
+- Your own macros are kept per user in DATA_DIR/macros/, and plain English works too: "open youtube, set a 5 minute timer and check system stats".`,
   },
   {
     id: "troubleshooting",

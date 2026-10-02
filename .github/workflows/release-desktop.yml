@@ -36,9 +36,9 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -189,7 +189,7 @@ jobs:
         run: node verify-runtime.mjs
 
       - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soundwave-ai-windows
           path: desktop/release/*.exe
@@ -211,7 +211,7 @@ jobs:
 
       - name: Upload end-to-end screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-e2e-screenshots
           path: desktop/e2e-shots/*.png

@@ -925,6 +925,8 @@ export function AgentHub() {
   };
 
   // ── Ghost Operator Macro Runner ─────────────────────────────────────────
+  // The steps really run on this PC: the chat shows what each one did (or why
+  // it was skipped), not just a summary line.
   const runMacro = async (macroId: string) => {
     try {
       setIsRunningMacro(true);
@@ -938,18 +940,28 @@ export function AgentHub() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to execute macro");
+      if (!res.ok) throw new Error(data.error?.message || data.error || "Failed to execute macro");
+
+      const report = data.report ?? {};
+      const results: Array<{ status: string; description: string; output: string }> = report.stepResults ?? [];
+      const mark = (s: string) => (s === "SUCCESS" ? "✓" : s === "SKIPPED" ? "⏭" : "✗");
+      const lines = results.map((s) => `${mark(s.status)} ${s.description}\n    ${s.output}`);
+      const failed = results.filter((s) => s.status === "FAILED").length;
+      const skipped = results.filter((s) => s.status === "SKIPPED").length;
 
       const sysMsg: ChatMessage = {
-        id: Date.now().toString(),
+        id: newMessageId(),
         sender: "assistant",
-        text: `Ghost Operator Executed: ${data.report?.workflowName}\n${data.report?.summary}\nTotal runtime: ${data.report?.totalDurationMs}ms`,
-        time: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+        text: [`Ghost Operator — ${report.workflowName ?? "workflow"}`, ...lines, report.summary ?? ""].filter(Boolean).join("\n"),
+        time: chatTime(),
+        at: Date.now(),
         tag: "RPA",
       };
       setChatMessages((prev) => [...prev, sysMsg]);
-      speakText(data.report?.summary || "Macro finished.");
-      toast.success("Macro Complete", data.report?.workflowName);
+      speakText(report.summary || "Macro finished.");
+      if (failed) toast.error("Macro finished with errors", `${failed} step(s) failed — see the chat for what happened.`);
+      else if (skipped) toast.info("Macro finished", `${skipped} step(s) skipped — Soundwave can't do those yet.`);
+      else toast.success("Macro Complete", report.workflowName);
     } catch (e: any) {
       toast.error("Execution Failed", e.message);
     } finally {
@@ -2345,7 +2357,7 @@ export function AgentHub() {
         >
           <div className="space-y-3 font-mono text-xs">
             <p className="text-gray-400 text-[11px]">
-              Saved multi-step automations. These are demos — they show the steps but don't control the PC yet. The real ones: ask the agent (shorts, websites, apps, PC status) or press 🌅 Morning Setup in the chat.
+              Saved multi-step automations that really run on this PC: opening web pages and apps, live system facts, scanning the workspace folder, the clipboard, reminders and starting a short. Steps Soundwave can't do yet (system volume, screenshots, moving windows, running code) are skipped and say why — nothing is faked. Every step's result appears in the chat.
             </p>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -2358,7 +2370,7 @@ export function AgentHub() {
                     <h4 className="text-xs font-bold text-white">{m.name}</h4>
                     <p className="text-[11px] text-gray-400 mt-0.5">{m.description}</p>
                     <span className="text-[10px] text-cyan-400 mt-1 block">
-                      {m.steps?.length || 0} automated steps
+                      {m.steps?.length || 0} steps · {(m.steps ?? []).map((s) => s.action).join(" → ")}
                     </span>
                   </div>
                   <button
