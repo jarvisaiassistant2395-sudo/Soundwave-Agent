@@ -115,6 +115,19 @@ written from facts (weather included), the Memory tab and the YouTube tab.
 Update the guide (`server/src/lib/brain/core/guide.ts`) whenever a screen
 changes — `server/tests/memory_guide.test.ts` checks its key facts.
 
+1.5.3 adds shorts cut out of a long video: `make_shorts_from_video` takes a
+YouTube link (downloaded with yt-dlp, like every import) or a file on the PC,
+the agent listens to it (ffmpeg → 16 kHz PCM → the same whisper.cpp engine as
+voice input), picks the moments worth posting (Gemini with a key — the windows
+and their transcripts are sent; without one, the loudest talking wins), and
+renders each as a vertical Short with the original audio and burned captions
+(`lib/videoClips.ts`; the pure rules — window planning, scoring, pick parsing,
+caption timing — are in `brain/core/clips.ts`, unit-tested in
+`server/tests/clips.test.ts`). The tool's wiring (busy rules, honest refusals,
+count limits) is pinned in `server/tests/clips_tool.test.ts`; the desktop E2E
+builds a 13-second video from whisper.cpp's jfk.wav, asks the agent to cut a
+clip out of it and plays the rendered MP4 in the chat.
+
 1.5.2 (phone 1.3.0) adds alarms on the phone: the agent's `set_phone_alarm`
 tool (time HH:MM or in_seconds, label, briefing delay) leaves a control message
 in the shared conversation, and the phone app runs it through its native

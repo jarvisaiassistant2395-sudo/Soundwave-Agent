@@ -76,6 +76,22 @@ try {
 } catch (err) {
   await fail(`couldn't prepare the fake microphone recording with ${ffmpeg}: ${err.message}`);
 }
+// A small video with speech in it, for "make shorts out of this video": the
+// same JFK clip as a 13-second file (the agent really listens to it).
+const clipSource = path.join(desktopDir, "e2e-clip-source.mp4");
+try {
+  execFileSync(ffmpeg, [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", "color=c=0x1A1A2E:s=640x360:r=30",
+    "-i", sample,
+    "-shortest", "-t", "13",
+    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "128k",
+    clipSource,
+  ], { windowsHide: true });
+} catch (err) {
+  await fail(`couldn't prepare the test video for the clips test with ${ffmpeg}: ${err.message}`);
+}
 fs.mkdirSync(shotsDir, { recursive: true });
 
 const { _electron: electron } = await import("playwright-core");
@@ -359,6 +375,55 @@ try {
     `Ran “${macroName}” from the panel: real clipboard round trip (${clipText.length} chars, verified via Electron's clipboard), and “Mute the sound” was skipped with the reason instead of faking it.`,
   );
   await main.evaluate((id) => fetch(`/api/v1/ghost/macros/${id}`, { method: "DELETE" }), macroId);
+
+  // ── 3f. Shorts cut out of a video (1.5.3): really listened to, really rendered ──
+  // The agent downloads or reads the file, listens with whisper.cpp, picks the
+  // moment and renders a vertical clip with captions — watch it in the chat.
+  await main.goto(`${appBase}/agent`);
+  await main.waitForSelector('input[placeholder="Type a message..."]', { timeout: 30_000 });
+  await main.fill('input[placeholder="Type a message..."]', `cut 1 clip out of this video: ${clipSource}`);
+  await main.press('input[placeholder="Type a message..."]', "Enter");
+  await main.waitForFunction(() => /Cutting 1 short out of/.test(document.body.innerText), null, { timeout: 60_000 });
+  ok("the agent took the video and started cutting a short out of it");
+  try {
+    await main.waitForFunction(() => /Clip 1 of 1/.test(document.body.innerText), null, { timeout: 240_000, polling: 1000 });
+  } catch {
+    const shown = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+    await fail(`the clip never appeared in the chat: ${shown.slice(-400)}`);
+  }
+  // The picker's answer named the moment — the Gemini path, not just the fallback.
+  const clipLine = await main.evaluate(() => {
+    const m = /Clip 1 of 1[^\n]*/.exec(document.body.innerText);
+    return m ? m[0] : "";
+  });
+  if (!/CI clip/.test(clipLine)) annotate("warning", "Desktop E2E", `the clip was made from the loudest-window fallback instead of the picker's answer: “${clipLine}”`);
+  else ok(`the agent's picker picked the moment: “${clipLine.slice(0, 120)}”`);
+  // Watch it the way a person does: the player's source is the rendered file.
+  const watch = main.locator('[data-testid="watch-button"]').last();
+  await watch.click();
+  await main.waitForSelector("video", { timeout: 60_000 });
+  const clipSrc = await main.evaluate(() => {
+    const v = [...document.querySelectorAll("video")].at(-1);
+    return v?.getAttribute("src") ?? v?.querySelector("source")?.getAttribute("src") ?? "";
+  });
+  const clipId = /\/api\/v1\/export\/jobs\/([^/]+)\/download/.exec(clipSrc)?.[1] ?? "";
+  if (!clipId) await fail(`the clip's player doesn't point at a rendered file (${clipSrc.slice(0, 200)})`);
+  const clipJob = await main.evaluate(async (url) => {
+    const res = await fetch(url);
+    const buf = await res.arrayBuffer();
+    return { status: res.status, type: res.headers.get("content-type"), bytes: buf.byteLength };
+  }, `/api/v1/export/jobs/${clipId}/download`);
+  if (clipJob.status !== 200 || !/video\/mp4/.test(clipJob.type ?? "") || clipJob.bytes < 50_000) {
+    await fail(`the rendered clip isn't a real video file: ${JSON.stringify(clipJob)}`);
+  } else {
+    ok(`the clip rendered for real — ${Math.round(clipJob.bytes / 1024)} KB of MP4, played in the chat (job ${clipId})`);
+    annotate(
+      "notice",
+      "Desktop E2E: shorts from a video",
+      `“${path.basename(clipSource)}” (13 s, speech from whisper.cpp's sample) → the agent listened, picked the moment, cut it vertical with captions and posted it: ${Math.round(clipJob.bytes / 1024)} KB MP4 at ${clipSrc}.`,
+    );
+  }
+  await main.screenshot({ path: path.join(shotsDir, "12-clip-from-video.png"), timeout: 15_000 }).catch(() => {});
 
   // ── 4. Tray behaviour + notifications bridge ──────────────────────────────
   await app.evaluate(() => {

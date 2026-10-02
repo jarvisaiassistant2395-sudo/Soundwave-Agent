@@ -75,7 +75,21 @@ What happens (a few minutes; a progress bar shows each step):
 
 When it's done the video appears in the conversation with a player, "Download Video (MP4)" and "Post to YouTube"; it's also in the Latest Rendered Video card and on the Projects page. On the phone it shows a Watch button. With notifications on, Windows tells you when it's ready.
 
-Only one short renders at a time — asking again while one is rendering just tells you it's busy. The video files are kept on the PC in %APPDATA%\\Soundwave AI\\uploads.`,
+Only one short renders at a time — asking again while one is rendering just tells you it's busy. The video files are kept on the PC in %APPDATA%\\Soundwave AI\\uploads.
+
+To cut Shorts out of a video that already exists (a long recording, someone else's video), that's a different thing: see "Shorts from a long video" — the agent listens to it and clips the best moments.`,
+  },
+  {
+    id: "clips",
+    title: "Shorts from a long video",
+    summary: "paste a long video (a YouTube link or a file) and the agent cuts the best moments into vertical Shorts with captions",
+    text: `Ask for it in plain words — "make shorts out of this video", "cut the best bits out of <link>", "find 3 clips from this" — and give a YouTube link, or the path of a video file already on this PC. The agent downloads the video (links only) and listens to it: it looks for the parts that stand on their own — a hook, a surprising fact, a strong opinion, a laugh — ignoring intros and housekeeping. You can steer it: "the funny bits", "the part about pricing".
+
+It then cuts each moment into a vertical Short: the video cropped to 9:16, the sound exactly as recorded, and captions of what is being said, burned in. Nothing else is added — no narration, no new background — it's your own footage. Ask for 1 to 5 (3 by default); 720p or 1080p comes from Settings → Quality, as for every short.
+
+Rendering takes a few minutes per clip; the clips are posted in this chat as they're ready, and can be watched, downloaded and uploaded to YouTube from here (Settings → YouTube API & Shorts). This runs on the PC, so it needs Soundwave AI running — the phone asks the PC for it, like every short. The speech engine (whisper.cpp, the same one voice input uses) writes the captions; without it the clips are still cut, just without captions, and a video with no speech (music, gameplay) is cut without them too.
+
+Only one video renders at a time (this and the normal shorts share that). Nothing is ever posted anywhere by itself.`,
   },
   {
     id: "backgrounds",

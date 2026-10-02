@@ -37,6 +37,13 @@ function answer(body) {
       ],
     };
   }
+  // The highlight picker for "shorts from a long video": answer with the JSON
+  // the picker asks for (the whole short test video is the moment).
+  if (/You are a short-form video editor/.test(instruction)) {
+    const said = /"([^"]{10,})"/.exec(body?.contents?.at(-1)?.parts?.[0]?.text ?? "")?.[1] ?? "";
+    void said;
+    return text('[{"start": 0, "end": 13, "title": "CI clip", "reason": "the whole test video is the moment"}]');
+  }
   // (The agent's own instruction mentions Morning Setup too — match the briefing writer's exact words.)
   if (/^You are Soundwave[^\n]*Write the user's Morning Setup briefing/.test(instruction)) return text(FAKE_MORNING);
   if (/^You keep the long-term memory of Soundwave/.test(instruction)) return text("The user tested Soundwave AI in CI.");
@@ -45,6 +52,10 @@ function answer(body) {
   if (result) {
     const r = result.response ?? {};
     if (result.name === "get_pc_status") return text(`Your PC runs ${r.os} with ${r.cpu?.cores} CPU cores; ${r.memory?.usedPercent}% of memory is in use.`);
+    if (result.name === "make_shorts_from_video") {
+      if (r.started === false) return text(`I couldn't do that one: ${r.reason ?? "no video was given"}.`);
+      return text(`Cutting ${r.clips ?? 3} short${r.clips === 1 ? "" : "s"} out of “${r.video ?? "the video"}” — they'll show up here as they're ready.`);
+    }
     if (result.name === "set_phone_alarm") {
       if (r.set === false) return text(`I couldn't set that alarm: ${r.reason ?? "no time was given"}.`);
       return text(`Alarm set for ${r.ringsAt}${r.label ? ` — “${r.label}”` : ""}. When you turn it off, your briefing starts ${r.briefingAfterSeconds} seconds later.`);
@@ -63,6 +74,12 @@ function answer(body) {
       ? { in_seconds: inSeconds, label: "CI alarm", briefing_after_seconds: 5 }
       : { time: clock ? `${clock[1].padStart(2, "0")}:${clock[2]}` : "06:30", label: "CI alarm" };
     return call("set_phone_alarm", args, "alarm-1");
+  }
+  // Cutting shorts out of a long video (only when the PC really offers it).
+  if (declares("make_shorts_from_video") && /\b(cut|clip|clips|shorts? out of|best bits)\b/i.test(said)) {
+    const file = /((?:[A-Za-z]:[\\/]|\/)[^\s"']+\.(?:mp4|mov|mkv|webm|m4v))/i.exec(said)?.[1];
+    const count = Number(/(\d+)\s*(?:clips|shorts)/i.exec(said)?.[1] ?? "");
+    return call("make_shorts_from_video", { video: file ?? said.trim(), ...(Number.isFinite(count) && count > 0 ? { count } : {}) }, "clips-1");
   }
   if (/connection test/i.test(said)) return text("ready");
   if (/how is my pc|pc status/i.test(said)) return call("get_pc_status", {}, "pc-status-1");

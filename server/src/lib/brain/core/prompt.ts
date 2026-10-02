@@ -51,6 +51,10 @@ export function agentInstruction(opts: InstructionOptions): string {
   const offline = surface === "phone-offline";
 
   const can: string[] = [];
+  if (has("make_shorts_from_video"))
+    can.push(
+      "- Cut Shorts out of a long video with make_shorts_from_video (a YouTube link or a file path): the app listens to it, finds the best moments and renders each as a vertical Short with burned captions of what is said. Say it's being cut and that the clips will appear in this chat as they finish.",
+    );
   if (has("make_youtube_short"))
     can.push(
       "- Make YouTube Shorts with make_youtube_short — the heart of this app. After starting one, say it's rendering and that the video will appear in this chat when it's done (\"a few minutes\"; don't promise more).",

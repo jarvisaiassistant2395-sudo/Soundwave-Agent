@@ -9,6 +9,8 @@ import { chatTime, newMessageId, type ChatMessage } from "../chatMessages.js";
 import { connectedPhone, pairedPhones } from "../companion/service.js";
 import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
+import { DEFAULT_CLIPS, MAX_CLIPS } from "./core/clips.js";
+import { clipsBusy, startClipsJob } from "../videoClips.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
 import { config } from "../../config.js";
 import { pcMemoryStore } from "../memory.js";
@@ -83,6 +85,16 @@ export const AGENT_TOOLS: AgentTool[] = [
       const topic = str(args.topic, 200) || "a mind-blowing fact";
       const details = str(args.details, 800);
       if (ctx.effects.short) return { started: false, reason: "A short was already started for this message." };
+
+      const clipping = clipsBusy();
+      if (clipping.busy) {
+        return {
+          started: false,
+          busy: true,
+          renderingNow: clipping.source,
+          reason: `I'm cutting shorts out of “${clipping.source}” right now — one video renders at a time. Those clips will be posted in this chat; ask again after that.`,
+        };
+      }
 
       const active = getActiveShortJobs()[0];
       if (active) {
@@ -292,6 +304,65 @@ AGENT_TOOLS.push(
     }),
   ),
   guideTool<ToolContext>(),
+  {
+    declaration: {
+      name: "make_shorts_from_video",
+      description:
+        "Cut vertical YouTube Shorts out of a long video. Give a YouTube link or the path of a video file on this PC: the agent downloads it (links), listens to it, finds the moments worth posting, and renders each one as a Short — the original video and sound, cropped vertical, with burned captions of what is being said (no narration). Use it whenever someone asks to make shorts/clips/reels from a video, to cut up a long video, or to find the best bits. It runs in the background and the clips are posted in this chat as they finish.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          video: { type: "STRING", description: "The YouTube link to cut up, or the full path of a video file on this PC." },
+          count: { type: "NUMBER", description: `How many shorts to cut out of it (1–${MAX_CLIPS}, default ${DEFAULT_CLIPS}).` },
+          focus: { type: "STRING", description: 'Optional: what to look for, e.g. "the funny bits" or "the part about pricing".' },
+        },
+        required: ["video"],
+      },
+    },
+    // Rendering happens on this PC, with ffmpeg and the speech engine.
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const video = str(args.video, 800);
+      if (!video) {
+        return { started: false, reason: "Which video? Give me a YouTube link, or the path of a video file on this PC." };
+      }
+      const clipping = clipsBusy();
+      if (clipping.busy) {
+        return {
+          started: false,
+          busy: true,
+          renderingNow: clipping.source,
+          reason: `I'm already cutting shorts out of “${clipping.source}” — one video at a time. They'll be posted in this chat; ask again after that.`,
+        };
+      }
+      if (getActiveShortJobs().length) {
+        return { started: false, busy: true, reason: "A short is still rendering — one video at a time. Ask again once it's posted." };
+      }
+      const wanted = Number(args.count);
+      const count = Number.isFinite(wanted) ? Math.max(1, Math.min(MAX_CLIPS, Math.round(wanted))) : DEFAULT_CLIPS;
+      const focus = str(args.focus, 300);
+      try {
+        const started = await startClipsJob({
+          video,
+          count,
+          ...(focus ? { focus } : {}),
+          resolution: ctx.resolution,
+          userId: ctx.userId,
+        });
+        ctx.effects.tag = "AUDIO";
+        ctx.effects.log.push(`Started cutting ${started.count} short(s) out of “${started.sourceName}”`);
+        return {
+          started: true,
+          clips: started.count,
+          video: started.sourceName,
+          note: `Listening to “${started.sourceName}” now. Cutting and rendering each clip takes a few minutes; they are posted in this chat as they finish — no need to check on them.`,
+        };
+      } catch (err) {
+        return { started: false, reason: (err as Error).message || "That video didn't work out." };
+      }
+    },
+  },
   {
     declaration: PHONE_ALARM_DECLARATION,
     // Only when a real phone is paired: a browser pairing has nothing to ring.

@@ -114,6 +114,17 @@ With the PC off the phone does the same itself and speaks through the native
 `EdgeTts` plugin (`mobile/android/.../EdgeTtsPlugin.java` — Microsoft's voices
 need headers a WebView can't send).
 
+**Shorts from a long video** (desktop 1.5.3): ask for it with a YouTube link or
+a video file already on the PC — "cut the best bits out of this", "3 clips from
+this video, the part about pricing". The agent downloads it (links), listens to
+it with the same whisper.cpp engine voice input uses, picks the moments that
+stand on their own (Gemini when there's a key; otherwise the loudest talking),
+and renders each as a vertical Short: the video cropped to 9:16, the sound
+exactly as recorded, captions of what is said burned in. `lib/videoClips.ts` +
+`brain/core/clips.ts` (pure rules: windows, scoring, picking, caption timing).
+Each clip is a normal export job — Watch, download or upload it from the chat.
+One video renders at a time, shorts included.
+
 **Alarms on the phone** (desktop 1.5.2 / phone 1.3.0): ask the agent for one
 ("set an alarm for 6:30", "wake me in 20 minutes") and it arms a real alarm on
 the paired Android phone — `set_phone_alarm` leaves a control message in the
