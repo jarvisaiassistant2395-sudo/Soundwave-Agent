@@ -308,15 +308,21 @@ export class CompanionClient {
   /** The memory snapshot the phone has (sync sends a new one when it changed). */
   memoryRev: string | null = null;
   kitRev: string | null = null;
+  /** This app's version, sent with hello (the PC reads it back — alarms need a recent app). */
+  appVersion: string | null = null;
   private outbox: () => Outbox | null = () => null;
 
-  constructor(record: PairingRecord, opts: { fetch?: FetchLike; conversation?: Conversation | null; memoryRev?: string | null; kitRev?: string | null } = {}) {
+  constructor(
+    record: PairingRecord,
+    opts: { fetch?: FetchLike; conversation?: Conversation | null; memoryRev?: string | null; kitRev?: string | null; appVersion?: string } = {},
+  ) {
     this.record = record;
     this.fetchFn = opts.fetch ?? fetch.bind(globalThis);
     this.keys = deriveDeviceKeys(fromBase64(record.deviceKey), record.deviceId);
     this.conversation = opts.conversation ?? null;
     this.memoryRev = opts.memoryRev ?? null;
     this.kitRev = opts.kitRev ?? null;
+    this.appVersion = opts.appVersion ?? null;
   }
 
   /** Where offline messages wait; they're sent before the first sync after reconnecting. */
@@ -363,7 +369,7 @@ export class CompanionClient {
     this.offset = found.offset;
     this.rememberHost(found.baseUrl);
     try {
-      const { result } = await this.rpc<PcInfo & { time: number }>("hello", {}, { signal });
+      const { result } = await this.rpc<PcInfo & { time: number }>("hello", this.appVersion ? { appVersion: this.appVersion } : {}, { signal });
       this.pc = { pcName: result.pcName, voiceInput: result.voiceInput, voice: result.voice, ...(result.brain ? { brain: result.brain } : {}), memoryRev: result.memoryRev ?? null };
       if (result.pcName && result.pcName !== this.record.pcName) {
         this.record = { ...this.record, pcName: result.pcName };

@@ -185,6 +185,21 @@ describe("pairing a phone", () => {
     await expect(pairWithPc(link, { name: "Other", platform: "android" })).rejects.toMatchObject({ code: "NO_PAIRING" });
   });
 
+  it("learns the phone app's version when it connects — an updated app stops looking old", async () => {
+    const port = await openListener();
+    const link = phone.parsePairingLink(linkFor(port))!;
+    const record = await pairWithPc(link, { name: "Old Phone", platform: "android", appVersion: "1.2.1" });
+    const stored = () => service.pairedPhones().find((d) => d.id === record.deviceId)?.appVersion;
+    expect(stored()).toBe("1.2.1");
+
+    // The phone installs the update and reconnects: alarms need 1.3.0, so the PC
+    // must stop refusing it.
+    const client = new CompanionClient(record, { appVersion: "1.3.0" });
+    expect(await client.connect()).toBe(true);
+    expect(stored()).toBe("1.3.0");
+    client.stop();
+  });
+
   it("refuses a wrong code without pairing anything", async () => {
     const port = await openListener();
     const link = phone.parsePairingLink(linkFor(port))!;

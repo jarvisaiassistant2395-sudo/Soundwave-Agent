@@ -87,6 +87,22 @@ describe("setting an alarm on the phone from the PC", () => {
     expect(control.at).toBeLessThanOrEqual(Date.now() + 121_000);
   });
 
+  it("says the phone's app needs updating instead of claiming an alarm (older build)", async () => {
+    service.completePairing({ name: "Old Phone", platform: "android", model: "Pixel 6", appVersion: "1.2.1", address: null });
+    const tool = toolsFor(ctx() as never).find((t) => t.declaration.name === "set_phone_alarm");
+    expect(tool, "the tool is still offered, so the agent can explain why not").toBeTruthy();
+    const result = await tool!.run({ time: "06:30" }, ctx() as never);
+    expect(result.set).toBe(false);
+    expect(String(result.reason)).toContain("1.2.1");
+    expect(String(result.reason)).toContain(alarm.ALARMS_MIN_APP_VERSION);
+    expect(conversation.getConversation().messages.some((m) => m.control)).toBe(false);
+  });
+
+  it("isn't offered for a browser pairing — there's nothing to ring", () => {
+    service.completePairing({ name: "A Chrome tab", platform: "web", address: null });
+    expect(toolsFor(ctx() as never).map((t) => t.declaration.name)).not.toContain("set_phone_alarm");
+  });
+
   it("asks for a real time instead of guessing when there's none", async () => {
     pairPhone();
     const tool = toolsFor(ctx() as never).find((t) => t.declaration.name === "set_phone_alarm")!;
@@ -113,6 +129,17 @@ describe("the shared alarm rules (both the PC and the phone use these)", () => {
     expect(alarm.clockLabel(at("2026-10-03T00:05:00").getTime())).toBe("12:05 AM");
     expect(alarm.clockLabel(at("2026-10-03T12:00:00").getTime())).toBe("12:00 PM");
     expect(alarm.clockLabel(at("2026-10-03T19:45:00").getTime())).toBe("7:45 PM");
+  });
+
+  it("knows which phone apps can ring", () => {
+    expect(alarm.supportsAlarms("1.3.0")).toBe(true);
+    expect(alarm.supportsAlarms("1.3.1")).toBe(true);
+    expect(alarm.supportsAlarms("1.4")).toBe(true);
+    expect(alarm.supportsAlarms("2.0.0")).toBe(true);
+    expect(alarm.supportsAlarms("1.2.1")).toBe(false);
+    expect(alarm.supportsAlarms("1.2.99")).toBe(false);
+    expect(alarm.supportsAlarms(undefined)).toBeNull();
+    expect(alarm.supportsAlarms("dev")).toBeNull();
   });
 
   it("keeps the briefing delay sane (0–600 s) and the label short", () => {

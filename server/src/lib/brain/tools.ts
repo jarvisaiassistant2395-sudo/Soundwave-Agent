@@ -7,7 +7,7 @@ import { ago, listShorts } from "../shortsLibrary.js";
 import { appendToConversation, findJob } from "../conversation.js";
 import { chatTime, newMessageId, type ChatMessage } from "../chatMessages.js";
 import { connectedPhone, pairedPhones } from "../companion/service.js";
-import { alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION } from "./core/alarm.js";
+import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
 import { config } from "../../config.js";
@@ -294,11 +294,24 @@ AGENT_TOOLS.push(
   guideTool<ToolContext>(),
   {
     declaration: PHONE_ALARM_DECLARATION,
-    // Only when a phone is paired: without one there is nothing to ring.
-    available: () => pairedPhones().length > 0,
+    // Only when a real phone is paired: a browser pairing has nothing to ring.
+    available: () => pairedPhones().some((p) => p.platform !== "web"),
     sideEffect: true,
     async run(args, ctx) {
-      const phone = connectedPhone() ?? pairedPhones()[0]!;
+      const phones = pairedPhones().filter((p) => p.platform !== "web");
+      const online = connectedPhone();
+      const phone = (online && phones.find((p) => p.id === online.id)) || phones[0];
+      if (!phone) {
+        return { set: false, reason: "No Android phone is paired yet — ask the user to pair the Soundwave app first." };
+      }
+      // Only the phone app can ring, and only from the version that has alarms.
+      // An older build would ignore the request — say so, don't claim it's set.
+      if (supportsAlarms(phone.appVersion) === false) {
+        return {
+          set: false,
+          reason: `The Soundwave app on ${phone.name} is ${phone.appVersion} — alarms need ${ALARMS_MIN_APP_VERSION}. Tell the user to update the app on the phone (install the newest SoundwaveCompanion APK), then ask again.`,
+        };
+      }
       const now = new Date();
       const target = alarmTarget(args, now);
       if (!target) {

@@ -18,7 +18,7 @@ import {
   type PcInfo,
 } from "../lib/client";
 import type { PairingLink } from "../lib/protocol";
-import { deviceInfo, onForegroundChange } from "../lib/native";
+import { APP_VERSION, deviceInfo, onForegroundChange } from "../lib/native";
 import { DEFAULT_SETTINGS, storage, type AppSettings } from "../lib/storage";
 import { playReply, speakable, speakableBriefing, speakLong, stopSpeaking } from "../lib/voice";
 import {
@@ -259,7 +259,12 @@ export function useCompanion(): Companion {
       setClient(null);
       return;
     }
-    const c = new CompanionClient(record, { conversation: conversationRef.current, memoryRev: memoryRef.current?.rev ?? null, kitRev: kitRef.current?.rev ?? null });
+    const c = new CompanionClient(record, {
+      conversation: conversationRef.current,
+      memoryRev: memoryRef.current?.rev ?? null,
+      kitRev: kitRef.current?.rev ?? null,
+      appVersion: APP_VERSION,
+    });
     c.setOutbox(() => outboxRef.current);
     seenIds.current = conversationRef.current ? new Set(conversationRef.current.messages.map((m) => m.id)) : null;
 

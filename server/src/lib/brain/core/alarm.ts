@@ -13,6 +13,9 @@ import type { GeminiFunctionDeclaration } from "./gemini.js";
 
 export const PHONE_ALARM_TOOL = "set_phone_alarm";
 
+/** Alarms arrived in this version of the phone app (the PC checks the paired phone's). */
+export const ALARMS_MIN_APP_VERSION = "1.3.0";
+
 /** The morning briefing starts this many seconds after the alarm is turned off. */
 export const DEFAULT_BRIEFING_AFTER_ALARM_SECONDS = 30;
 /** Ten minutes is the most a person would wait; anything longer isn't "right after". */
@@ -89,6 +92,26 @@ export function briefingAfterSeconds(value: unknown, fallback = DEFAULT_BRIEFING
   const n = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
   const base = n === null ? fallback : n;
   return Math.min(MAX_BRIEFING_AFTER_ALARM_SECONDS, Math.max(0, base));
+}
+
+/**
+ * Whether that app version can set alarms: true, false, or null when it can't
+ * be read ("dev", a pairing that never said). Only the phone app has the
+ * native alarm code, so an older build can't ring — the PC says so instead of
+ * claiming an alarm it can't set.
+ */
+export function supportsAlarms(appVersion: unknown): boolean | null {
+  if (typeof appVersion !== "string") return null;
+  const parts = (v: string) => v.split(/[^\d]+/).filter(Boolean).map(Number);
+  const has = parts(appVersion);
+  if (!has.length || !has.every((n) => Number.isFinite(n))) return null;
+  const need = parts(ALARMS_MIN_APP_VERSION);
+  for (let i = 0; i < Math.max(has.length, need.length); i++) {
+    const a = has[i] ?? 0;
+    const b = need[i] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return true;
 }
 
 /** The short label for an alarm, cleaned up. */

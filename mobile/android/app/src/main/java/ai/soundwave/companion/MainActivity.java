@@ -22,14 +22,16 @@ public class MainActivity extends BridgeActivity {
         handleIntent(getIntent());
     }
 
+    // Capacitor's BridgeActivity declares these public (its override is not
+    // protected), so these have to be public too.
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         AlarmPlugin.setAppOnScreen(true);
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         AlarmPlugin.setAppOnScreen(false);
         super.onPause();
     }

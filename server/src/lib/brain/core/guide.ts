@@ -263,6 +263,8 @@ Updating the app: test builds are signed with a new key each time, so uninstall 
     summary: "ask the agent for an alarm, Snooze and Turn off, the morning briefing starting after you turn it off, the seconds setting, permissions",
     text: `The agent can set an alarm on your Android phone. Just ask: "set an alarm for 6:30" or "wake me at 7 with an alarm called Gym".
 
+Alarms need the Soundwave phone app 1.3.0 or newer — they live in the app itself. (If the phone's app is older, the PC says so instead of setting anything: install the newest SoundwaveCompanion APK and ask again.)
+
 What happens: Soundwave's own alarm screen opens at that time (over the lock screen) and the alarm rings — Snooze (9 minutes) or Turn off. The alarm lives on the phone, so it rings with the PC off, and it shows in the phone's notification bar while it's set.
 
 After you turn it off, your morning briefing starts by itself a few seconds later: the phone already has it, or writes it there if the PC is off. The wait is yours to set — phone app → Settings → "Alarm & the briefing": "Start my briefing ___ seconds after I turn off an alarm" (default 30, 0–600). You can also say it in the chat: "start my briefing a minute after I turn off my alarm".

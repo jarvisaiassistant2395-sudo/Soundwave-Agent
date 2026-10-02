@@ -230,7 +230,15 @@ function memoryOpsFrom(input: unknown): MemoryOp[] {
 
 const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
   // Still paired? What can this PC do?
-  async hello(_args, { device }) {
+  async hello(args, { device }) {
+    // The phone app tells us its version on every connect (it only reports it
+    // at pairing time otherwise) — alarms need a recent one, and an app that
+    // was just updated must stop looking old.
+    const version = typeof args.appVersion === "string" ? args.appVersion.trim().slice(0, 20) : "";
+    if (version && version !== device.appVersion) {
+      device.appVersion = version;
+      touchDevice(device, null);
+    }
     const stt = getSttStatus();
     return {
       result: {
