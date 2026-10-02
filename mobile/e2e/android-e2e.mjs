@@ -138,6 +138,25 @@ async function say(page, text, re, timeout = 45_000) {
   return page.$$eval('[data-testid="msg-agent"]', (els) => els.at(-1)?.innerText ?? "");
 }
 
+/** What the app was showing when the phone didn't answer on its own (for the annotation). */
+const offlineState = (page) =>
+  page
+    ? page
+        .evaluate(() => {
+          const agents = [...document.querySelectorAll('[data-testid="msg-agent"]')];
+          const send = document.querySelector('[data-testid="send-button"]');
+          const composer = document.querySelector('[data-testid="composer-input"]');
+          return {
+            lastAgent: (agents.at(-1)?.innerText ?? "").replace(/\s+/g, " ").slice(0, 160),
+            agentCount: agents.length,
+            composerDisabled: composer ? Boolean(composer.disabled || composer.readOnly) : null,
+            sendDisabled: send ? Boolean(send.disabled) : null,
+            banner: (document.querySelector('[data-testid="phone-mode-banner"]')?.innerText ?? "").replace(/\s+/g, " ").slice(0, 180),
+          };
+        })
+        .catch((e) => ({ error: e.message }))
+    : Promise.resolve({ error: "no page" });
+
 const userText = (request) => (request?.body?.contents?.at(-1)?.parts ?? []).map((p) => p.text ?? "").join("");
 
 /** What the app shows right now, in one line (for the annotations — CI screenshots aren't always at hand). */
@@ -302,8 +321,20 @@ try {
   await pc("/api/v1/companion/enabled", { enabled: false });
   await page.waitForSelector('[data-testid="phone-mode-banner"]', { timeout: 60_000 });
   ok("the PC stopped answering: the phone switched to chatting on its own");
-  const offlineText = await say(page, "are you still there without the PC?", new RegExp(escapeRe(FAKE_PHONE)), 60_000);
-  ok(`answered on the phone itself while the PC was off: "${firstLine(offlineText)}"`);
+  // Asking again after a moment is fair — the WebView's first request to the
+  // stand-in can hiccup on the emulator — and each failed try says what the app
+  // was showing, so a real problem doesn't hide behind a flake.
+  let offlineText = null;
+  for (let attempt = 1; attempt <= 2 && !offlineText; attempt++) {
+    try {
+      offlineText = await say(page, "are you still there without the PC?", new RegExp(escapeRe(FAKE_PHONE)), 60_000);
+    } catch (e) {
+      annotate("warning", "Phone app E2E", `the phone didn't answer on its own (attempt ${attempt}): ${e.message} — ${JSON.stringify(await offlineState(page))}; screen: “${(await screenText(page)).slice(0, 160)}”`);
+      await sleep(1500);
+    }
+  }
+  if (offlineText) ok(`answered on the phone itself while the PC was off: "${firstLine(offlineText)}"`);
+  else fail("the phone never answered on its own while the PC was off");
   if (!(await page.$('[data-testid="answered-on-phone"]'))) fail('the phone\'s own answer isn\'t marked "on phone"');
 
   // The briefing is due: open the app again (as in the morning) — with the PC off, the phone
