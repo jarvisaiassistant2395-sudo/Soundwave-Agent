@@ -547,20 +547,47 @@ try {
   await sleep(500);
   screenshot("9-alarm-briefing");
 
-  // Settings → the alarm that is left (6:30, tomorrow) and cancel it there.
+  // Settings → the alarm that rang is gone, the 6:30 one is left, cancel it.
   await clickOn(page, '[data-testid="settings-button"]');
   await bodyHas(page, /Alarm & the briefing/, 20_000);
   const alarmSheet = async () => ((await page.textContent('[data-testid="alarm-settings"]')) ?? "").replace(/\s+/g, " ").trim();
-  const withAlarm = await alarmSheet();
-  if (!/Next alarm 6:30 AM/.test(withAlarm)) fail(`the 6:30 alarm isn't in the settings sheet: ${withAlarm.slice(0, 200)}`);
-  else await clickOn(page, '[data-testid="alarm-cancel"]');
-  await page.waitForFunction(() => /No alarm set/.test(document.body.innerText), null, { timeout: 20_000 }).catch(() => undefined);
+  // The app re-reads the phone's alarms when it comes back to the front (right
+  // after Turn off), so the one that rang must not be listed any more.
+  let withAlarm = await alarmSheet();
+  for (let i = 0; i < 10 && !/6:30 AM/.test(withAlarm); i++) {
+    await sleep(700);
+    withAlarm = await alarmSheet();
+  }
+  const nativeAlarms = () =>
+    page
+      .evaluate(async () => {
+        try {
+          const p = window.Capacitor?.Plugins?.Alarm;
+          return p ? (await p.list()).alarms.map((a) => a.id) : null;
+        } catch {
+          return null;
+        }
+      })
+      .catch(() => null);
+  if (!/6:30 AM/.test(withAlarm) || !/CI alarm/.test(withAlarm)) fail(`the 6:30 alarm isn't in the settings sheet: ${withAlarm.slice(0, 240)}`);
+  else ok(`the settings sheet shows what's left — “${withAlarm.slice(0, 160)}”`);
+  const afterRing = await nativeAlarms();
+  if (afterRing === null) annotate("warning", "Phone app E2E", "couldn't read the phone's alarm list through the app's own plugin — skipping that check");
+  else if (afterRing.length !== 1) fail(`the phone still holds ${afterRing.length} alarm(s) after the 20-second one was turned off (${afterRing.join(", ")})`);
+  else ok("turned off, and the phone's own alarm list has nothing left but the 6:30 alarm");
+
+  // Cancel it (once; the loop is just in case something else is still armed).
+  for (let i = 0; i < 4 && !/No alarm set/.test(await alarmSheet()); i++) {
+    await clickOn(page, '[data-testid="alarm-cancel"]');
+    await page.waitForFunction(() => /No alarm set/.test(document.body.innerText), null, { timeout: 15_000 }).catch(() => undefined);
+  }
   const withoutAlarm = await alarmSheet();
-  if (!/No alarm set/.test(withoutAlarm)) fail(`cancelling didn't clear the alarm list: ${withoutAlarm.slice(0, 200)}`);
+  if (!/No alarm set/.test(withoutAlarm)) fail(`cancelling didn't clear the alarm list: ${withoutAlarm.slice(0, 240)}`);
   else {
+    const left = await nativeAlarms();
     const leftInOs = adb("shell", "dumpsys alarm | grep -ci soundwave || true").trim();
-    if (Number(leftInOs) > 0) fail(`the cancelled alarm is still in Android's alarm list (dumpsys alarm: ${leftInOs})`);
-    else ok("the settings sheet listed the 6:30 alarm, and cancelling it took it out of Android's alarm list too");
+    if (Array.isArray(left) ? left.length > 0 : Number(leftInOs) > 0) fail(`the cancelled alarm is still armed (plugin: ${JSON.stringify(left)}, dumpsys: ${leftInOs})`);
+    else ok("the settings sheet listed the 6:30 alarm, and cancelling it disarmed it on the phone too");
   }
   adb("shell", "input keyevent 4");
   await page.waitForFunction(() => !/Read replies aloud/.test(document.body.innerText), null, { timeout: 10_000 }).catch(() => undefined);

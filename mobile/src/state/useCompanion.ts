@@ -253,6 +253,13 @@ export function useCompanion(): Companion {
   );
   runAlarmControls.current = runControls;
 
+  /** The alarms Android has right now — re-read whenever the app comes back to
+   *  the front, so one that was just turned off disappears from Settings. */
+  const refreshAlarms = useCallback(async () => {
+    if (!alarmAvailable()) return;
+    setAlarms(await listAlarms());
+  }, []);
+
   // One client per paired PC; it runs while the app is in front.
   useEffect(() => {
     if (!record) {
@@ -337,6 +344,9 @@ export function useCompanion(): Companion {
       if (active) {
         c.start();
         c.retryNow();
+        // An alarm may have rung while the app was away (turned off, snoozed or
+        // cancelled on the alarm screen): the list must say what's true now.
+        void refreshAlarms();
         // Opened in the morning (or after an alarm was turned off): the briefing starts by itself.
         void (async () => {
           const due = await consumePendingBriefing();
@@ -520,8 +530,11 @@ export function useCompanion(): Companion {
   // The alarm was turned off while the app was already running: start the briefing.
   useEffect(() => {
     if (!alarmAvailable()) return;
-    return onBriefingDue(() => void deliverBriefingRef.current({ force: true }));
-  }, []);
+    return onBriefingDue(() => {
+      void refreshAlarms();
+      void deliverBriefingRef.current({ force: true });
+    });
+  }, [refreshAlarms]);
 
   const stopBriefing = useCallback(() => {
     briefingStop.current = true;

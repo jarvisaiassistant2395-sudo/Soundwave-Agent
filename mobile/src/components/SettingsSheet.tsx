@@ -141,7 +141,7 @@ export function SettingsSheet({ open, onClose, companion }: { open: boolean; onC
               <p className="text-[15px] font-semibold text-gray-100">
                 {companion.alarms.length === 0
                   ? "No alarm set"
-                  : `Next alarm ${new Date(companion.alarms[0]!.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${companion.alarms[0]!.label ? ` — ${companion.alarms[0]!.label}` : ""}`}
+                  : `Next alarm ${new Date(companion.alarms[0]!.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${companion.alarms[0]!.label ? ` — ${companion.alarms[0]!.label}` : ""}${companion.alarms.length > 1 ? ` (+${companion.alarms.length - 1} more)` : ""}`}
               </p>
               <p className="mt-0.5 text-[13px] leading-snug text-gray-400">
                 Ask me: “set an alarm for 6:30”. The alarm rings here, and after you turn it off your morning briefing starts by itself.
