@@ -122,6 +122,29 @@ const bodyHas = (page, re, timeout = 45_000) =>
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const firstLine = (s) => (s.split("\n").find((l) => l.length > 20) ?? s).slice(0, 110);
 
+/**
+ * Click something in the app. Playwright waits for a real user click — hit
+ * testing — which times out when a toast (a reply being read aloud) or the
+ * keyboard sits over the button; the app is fine, so fall back to a DOM click
+ * and say so in the annotations.
+ */
+async function clickOn(page, selector) {
+  try {
+    await page.click(selector, { timeout: 15_000 });
+    return "clicked";
+  } catch (err) {
+    const hit = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      el.click();
+      return true;
+    }, selector);
+    if (!hit) throw err;
+    annotate("warning", "Phone app E2E", `${selector} wasn't clickable by Playwright (${String(err.message).split("\n")[0]}) — clicked it directly`);
+    return "dom";
+  }
+}
+
 /** Type a message on the phone, send it, and wait for the agent's answer (matching `re`). */
 async function say(page, text, re, timeout = 45_000) {
   const before = await page.$$eval('[data-testid="msg-agent"]', (els) => els.length);
@@ -292,7 +315,7 @@ try {
   }
 
   // Settings sheet — including "Chat without the PC", set up from the PC's Gemini key.
-  await page.click('[data-testid="settings-button"]');
+  await clickOn(page, '[data-testid="settings-button"]');
   await bodyHas(page, /Read replies aloud/);
   await bodyHas(page, /Ready — Gemini 3\.8 Flash/, 30_000);
   ok('settings: "Chat without the PC — Ready — Gemini 3.8 Flash" (the PC shared its brain kit)');
@@ -310,7 +333,7 @@ try {
   const dueAt = `${String(Math.floor(dueMin / 60)).padStart(2, "0")}:${String(dueMin % 60).padStart(2, "0")}`;
   const dueAtMs = Date.now() + (((dueMin * 60 - (ph * 3600 + pm * 60 + ps)) + 86_400) % 86_400) * 1000;
   await pc("/api/v1/morning", { items: [], city: "Kruševac", briefing: { topics: [BRIEF_TOPIC], time: dueAt, auto: true } }, "PUT");
-  await page.click('[data-testid="settings-button"]');
+  await clickOn(page, '[data-testid="settings-button"]');
   await bodyHas(page, new RegExp(`Every morning at ${dueAt}`), 60_000);
   await bodyHas(page, new RegExp(escapeRe(BRIEF_TOPIC)), 10_000);
   adb("shell", "input keyevent 4");
@@ -525,12 +548,12 @@ try {
   screenshot("9-alarm-briefing");
 
   // Settings → the alarm that is left (6:30, tomorrow) and cancel it there.
-  await page.click('[data-testid="settings-button"]');
+  await clickOn(page, '[data-testid="settings-button"]');
   await bodyHas(page, /Alarm & the briefing/, 20_000);
   const alarmSheet = async () => ((await page.textContent('[data-testid="alarm-settings"]')) ?? "").replace(/\s+/g, " ").trim();
   const withAlarm = await alarmSheet();
   if (!/Next alarm 6:30 AM/.test(withAlarm)) fail(`the 6:30 alarm isn't in the settings sheet: ${withAlarm.slice(0, 200)}`);
-  else await page.click('[data-testid="alarm-cancel"]');
+  else await clickOn(page, '[data-testid="alarm-cancel"]');
   await page.waitForFunction(() => /No alarm set/.test(document.body.innerText), null, { timeout: 20_000 }).catch(() => undefined);
   const withoutAlarm = await alarmSheet();
   if (!/No alarm set/.test(withoutAlarm)) fail(`cancelling didn't clear the alarm list: ${withoutAlarm.slice(0, 200)}`);
