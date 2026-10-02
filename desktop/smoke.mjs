@@ -275,8 +275,9 @@ try {
     macro.status === 200 && steps.length === 3 && steps.every((s) => s.status === "SUCCESS"),
     `Ghost Operator: the diagnostics macro ran for real — ${macro.body?.report?.summary}`,
   );
+  const dataFolder = path.join(userDataDir, "data");
   assert(
-    scanned.includes(path.join(userDataDir, "data")) && /file\(s\)/.test(scanned),
+    scanned.toLowerCase().includes(dataFolder.toLowerCase()) && /file\(s\)/.test(scanned),
     `Ghost Operator: it really scanned the workspace folder — ${scanned.slice(0, 160)}`,
   );
   assert(

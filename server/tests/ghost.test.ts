@@ -283,7 +283,10 @@ describe("Ghost Operator API", () => {
   });
 });
 
-/** The data folder the executor scans by default (config.dataDir). */
+/**
+ * The data folder the executor scans by default (config.dataDir), resolved the
+ * same way lib/ghostOperator.ts prints it (Windows turns "/tmp/x" into "C:\\tmp\\x").
+ */
 function config_dataDir(): string {
-  return process.env.DATA_DIR || path.resolve(".");
+  return path.resolve(process.env.DATA_DIR || ".");
 }

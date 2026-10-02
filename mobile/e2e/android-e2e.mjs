@@ -365,9 +365,28 @@ try {
   else ok("with the PC off the phone asked Gemini itself (key, \"PC is off\" note, memory) and briefed with the weather from Open-Meteo");
 
   // The PC is back: what was said on the phone goes into the PC's conversation.
+  // (Coming out of offline mode is the flakiest part of the WebView: the page's
+  // reconnect can need a nudge, or a second one, on the emulator — retry, and
+  // say so in the annotations, instead of failing the whole run on one try.)
   await pc("/api/v1/companion/enabled", { enabled: true });
-  await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /Try now|Look for the PC/.test(b.textContent ?? ""))?.click());
-  await bodyHas(page, /Connected to/, 60_000);
+  const lookForThePc = () =>
+    page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /Try now|Look for the PC/.test(b.textContent ?? ""))?.click());
+  let reconnected = false;
+  let attempts = 0;
+  for (let attempt = 1; attempt <= 4 && !reconnected; attempt++) {
+    attempts = attempt;
+    await lookForThePc().catch(() => undefined);
+    try {
+      await bodyHas(page, /Connected to/, 45_000);
+      reconnected = true;
+    } catch {
+      const screen = (await screenText(page)).replace(/\s+/g, " ").slice(0, 200);
+      annotate("warning", "Phone app E2E", `the phone hadn't reconnected after attempt ${attempt} (screen: “${screen}”) — trying again`);
+      await sleep(2000);
+    }
+  }
+  if (!reconnected) fail("the phone never reconnected to the PC after it came back");
+  else ok(`the phone reconnected to the PC${attempts > 1 ? ` (needed ${attempts} tries)` : ""} and is exchanging messages again`);
   let synced = null;
   for (let i = 0; i < 30 && !synced; i++) {
     const msgs = (await pc("/api/v1/companion/conversation")).messages;
