@@ -332,7 +332,19 @@ try {
   await main.goto(`${appBase}/agent`);
   await main.locator('button[title="Ghost Operator Macro Automations"]').click();
   await main.waitForFunction(() => /really run on this PC/.test(document.body.innerText), null, { timeout: 30_000 });
-  await main.locator(`h4:text-is("${macroName}")`).locator("xpath=..").locator('button:has-text("Run")').click();
+  // The macro's row: the h4's nearest rounded-lg ancestor (the card that also
+  // holds its Run button).
+  const runRow = main
+    .locator(`h4:text-is("${macroName}")`)
+    .locator("xpath=ancestor::div[contains(@class, 'rounded-lg')]")
+    .locator('button:has-text("Run")');
+  try {
+    await runRow.waitFor({ timeout: 30_000 });
+  } catch {
+    const shown = await main.evaluate(() => [...document.querySelectorAll("h4")].map((h) => h.textContent).join(" | "));
+    await fail(`Ghost Operator: “${macroName}” isn't in the panel (it lists: ${shown})`);
+  }
+  await runRow.click();
   await main.waitForFunction((t) => document.body.innerText.includes(t), `Ghost Operator — ${macroName}`, { timeout: 60_000 });
   const report = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
   if (!report.includes(clipText)) await fail(`Ghost Operator: the read-back step didn't show the copied text: ${report.slice(-400)}`);
