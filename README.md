@@ -125,7 +125,11 @@ Settings → **Alarm & the briefing**, 0–600, default 30; the agent can give a
 per-alarm delay too), which is also how the briefing starts when the phone is
 all the user has. Alarms live in the phone app (1.3.0+) — the PC learns the
 app's version when the phone connects, and if it's older it says to update
-instead of claiming an alarm it can't set.
+instead of claiming an alarm it can't set. The ring plays in the connected
+Bluetooth earbuds/headset (Soundwave picks the output itself — Android often
+sends alarm audio to the phone's speaker — and lifts the alarm volume for the
+ring), with a switch in Settings → "Alarm & the briefing" to keep it on the
+speaker; the screen says where it rings.
 
 **Memory** (desktop 1.4.0+): `%APPDATA%\Soundwave AI\data\agent-memory.json`
 — notes, Gemini's running summary of earlier conversations (written by the

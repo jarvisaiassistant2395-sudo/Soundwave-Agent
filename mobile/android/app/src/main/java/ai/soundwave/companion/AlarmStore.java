@@ -23,6 +23,7 @@ final class AlarmStore {
     private static final String KEY_PENDING_BRIEFING = "pendingBriefing";
     private static final String KEY_LAST_BRIEFING = "lastBriefingAt";
     private static final String KEY_RINGING = "ringing";
+    private static final String KEY_EARBUDS = "useEarbuds";
 
     static final int DEFAULT_BRIEFING_SECONDS = 30;
     static final int MAX_BRIEFING_SECONDS = 600;
@@ -139,6 +140,15 @@ final class AlarmStore {
 
     static void setBriefingPending(Context c, boolean pending) {
         prefs(c).edit().putBoolean(KEY_PENDING_BRIEFING, pending).apply();
+    }
+
+    /** Ring on the Bluetooth earbuds when they're connected (on unless the person turns it off). */
+    static boolean useEarbuds(Context c) {
+        return prefs(c).getBoolean(KEY_EARBUDS, true);
+    }
+
+    static void setUseEarbuds(Context c, boolean on) {
+        prefs(c).edit().putBoolean(KEY_EARBUDS, on).apply();
     }
 
     /** The alarm ringing now (so Turn off / Snooze work without an id). */

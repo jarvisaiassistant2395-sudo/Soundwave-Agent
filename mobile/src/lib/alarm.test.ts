@@ -4,7 +4,7 @@
 // reasoning — the times, the delay, and the honest answers.
 import { describe, expect, it } from "vitest";
 import { alarmLabel, alarmTarget, briefingAfterSeconds, clockLabel, nextAlarmAt } from "../../../server/src/lib/brain/core/alarm";
-import { ALARM_TOO_OLD_MS, setAlarmNow } from "./alarm";
+import { ALARM_TOO_OLD_MS, alarmAudioOutput, setAlarmEarbuds, setAlarmNow } from "./alarm";
 
 const at = (iso: string) => new Date(iso);
 
@@ -46,6 +46,12 @@ describe("an alarm the PC asked for", () => {
     const run = await setAlarmNow({ at: Number.NaN }, new Date());
     expect(run.result.set).toBe(false);
     expect(String(run.problem)).toContain("time");
+  });
+
+  it("says nothing about earbuds off the phone, and keeps the preference", async () => {
+    expect(await alarmAudioOutput()).toBeNull();
+    expect(await setAlarmEarbuds(true)).toBe(true);
+    expect(await setAlarmEarbuds(false)).toBe(false);
   });
 
   it("says the phone app is needed when there is no phone (this environment)", async () => {

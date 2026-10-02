@@ -125,7 +125,11 @@ delay (Settings → "Alarm & the briefing", 0–600 s, default 30). Covered by
 `server/tests/phone_alarm.test.ts`, `mobile/src/lib/alarm.test.ts`, the fake
 Gemini's alarm branch and the phone E2E (sets one through the chat, checks
 Android's own alarm list, rings a 20-second alarm, turns it off on its screen
-and waits for the briefing to start talking).
+and waits for the briefing to start talking). The ring plays on the connected
+Bluetooth earbuds/headset when there are any — `AlarmAudio` picks the output
+Android's own routing often ignores for alarms, lifts the alarm volume for the
+ring and puts it back — and Settings → "Alarm & the briefing" plus the alarm
+screen say where it rings.
 
 1.5.1 (phone 1.2.1) makes the voice read every reply to the end: replies are
 split into pieces at sentence boundaries and each piece is spoken, so a long

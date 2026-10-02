@@ -40,6 +40,13 @@ public class AlarmActivity extends AppCompatActivity {
         long at = alarm != null ? alarm.at : System.currentTimeMillis();
         ((TextView) findViewById(R.id.alarm_time)).setText(android.text.format.DateFormat.getTimeFormat(this).format(at));
         ((TextView) findViewById(R.id.alarm_label)).setText(alarm == null || alarm.label.isEmpty() ? "Soundwave alarm" : alarm.label);
+        // Say where it rings (the countdown takes this line over when it's turned off).
+        String earbuds = AlarmAudio.earbudsName(this);
+        if (earbuds != null && AlarmStore.useEarbuds(this)) {
+            TextView where = findViewById(R.id.alarm_countdown);
+            where.setText("Ringing on " + earbuds);
+            where.setVisibility(View.VISIBLE);
+        }
         findViewById(R.id.alarm_dismiss).setOnClickListener((v) -> dismiss());
         findViewById(R.id.alarm_snooze).setOnClickListener((v) -> snooze());
 

@@ -35,6 +35,9 @@ interface AlarmPlugin extends Plugin {
   /** True (once) when an alarm was turned off and the briefing is due. */
   consumePendingBriefing(): Promise<{ due: boolean; at?: number }>;
   notificationsAllowed(): Promise<{ allowed: boolean }>;
+  /** Where the alarm will ring right now (the earbuds' name, when any are connected). */
+  audioOutput(): Promise<{ bluetooth?: string; useEarbuds?: boolean }>;
+  setUseEarbuds(opts: { enabled: boolean }): Promise<{ useEarbuds: boolean }>;
   requestNotifications(): Promise<{ allowed: boolean }>;
 }
 
@@ -127,6 +130,34 @@ export async function setBriefingDelay(seconds: number): Promise<number> {
     return (await Alarm.setBriefingDelay({ seconds: clamped })).seconds;
   } catch {
     return clamped;
+  }
+}
+
+/** Where an alarm will ring right now, and whether the person wants it in their earbuds. */
+export interface AlarmAudioOutput {
+  /** The connected Bluetooth earbuds/headset the alarm plays on, when any are. */
+  bluetooth: string | null;
+  /** Ring on the Bluetooth earbuds when they're connected. */
+  useEarbuds: boolean;
+}
+
+/** Null when there's no phone app here (a desktop browser) — nothing to ring. */
+export async function alarmAudioOutput(): Promise<AlarmAudioOutput | null> {
+  if (!alarmAvailable()) return null;
+  try {
+    const r = await Alarm.audioOutput();
+    return { bluetooth: r.bluetooth ?? null, useEarbuds: r.useEarbuds !== false };
+  } catch {
+    return null;
+  }
+}
+
+export async function setAlarmEarbuds(enabled: boolean): Promise<boolean> {
+  if (!alarmAvailable()) return enabled;
+  try {
+    return (await Alarm.setUseEarbuds({ enabled })).useEarbuds !== false;
+  } catch {
+    return enabled;
   }
 }
 

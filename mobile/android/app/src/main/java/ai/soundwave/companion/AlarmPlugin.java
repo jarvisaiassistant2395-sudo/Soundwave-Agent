@@ -149,6 +149,27 @@ public class AlarmPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /** Where the alarm will ring right now: the earbuds' name (or none) and the preference. */
+    @PluginMethod
+    public void audioOutput(PluginCall call) {
+        JSObject result = new JSObject();
+        String earbuds = AlarmAudio.earbudsName(getContext());
+        if (earbuds != null) result.put("bluetooth", earbuds);
+        result.put("useEarbuds", AlarmStore.useEarbuds(getContext()));
+        call.resolve(result);
+    }
+
+    /** Ring on the Bluetooth earbuds when they're connected (the person can turn it off). */
+    @PluginMethod
+    public void setUseEarbuds(PluginCall call) {
+        Boolean wanted = call.getBoolean("enabled");
+        boolean on = wanted == null || wanted;
+        AlarmStore.setUseEarbuds(getContext(), on);
+        JSObject result = new JSObject();
+        result.put("useEarbuds", on);
+        call.resolve(result);
+    }
+
     @PluginMethod
     public void notificationsAllowed(PluginCall call) {
         JSObject result = new JSObject();

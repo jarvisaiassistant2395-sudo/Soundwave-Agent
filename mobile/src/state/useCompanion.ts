@@ -34,6 +34,7 @@ import {
 } from "../lib/offline";
 import { phoneVoiceAvailable, synthesizeOnPhone } from "../lib/phoneVoice";
 import {
+  alarmAudioOutput,
   alarmAvailable,
   cancelAlarm as cancelPhoneAlarm,
   consumePendingBriefing,
@@ -43,7 +44,9 @@ import {
   onBriefingDue,
   requestNotifications,
   setAlarmNow,
+  setAlarmEarbuds,
   setBriefingDelay as setPhoneBriefingDelay,
+  type AlarmAudioOutput,
   type PhoneAlarm,
 } from "../lib/alarm";
 import { alarmLabel, alarmTarget, DEFAULT_BRIEFING_AFTER_ALARM_SECONDS, clockLabel } from "../../../server/src/lib/brain/core/alarm";
@@ -88,6 +91,10 @@ export interface Companion {
   alarms: PhoneAlarm[];
   /** Seconds after an alarm is turned off before the morning briefing starts. */
   briefingDelaySeconds: number;
+  /** Where an alarm rings right now (the earbuds' name when they're connected), null off the phone. */
+  alarmOutput: AlarmAudioOutput | null;
+  /** Ring on the Bluetooth earbuds when they're connected. */
+  setAlarmEarbuds: (enabled: boolean) => Promise<void>;
   /** Android lets the app notify — alarms need it. */
   notifications: boolean;
   cancelAlarm: (id: string) => Promise<void>;
@@ -129,6 +136,7 @@ export function useCompanion(): Companion {
   const [alarms, setAlarms] = useState<PhoneAlarm[]>([]);
   const [briefingDelaySeconds, setBriefingDelayState] = useState(DEFAULT_BRIEFING_AFTER_ALARM_SECONDS);
   const [notifications, setNotifications] = useState(true);
+  const [alarmOutput, setAlarmOutput] = useState<AlarmAudioOutput | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const settingsRef = useRef(settings);
@@ -192,6 +200,7 @@ export function useCompanion(): Companion {
         void getBriefingDelay().then(setBriefingDelayState);
         void notificationsAllowed().then(setNotifications);
         void listAlarms().then(setAlarms);
+        void alarmAudioOutput().then(setAlarmOutput);
       }
       setSettings(s);
       settingsRef.current = s;
@@ -258,6 +267,8 @@ export function useCompanion(): Companion {
   const refreshAlarms = useCallback(async () => {
     if (!alarmAvailable()) return;
     setAlarms(await listAlarms());
+    // Earbuds come and go (the alarm screen says where it rang).
+    setAlarmOutput(await alarmAudioOutput());
   }, []);
 
   // One client per paired PC; it runs while the app is in front.
@@ -696,6 +707,10 @@ export function useCompanion(): Companion {
     await cancelPhoneAlarm(id);
     setAlarms(await listAlarms());
   }, []);
+  const setEarbuds = useCallback(async (enabled: boolean) => {
+    await setAlarmEarbuds(enabled);
+    setAlarmOutput(await alarmAudioOutput());
+  }, []);
   const setBriefingDelaySeconds = useCallback(async (seconds: number) => {
     setBriefingDelayState(await setPhoneBriefingDelay(seconds));
   }, []);
@@ -734,6 +749,8 @@ export function useCompanion(): Companion {
     briefingPlan: effectiveMemory(memory, outbox.memoryOps)?.briefing ?? null,
     alarms,
     briefingDelaySeconds,
+    alarmOutput,
+    setAlarmEarbuds: setEarbuds,
     notifications,
     cancelAlarm,
     setBriefingDelaySeconds,

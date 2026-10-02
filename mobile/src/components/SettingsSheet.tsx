@@ -173,6 +173,37 @@ export function SettingsSheet({ open, onClose, companion }: { open: boolean; onC
           </label>
           <p className="mt-1 text-[12.5px] text-gray-500">seconds after I turn the alarm off (0–600)</p>
 
+          {companion.alarmOutput && (
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-3 py-2.5" data-testid="alarm-output">
+              <span className="min-w-0 flex-1 text-[13px] leading-snug text-gray-300">
+                {companion.alarmOutput.bluetooth && companion.alarmOutput.useEarbuds ? (
+                  <>
+                    Rings on <span className="font-semibold text-gray-100">{companion.alarmOutput.bluetooth}</span> (Bluetooth)
+                  </>
+                ) : companion.alarmOutput.bluetooth ? (
+                  <>
+                    Rings on the phone speaker — <span className="text-gray-100">{companion.alarmOutput.bluetooth}</span> are connected, but ringing in them is off.
+                  </>
+                ) : (
+                  <>Rings on the phone speaker — connect your earbuds and it rings there instead.</>
+                )}
+              </span>
+              {companion.alarmOutput.bluetooth && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={companion.alarmOutput.useEarbuds}
+                  aria-label="Ring in my Bluetooth earbuds"
+                  onClick={() => void companion.setAlarmEarbuds(!companion.alarmOutput!.useEarbuds)}
+                  data-testid="alarm-earbuds"
+                  className={`h-8 w-14 shrink-0 rounded-full text-[12px] font-semibold transition ${companion.alarmOutput.useEarbuds ? "bg-violet-500 text-white" : "bg-white/10 text-gray-300"}`}
+                >
+                  {companion.alarmOutput.useEarbuds ? "On" : "Off"}
+                </button>
+              )}
+            </div>
+          )}
+
           {companion.alarms.length > 0 && (
             <button
               type="button"

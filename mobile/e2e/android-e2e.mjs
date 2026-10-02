@@ -551,6 +551,11 @@ try {
   await clickOn(page, '[data-testid="settings-button"]');
   await bodyHas(page, /Alarm & the briefing/, 20_000);
   const alarmSheet = async () => ((await page.textContent('[data-testid="alarm-settings"]')) ?? "").replace(/\s+/g, " ").trim();
+  // Where it rings: the app asks the phone itself (the emulator has no Bluetooth,
+  // so this is the phone speaker — and the sheet must say it).
+  const outputLine = (await page.locator('[data-testid="alarm-output"]').textContent({ timeout: 10_000 }).catch(() => null)) ?? "";
+  if (!/Rings on/.test(outputLine)) fail(`the sheet doesn't say where the alarm rings: “${outputLine.slice(0, 160)}”`);
+  else ok(`the sheet says where the alarm rings: “${outputLine.replace(/\s+/g, " ").trim()}”`);
   // The app re-reads the phone's alarms when it comes back to the front (right
   // after Turn off), so the one that rang must not be listed any more.
   let withAlarm = await alarmSheet();
