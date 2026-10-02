@@ -33,6 +33,7 @@ import {
   type MemorySnapshot,
   type MemoryStore,
 } from "../../../server/src/lib/brain/core/memory";
+import { PHONE_ALARM_DECLARATION } from "../../../server/src/lib/brain/core/alarm";
 import { fetchWeather, localDay, memoryDigest, morningNow, morningRequest, templateBriefing, type MorningFacts } from "../../../server/src/lib/brain/core/morning";
 import { researchTopics, type FetchText } from "../../../server/src/lib/brain/core/research";
 
@@ -72,6 +73,24 @@ export function effectiveMemory(snapshot: MemorySnapshot | null, ops: MemoryOp[]
   return { ...rest, notes: applyMemoryOps(snapshot.notes, ops), briefing: applyBriefingOps(snapshot.briefing ?? DEFAULT_BRIEFING, ops) };
 }
 
+/**
+ * Something the phone itself can do for the agent (an alarm — see lib/alarm.ts,
+ * which is wired up by the app). Its result is handed back to Gemini.
+ */
+export type OfflineToolRunner = (args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+/** The alarm tool on the phone: same declaration as the PC's, run natively here. */
+function alarmTool<C extends { alarm?: OfflineToolRunner }>() {
+  return {
+    declaration: PHONE_ALARM_DECLARATION,
+    sideEffect: true,
+    async run(args: Record<string, unknown>, ctx: C): Promise<Record<string, unknown>> {
+      if (!ctx.alarm) return { set: false, reason: "Alarms need the Soundwave app on the phone." };
+      return ctx.alarm(args);
+    },
+  };
+}
+
 export interface OfflineReply {
   text: string;
   model: string | null;
@@ -86,6 +105,8 @@ export async function offlineReply(o: {
   history: HistoryMessage[];
   message: string;
   record: (op: MemoryOp) => void;
+  /** The phone's own tools (set an alarm) — see lib/alarm.ts. */
+  alarm?: OfflineToolRunner;
   signal?: AbortSignal;
   now?: Date;
 }): Promise<OfflineReply> {
@@ -115,7 +136,7 @@ export async function offlineReply(o: {
       return plan;
     },
   };
-  const tools = [guideTool<{ memory: MemoryStore }>(), ...memoryTools<{ memory: MemoryStore }>()];
+  const tools = [guideTool<{ memory: MemoryStore }>(), ...memoryTools<{ memory: MemoryStore }>(), alarmTool<{ memory: MemoryStore; alarm?: OfflineToolRunner }>()];
   try {
     const result = await runTurn({
       apiKey: o.kit.apiKey,
@@ -125,7 +146,7 @@ export async function offlineReply(o: {
       webSearch: false,
       contents: contentsFor(o.history, o.message),
       tools,
-      ctx: { memory: store },
+      ctx: { memory: store, ...(o.alarm ? { alarm: o.alarm } : {}) },
       instruction: ({ tools: names, webSearch }) =>
         agentInstruction({ tools: names, webSearch, now: o.now ?? new Date(), surface: "phone-offline", memory: o.memory ? { ...o.memory, notes, briefing } : null }),
       generate: bind(o.kit),

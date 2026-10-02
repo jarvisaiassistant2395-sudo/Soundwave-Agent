@@ -108,7 +108,7 @@ describe("chatting on the phone while the PC is off", () => {
     expect(instruction).toMatch(/“Saturn's rings” — finished 2 hours ago, on YouTube/);
     expect(instruction).toMatch(/You can't \(yet\): make shorts, show or download videos, open anything on the PC/);
     const tools = req!.body.tools[0].functionDeclarations.map((d: { name: string }) => d.name);
-    expect(tools).toEqual(["soundwave_guide", "remember", "forget", "update_morning_briefing"]);
+    expect(tools).toEqual(["soundwave_guide", "remember", "forget", "update_morning_briefing", "set_phone_alarm"]);
     expect(ops).toEqual([]);
   });
 

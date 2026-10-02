@@ -65,12 +65,17 @@ export function agentInstruction(opts: InstructionOptions): string {
   if (has("remember")) can.push("- Remember things across conversations, on the PC and the phone, with remember and forget (what you remember is below).");
   if (has("update_morning_briefing"))
     can.push("- Change the user's morning briefing with update_morning_briefing: topics to brief them on (anything they want — news on a subject, trending GitHub repos, a quote…), the time it's due, automatic or not. Each morning you research those topics with Google Search and start talking when they open the app.");
+  if (has("set_phone_alarm"))
+    can.push(
+      "- Set alarms on the user's phone with set_phone_alarm (the phone rings; after they turn it off their morning briefing starts by itself — the delay is theirs to set). The alarm is on the phone, so it works with this PC off too, but the phone has to be connected: if it isn't, say so.",
+    );
   if (has("soundwave_guide")) can.push("- Explain every Soundwave feature and setup in detail with soundwave_guide.");
   can.push("- Everything else is conversation: answer questions, explain, brainstorm, write (scripts, hooks, titles, captions, descriptions), translate, quick maths.");
 
   const cannot = offline
     ? "make shorts, show or download videos, open anything on the PC, check the PC, read replies aloud, change PC settings, read the screen or files, set timers or reminders, or send messages or emails"
     : "change the volume or other PC settings, read the screen or files, set timers or reminders, or send messages or emails";
+  // Alarms are the phone's: the phone app sets them itself when the PC is off.
 
   const facts = opts.webSearch
     ? "- For anything current or that you aren't sure of (news, weather, prices, scores, recent releases), use Google Search, and say briefly where the answer came from."

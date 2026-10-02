@@ -115,6 +115,18 @@ written from facts (weather included), the Memory tab and the YouTube tab.
 Update the guide (`server/src/lib/brain/core/guide.ts`) whenever a screen
 changes — `server/tests/memory_guide.test.ts` checks its key facts.
 
+1.5.2 (phone 1.3.0) adds alarms on the phone: the agent's `set_phone_alarm`
+tool (time HH:MM or in_seconds, label, briefing delay) leaves a control message
+in the shared conversation, and the phone app runs it through its native
+`Alarm` plugin — an AlarmManager alarm clock with its own alarm screen over the
+lock screen (Snooze, Turn off), re-armed after a reboot — so it rings with the
+PC off. Turning one off starts the morning briefing by itself after the user's
+delay (Settings → "Alarm & the briefing", 0–600 s, default 30). Covered by
+`server/tests/phone_alarm.test.ts`, `mobile/src/lib/alarm.test.ts`, the fake
+Gemini's alarm branch and the phone E2E (sets one through the chat, checks
+Android's own alarm list, rings a 20-second alarm, turns it off on its screen
+and waits for the briefing to start talking).
+
 1.5.1 (phone 1.2.1) makes the voice read every reply to the end: replies are
 split into pieces at sentence boundaries and each piece is spoken, so a long
 explanation (like the YouTube setup walkthrough) is never cut off part-way, and

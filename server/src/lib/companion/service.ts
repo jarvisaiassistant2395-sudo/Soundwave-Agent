@@ -156,6 +156,21 @@ export function completePairing(info: { name: string; platform: string; model?: 
 
 // ── Paired phones ───────────────────────────────────────────────────────────
 
+/** Every paired phone (whether or not it's reachable right now). */
+export function pairedPhones(): CompanionDevice[] {
+  return loadState().devices;
+}
+
+/**
+ * A paired phone that asked something in the last ~45 s (it long-polls every
+ * ≤20 s, so this is what "connected" means) — the one an alarm can be set on
+ * right away. Null when no phone is paired or none is answering.
+ */
+export function connectedPhone(now = Date.now()): CompanionDevice | null {
+  const phones = loadState().devices;
+  return phones.find((d) => d.lastSeenAt && now - Date.parse(d.lastSeenAt) < ONLINE_WINDOW_MS) ?? null;
+}
+
 export function findDevice(id: string): CompanionDevice | null {
   return loadState().devices.find((d) => d.id === id) ?? null;
 }

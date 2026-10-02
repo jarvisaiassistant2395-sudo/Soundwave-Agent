@@ -33,6 +33,20 @@ import {
   type PhoneKit,
 } from "../lib/offline";
 import { phoneVoiceAvailable, synthesizeOnPhone } from "../lib/phoneVoice";
+import {
+  alarmAvailable,
+  cancelAlarm as cancelPhoneAlarm,
+  consumePendingBriefing,
+  getBriefingDelay,
+  listAlarms,
+  notificationsAllowed,
+  onBriefingDue,
+  requestNotifications,
+  setAlarmNow,
+  setBriefingDelay as setPhoneBriefingDelay,
+  type PhoneAlarm,
+} from "../lib/alarm";
+import { alarmLabel, alarmTarget, DEFAULT_BRIEFING_AFTER_ALARM_SECONDS, clockLabel } from "../../../server/src/lib/brain/core/alarm";
 import { phoneFetchText } from "../lib/phoneFetch";
 import { toast } from "../lib/toast";
 import { inBriefingWindow, localDay } from "../../../server/src/lib/brain/core/morning";
@@ -70,6 +84,15 @@ export interface Companion {
   briefing: BriefingPhase;
   /** The briefing plan (topics, time, automatic), from the agent's memory. */
   briefingPlan: BriefingPlan | null;
+  /** Alarms set on this phone (the agent sets them; the next one shows in Settings). */
+  alarms: PhoneAlarm[];
+  /** Seconds after an alarm is turned off before the morning briefing starts. */
+  briefingDelaySeconds: number;
+  /** Android lets the app notify — alarms need it. */
+  notifications: boolean;
+  cancelAlarm: (id: string) => Promise<void>;
+  setBriefingDelaySeconds: (seconds: number) => Promise<void>;
+  allowNotifications: () => Promise<void>;
   /** Today's briefing now — even if it was heard already. */
   hearBriefing: () => Promise<void>;
   stopBriefing: () => void;
@@ -103,6 +126,9 @@ export function useCompanion(): Companion {
   const [memory, setMemoryState] = useState<MemorySnapshot | null>(null);
   const [outbox, setOutboxState] = useState<Outbox>(EMPTY_OUTBOX);
   const [briefing, setBriefing] = useState<BriefingPhase>({ kind: "idle" });
+  const [alarms, setAlarms] = useState<PhoneAlarm[]>([]);
+  const [briefingDelaySeconds, setBriefingDelayState] = useState(DEFAULT_BRIEFING_AFTER_ALARM_SECONDS);
+  const [notifications, setNotifications] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   const settingsRef = useRef(settings);
@@ -124,6 +150,9 @@ export function useCompanion(): Companion {
   const voiceJobs = useRef(new Set<string>());
   const seenIds = useRef<Set<string> | null>(null);
   const speakRef = useRef<(m: ChatMessage) => Promise<void>>(async () => undefined);
+  /** Alarms the PC asked for that this phone already set (it must run them once). */
+  const alarmControlsDone = useRef<string[]>([]);
+  const runAlarmControls = useRef<(messages: ChatMessage[]) => Promise<void>>(async () => undefined);
 
   const setConversation = useCallback((c: Conversation | null) => {
     conversationRef.current = c;
@@ -158,9 +187,19 @@ export function useCompanion(): Companion {
         storage.loadHeard(),
       ]);
       heardRef.current = heard;
+      alarmControlsDone.current = await storage.loadAlarmsDone();
+      if (alarmAvailable()) {
+        void getBriefingDelay().then(setBriefingDelayState);
+        void notificationsAllowed().then(setNotifications);
+        void listAlarms().then(setAlarms);
+      }
       setSettings(s);
       settingsRef.current = s;
-      if (r && c) setConversation(c);
+      if (r && c) {
+        setConversation(c);
+        // An alarm the PC asked for while this app was closed: set it now.
+        void runAlarmControls.current(c.messages);
+      }
       if (r) {
         kitRef.current = k;
         setKitState(k);
@@ -186,6 +225,33 @@ export function useCompanion(): Companion {
     },
     [setConversation, setOutbox],
   );
+
+  /**
+   * An alarm the PC asked for: a control message in the conversation (set by
+   * the PC's set_phone_alarm tool). The phone sets it natively — once — and
+   * answers in the chat so both the PC and the phone show what happened.
+   */
+  const runControls = useCallback(
+    async (messages: ChatMessage[]) => {
+      const pending = messages.filter((m) => m.control?.kind === "alarm.set" && !alarmControlsDone.current.includes(m.control.id));
+      for (const message of pending) {
+        const control = message.control!;
+        alarmControlsDone.current = [...alarmControlsDone.current, control.id].slice(-50);
+        void storage.saveAlarmsDone(alarmControlsDone.current);
+        if (!alarmAvailable()) continue; // a desktop browser: nothing to ring
+        const run = await setAlarmNow({ at: control.at, label: control.label, briefingAfterSeconds: control.briefingAfterSeconds });
+        setAlarms(await listAlarms());
+        const at = Date.now();
+        const alarm = run.alarm;
+        const text = run.problem
+          ? `⚠️ ${run.problem}`
+          : `⏰ Alarm set for ${clockLabel(alarm!.at)}${alarm!.label ? ` — “${alarm!.label}”` : ""}. When you turn it off, your briefing starts ${alarm!.briefingAfterSeconds === 0 ? "right away" : `${alarm!.briefingAfterSeconds} seconds later`}.`;
+        addLocal([{ id: phoneMessageId(at), sender: "assistant", text, time: timeLabel(at), at, tag: "SYS", answeredBy: "phone" }]);
+      }
+    },
+    [addLocal],
+  );
+  runAlarmControls.current = runControls;
 
   // One client per paired PC; it runs while the app is in front.
   useEffect(() => {
@@ -225,6 +291,7 @@ export function useCompanion(): Companion {
       c.on("conversation", (conv) => {
         setConversation(conv);
         void storage.saveConversation(conv);
+        void runAlarmControls.current(conv.messages);
         // Read aloud the outcome of a short you asked for by voice.
         const seen = seenIds.current;
         if (seen) {
@@ -265,8 +332,11 @@ export function useCompanion(): Companion {
       if (active) {
         c.start();
         c.retryNow();
-        // Opened in the morning: the briefing starts by itself.
-        void deliverBriefingRef.current();
+        // Opened in the morning (or after an alarm was turned off): the briefing starts by itself.
+        void (async () => {
+          const due = await consumePendingBriefing();
+          void deliverBriefingRef.current(due ? { force: true } : undefined);
+        })();
       } else {
         c.stop();
         briefingStop.current = true;
@@ -408,6 +478,9 @@ export function useCompanion(): Companion {
         }
         if (!msg || briefingStop.current) return;
         markHeard(day, msg);
+        // This run IS the briefing: clear the "an alarm was turned off" flag so the
+        // next time the app comes to the front it doesn't say it all again.
+        if (opts.force) void consumePendingBriefing().catch(() => undefined);
         const synth = synthesizer();
         if (!synth) return;
         setBriefing({ kind: "speaking", messageId: msg.id });
@@ -428,10 +501,22 @@ export function useCompanion(): Companion {
     deliverBriefing(opts).catch((err) => toast(`The morning briefing didn't work this time: ${(err as Error).message}`, "error", 6000));
 
   // On open (after loading, once paired) — and when the plan first reaches the phone.
+  // An alarm that was turned off means the briefing starts now, even outside
+  // the usual morning window (that's what the alarm is for).
   const planKey = memory?.briefing ? `${memory.briefing.auto}|${memory.briefing.time}|${memory.briefing.topics.length}` : "";
   useEffect(() => {
-    if (loaded && record) void deliverBriefingRef.current();
+    if (!loaded || !record) return;
+    void (async () => {
+      const due = await consumePendingBriefing();
+      void deliverBriefingRef.current(due ? { force: true } : undefined);
+    })();
   }, [loaded, record?.deviceId, planKey]);
+
+  // The alarm was turned off while the app was already running: start the briefing.
+  useEffect(() => {
+    if (!alarmAvailable()) return;
+    return onBriefingDue(() => void deliverBriefingRef.current({ force: true }));
+  }, []);
 
   const stopBriefing = useCallback(() => {
     briefingStop.current = true;
@@ -453,6 +538,17 @@ export function useCompanion(): Companion {
         history,
         message: text,
         record: (op) => ops.push(op),
+        alarm: async (args) => {
+          const target = alarmTarget(args);
+          if (!target) return { set: false, reason: 'I need a clock time (HH:MM, e.g. "06:30") or in_seconds.' };
+          const run = await setAlarmNow({
+            at: target.at,
+            label: alarmLabel(args.label),
+            ...(typeof args.briefing_after_seconds === "number" ? { briefingAfterSeconds: args.briefing_after_seconds } : {}),
+          });
+          setAlarms(await listAlarms());
+          return run.result;
+        },
       });
       const at = Math.max(Date.now(), now + 1);
       const msg: ChatMessage = { id: phoneMessageId(at), sender: "assistant", text: reply.text, time: timeLabel(at), at, tag: reply.failed ? "SYS" : "VOICE", answeredBy: "phone" };
@@ -577,6 +673,18 @@ export function useCompanion(): Companion {
     setRecord(null);
   }, [client, setConversation]);
 
+  /** Settings → "Alarm & the briefing" (the phone's own list and delay). */
+  const cancelAlarm = useCallback(async (id: string) => {
+    await cancelPhoneAlarm(id);
+    setAlarms(await listAlarms());
+  }, []);
+  const setBriefingDelaySeconds = useCallback(async (seconds: number) => {
+    setBriefingDelayState(await setPhoneBriefingDelay(seconds));
+  }, []);
+  const allowNotifications = useCallback(async () => {
+    setNotifications(await requestNotifications());
+  }, []);
+
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch };
@@ -606,6 +714,12 @@ export function useCompanion(): Companion {
     pendingForPc: outbox.messages.length + outbox.memoryOps.length,
     briefing,
     briefingPlan: effectiveMemory(memory, outbox.memoryOps)?.briefing ?? null,
+    alarms,
+    briefingDelaySeconds,
+    notifications,
+    cancelAlarm,
+    setBriefingDelaySeconds,
+    allowNotifications,
     hearBriefing: () => deliverBriefingRef.current({ force: true }),
     stopBriefing,
     pair,

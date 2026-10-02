@@ -4,7 +4,10 @@
 // on the reply (a short to follow, a video to show) for the app to render.
 
 import { ago, listShorts } from "../shortsLibrary.js";
-import { findJob } from "../conversation.js";
+import { appendToConversation, findJob } from "../conversation.js";
+import { chatTime, newMessageId, type ChatMessage } from "../chatMessages.js";
+import { connectedPhone, pairedPhones } from "../companion/service.js";
+import { alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
 import { config } from "../../config.js";
@@ -289,6 +292,55 @@ AGENT_TOOLS.push(
     }),
   ),
   guideTool<ToolContext>(),
+  {
+    declaration: PHONE_ALARM_DECLARATION,
+    // Only when a phone is paired: without one there is nothing to ring.
+    available: () => pairedPhones().length > 0,
+    sideEffect: true,
+    async run(args, ctx) {
+      const phone = connectedPhone() ?? pairedPhones()[0]!;
+      const now = new Date();
+      const target = alarmTarget(args, now);
+      if (!target) {
+        return {
+          set: false,
+          reason: 'I need a clock time (24-hour HH:MM, e.g. "06:30") or in_seconds — ask the user which time they want.',
+        };
+      }
+      const label = alarmLabel(args.label);
+      const delay = briefingAfterSeconds(args.briefing_after_seconds);
+      const connected = Boolean(connectedPhone());
+      const control: ChatMessage["control"] = {
+        kind: "alarm.set",
+        id: newMessageId(now.getTime()),
+        at: target.at,
+        label,
+        briefingAfterSeconds: delay,
+      };
+      // The phone executes this when it next syncs (it must be open to answer).
+      appendToConversation({
+        id: newMessageId(now.getTime() + 1),
+        sender: "assistant",
+        text: `⏰ Alarm on ${phone.name} for ${target.label12}${label ? ` — “${label}”` : ""}. When you turn it off, your morning briefing starts ${delay === 0 ? "right away" : `${delay} seconds later`}.`,
+        time: chatTime(now),
+        at: now.getTime(),
+        tag: "SYS",
+        control,
+      });
+      ctx.effects.tag ??= "SYS";
+      ctx.effects.log.push(`Asked ${phone.name} to set an alarm for ${target.label12}`);
+      return {
+        set: true,
+        onPhone: phone.name,
+        ringsAt: target.label12,
+        briefingAfterSeconds: delay,
+        phoneConnected: connected,
+        ...(connected
+          ? { note: "The phone has the alarm now." }
+          : { note: "The phone isn't connected at this moment, so it will set the alarm the next time its app is open — tell the user that." }),
+      };
+    },
+  },
 );
 
 export function toolsFor(ctx: ToolContext): AgentTool[] {

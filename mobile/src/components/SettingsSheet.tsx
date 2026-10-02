@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Brain, Check, Laptop, Lock, Play, Sunrise, Unlink } from "lucide-react";
+import { AlarmClock, Bell, Brain, Check, Laptop, Lock, Play, Sunrise, Unlink } from "lucide-react";
 import { VOICE_META } from "../../../frontend/src/lib/voices";
 import type { Companion } from "../state/useCompanion";
 import type { SpeakMode } from "../lib/storage";
@@ -41,6 +41,7 @@ function phoneChatLine(companion: Companion): { title: string; detail: string; o
 export function SettingsSheet({ open, onClose, companion }: { open: boolean; onClose: () => void; companion: Companion }) {
   const { record, pc, state, settings, updateSettings } = companion;
   const [confirming, setConfirming] = useState(false);
+  const [delayDraft, setDelayDraft] = useState<string | null>(null);
   useBackHandler(open, onClose);
   if (!record) return null;
   const pcVoice = pc?.voice ?? null;
@@ -126,6 +127,73 @@ export function SettingsSheet({ open, onClose, companion }: { open: boolean; onC
           >
             Hear today's briefing now
           </button>
+        </div>
+      </section>
+
+      <section className="mt-6" data-testid="alarm-settings">
+        <h3 className="px-1 text-[13px] font-semibold uppercase tracking-[0.12em] text-gray-500">Alarm &amp; the briefing</h3>
+        <div className="mt-2 rounded-3xl border border-line bg-navy/60 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-400/10 text-sky-300">
+              <AlarmClock className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold text-gray-100">
+                {companion.alarms.length === 0
+                  ? "No alarm set"
+                  : `Next alarm ${new Date(companion.alarms[0]!.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${companion.alarms[0]!.label ? ` — ${companion.alarms[0]!.label}` : ""}`}
+              </p>
+              <p className="mt-0.5 text-[13px] leading-snug text-gray-400">
+                Ask me: “set an alarm for 6:30”. The alarm rings here, and after you turn it off your morning briefing starts by itself.
+              </p>
+            </div>
+          </div>
+
+          <label className="mt-4 flex items-center justify-between gap-3">
+            <span className="text-[14.5px] text-gray-200">Start my briefing</span>
+            <span className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={600}
+                inputMode="numeric"
+                value={delayDraft ?? String(companion.briefingDelaySeconds)}
+                onChange={(e) => setDelayDraft(e.target.value)}
+                onBlur={() => {
+                  if (delayDraft !== null) {
+                    void companion.setBriefingDelaySeconds(Number(delayDraft) || 0);
+                    setDelayDraft(null);
+                  }
+                }}
+                className="h-10 w-20 rounded-xl border border-line bg-black/30 px-3 text-center text-[15px] text-gray-100 outline-none focus:border-violet-400"
+                data-testid="alarm-delay-input"
+              />
+              <span className="text-[14.5px] text-gray-400">s after</span>
+            </span>
+          </label>
+          <p className="mt-1 text-[12.5px] text-gray-500">seconds after I turn the alarm off (0–600)</p>
+
+          {companion.alarms.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void companion.cancelAlarm(companion.alarms[0]!.id)}
+              className="mt-3 h-11 w-full rounded-2xl bg-white/[0.06] text-[14.5px] font-semibold text-gray-200 active:bg-white/10"
+              data-testid="alarm-cancel"
+            >
+              Cancel the next alarm
+            </button>
+          )}
+
+          {!companion.notifications && (
+            <button
+              type="button"
+              onClick={() => void companion.allowNotifications()}
+              className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-400/15 text-[14.5px] font-semibold text-sky-100 active:bg-sky-400/25"
+              data-testid="alarm-notifications"
+            >
+              <Bell className="h-4 w-4" /> Allow notifications (alarms need this)
+            </button>
+          )}
         </div>
       </section>
 

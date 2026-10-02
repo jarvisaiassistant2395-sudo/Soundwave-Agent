@@ -45,9 +45,25 @@ function answer(body) {
   if (result) {
     const r = result.response ?? {};
     if (result.name === "get_pc_status") return text(`Your PC runs ${r.os} with ${r.cpu?.cores} CPU cores; ${r.memory?.usedPercent}% of memory is in use.`);
+    if (result.name === "set_phone_alarm") {
+      if (r.set === false) return text(`I couldn't set that alarm: ${r.reason ?? "no time was given"}.`);
+      return text(`Alarm set for ${r.ringsAt}${r.label ? ` — “${r.label}”` : ""}. When you turn it off, your briefing starts ${r.briefingAfterSeconds} seconds later.`);
+    }
     return text(`Done (${result.name}).`);
   }
   const said = (last?.parts ?? []).map((p) => p.text ?? "").join(" ");
+  // Setting an alarm on the phone (set_phone_alarm — only when the PC really
+  // offers it: no phone paired, no alarm tool).
+  const declares = (name) =>
+    (body?.tools ?? []).some((t) => (t?.functionDeclarations ?? []).some((d) => d?.name === name));
+  if (declares("set_phone_alarm") && /\balarm\b/i.test(said) && /(set|wake me|ring|for)/i.test(said)) {
+    const inSeconds = Number(/(?:in|after)\s+(\d+)\s*seconds?/i.exec(said)?.[1] ?? "");
+    const clock = /(\d{1,2}):(\d{2})/.exec(said);
+    const args = Number.isFinite(inSeconds) && inSeconds > 0
+      ? { in_seconds: inSeconds, label: "CI alarm", briefing_after_seconds: 5 }
+      : { time: clock ? `${clock[1].padStart(2, "0")}:${clock[2]}` : "06:30", label: "CI alarm" };
+    return call("set_phone_alarm", args, "alarm-1");
+  }
   if (/connection test/i.test(said)) return text("ready");
   if (/how is my pc|pc status/i.test(said)) return call("get_pc_status", {}, "pc-status-1");
   if (/answering from the Soundwave phone app on your own/.test(instruction)) return text(FAKE_PHONE);

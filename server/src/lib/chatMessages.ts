@@ -18,6 +18,17 @@ export interface ShortBackground {
   section: { start: number; end: number } | null;
 }
 
+/** What the PC asked the phone app to do (it runs it once and answers in the chat). */
+export interface ChatControl {
+  kind: "alarm.set";
+  id: string;
+  /** When the alarm rings, ms since epoch. */
+  at: number;
+  label?: string;
+  /** Seconds after the alarm is turned off before the morning briefing starts. */
+  briefingAfterSeconds?: number;
+}
+
 export interface ChatMessage {
   id: string;
   sender: "user" | "assistant" | "system";
@@ -41,6 +52,8 @@ export interface ChatMessage {
   answeredBy?: "phone";
   /** This is the morning briefing for that day ("2026-10-02"): the apps speak it once when opened. */
   briefingDate?: string;
+  /** The PC asked the phone app to do this (an alarm) — the phone runs it once, then answers here. */
+  control?: ChatControl;
 }
 
 export function chatTime(date = new Date()): string {
@@ -109,6 +122,15 @@ export const chatMessageSchema = z
     via: z.literal("phone").optional(),
     answeredBy: z.literal("phone").optional(),
     briefingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    control: z
+      .object({
+        kind: z.literal("alarm.set"),
+        id: z.string().min(1).max(120),
+        at: z.number().finite(),
+        label: z.string().max(60).optional(),
+        briefingAfterSeconds: z.number().min(0).max(600).optional(),
+      })
+      .optional(),
   })
   .strip();
 

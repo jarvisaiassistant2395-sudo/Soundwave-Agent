@@ -114,6 +114,17 @@ With the PC off the phone does the same itself and speaks through the native
 `EdgeTts` plugin (`mobile/android/.../EdgeTtsPlugin.java` — Microsoft's voices
 need headers a WebView can't send).
 
+**Alarms on the phone** (desktop 1.5.2 / phone 1.3.0): ask the agent for one
+("set an alarm for 6:30", "wake me in 20 minutes") and it arms a real alarm on
+the paired Android phone — `set_phone_alarm` leaves a control message in the
+shared conversation, and the phone's native `Alarm` plugin puts it in Android's
+alarm clock (its own alarm screen over the lock screen, Snooze and Turn off,
+re-armed after a reboot), so it rings with the PC off. Turning one off starts
+the morning briefing by itself after the seconds the user chose (phone app →
+Settings → **Alarm & the briefing**, 0–600, default 30; the agent can give a
+per-alarm delay too), which is also how the briefing starts when the phone is
+all the user has.
+
 **Memory** (desktop 1.4.0+): `%APPDATA%\Soundwave AI\data\agent-memory.json`
 — notes, Gemini's running summary of earlier conversations (written by the
 lighter Flash-Lite model when the chat outgrows the 24 messages sent along,

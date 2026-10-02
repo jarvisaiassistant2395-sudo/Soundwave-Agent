@@ -435,6 +435,113 @@ try {
   else if (briefingNow.heard?.on !== "phone") fail(`the PC doesn't know the briefing was heard on the phone (${JSON.stringify(briefingNow.heard)})`);
   else ok("the phone's morning briefing is in the PC's conversation, and the PC knows it was heard (it won't speak it again)");
 
+  // ── The alarm (1.3.0): the agent arms a real alarm on this phone ──────────
+  // The agent's `set_phone_alarm` tool leaves a control message in the shared
+  // conversation; the phone runs it natively (AlarmManager) and answers in the
+  // chat. Then a short alarm really rings: turning it off starts the briefing
+  // after the delay that came with the alarm.
+  await say(page, "set an alarm for 6:30 tomorrow morning, call it CI wake-up", /Alarm set for 6:30 AM/, 60_000);
+  // The agent's reply and the phone's own confirmation race each other: wait for
+  // the phone's message (the “on phone” one, naming the alarm time).
+  const phoneAlarmMsg = () =>
+    page.evaluate(() => {
+      const els = [...document.querySelectorAll('[data-testid="msg-agent"]')];
+      const mine = [...els].reverse().find((e) => e.querySelector('[data-testid="answered-on-phone"]') && /Alarm set for 6:30 AM/.test(e.innerText));
+      return (mine?.innerText ?? "").replace(/\s+/g, " ");
+    });
+  let armedMsg = "";
+  for (let i = 0; i < 30 && !armedMsg; i++) {
+    armedMsg = await phoneAlarmMsg();
+    if (!armedMsg) await sleep(1000);
+  }
+  if (!armedMsg) fail("the phone never confirmed the alarm in the chat itself");
+  else ok(`the agent set an alarm on the phone and the phone armed it itself: “${firstLine(armedMsg)}”`);
+  const armedInOs = adb("shell", "dumpsys alarm | grep -ci soundwave || true").trim();
+  if (!(Number(armedInOs) > 0)) fail(`the alarm isn't in Android's own alarm list (dumpsys alarm: ${armedInOs})`);
+  else ok(`Android has the alarm armed (dumpsys alarm lists Soundwave ${armedInOs}×)`);
+
+  // A short one, so it really rings here: in 20 seconds, briefing 5 s after Turn off.
+  await say(page, "set an alarm in 20 seconds", /Alarm set for/, 60_000);
+  const alarmSetAt = Date.now();
+  let alarmScreen = "";
+  for (let i = 0; i < 24 && !/AlarmActivity/.test(alarmScreen); i++) {
+    await sleep(1500);
+    alarmScreen = [
+      adb("shell", "dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3"),
+      adb("shell", "dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -2"),
+    ].join(" | ");
+  }
+  if (!/AlarmActivity/.test(alarmScreen)) fail(`the alarm didn't ring 20 s after it was set (top activity: ${alarmScreen.replace(/\s+/g, " ").slice(0, 200)})`);
+  else ok(`the alarm rang ${Math.round((Date.now() - alarmSetAt) / 1000)} s after it was set, and its own alarm screen is up`);
+  screenshot("8-alarm-ringing");
+
+  // “Turn off”, the way a person does it — through Android's own UI dump. If the
+  // dump hiccups, the same thing through the app's `soundwave_alarm` extra (what
+  // the notification's button uses; MainActivity is singleTask, so the running
+  // app gets it without reloading).
+  const tapTurnOff = () => {
+    const dump = adb("shell", "rm -f /sdcard/sw-alarm.xml; uiautomator dump /sdcard/sw-alarm.xml >/dev/null 2>&1; cat /sdcard/sw-alarm.xml 2>/dev/null || true");
+    const m = /resource-id="ai\.soundwave\.companion:id\/alarm_dismiss"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(dump);
+    if (!m) return null;
+    const x = Math.round((Number(m[1]) + Number(m[3])) / 2);
+    const y = Math.round((Number(m[2]) + Number(m[4])) / 2);
+    adb("shell", `input tap ${x} ${y}`);
+    return { x, y };
+  };
+  let tapped = null;
+  for (let i = 0; i < 4 && !tapped; i++) {
+    await sleep(1200);
+    tapped = tapTurnOff();
+  }
+  const turnedOffAt = Date.now();
+  if (tapped) ok(`turned the alarm off on its own screen (tapped “Turn off” at ${tapped.x},${tapped.y})`);
+  else {
+    annotate("warning", "Phone app E2E", "the alarm screen didn't come out of the UI dump — turning it off through the app's own soundwave_alarm extra instead");
+    adb("shell", `am start -n ${PKG}/.MainActivity -e soundwave_alarm dismiss`);
+  }
+
+  // The alarm's own delay (5 s here): the briefing must not start immediately,
+  // and then it must actually start talking.
+  await sleep(3000);
+  const earlyPhase = await page.evaluate(() => document.querySelector('[data-testid="briefing-bar"]')?.getAttribute("data-phase") ?? null);
+  if (earlyPhase === "speaking") fail("the briefing started before the alarm's delay was over");
+  let alarmSpoke = false;
+  let alarmProblem = null;
+  for (let i = 0; i < 90 && !alarmSpoke && !alarmProblem; i++) {
+    const st = await page
+      .evaluate(() => ({
+        phase: document.querySelector('[data-testid="briefing-bar"]')?.getAttribute("data-phase") ?? null,
+        text: document.body.innerText,
+      }))
+      .catch(() => ({ phase: null, text: "" }));
+    alarmSpoke = st.phase === "speaking";
+    alarmProblem = /The morning briefing didn't work this time: ([^\n]+)/.exec(st.text)?.[1] ?? null;
+    if (!alarmSpoke && !alarmProblem) await sleep(500);
+  }
+  if (alarmProblem) fail(`the briefing after the alarm failed: ${alarmProblem}`);
+  else if (!alarmSpoke) fail("the briefing never started talking after the alarm was turned off");
+  else ok(`turned off → the briefing started talking ${Math.round((Date.now() - turnedOffAt) / 1000)} s later (the alarm said 5 s; then today's briefing is fetched and the voice starts)`);
+  await sleep(500);
+  screenshot("9-alarm-briefing");
+
+  // Settings → the alarm that is left (6:30, tomorrow) and cancel it there.
+  await page.click('[data-testid="settings-button"]');
+  await bodyHas(page, /Alarm & the briefing/, 20_000);
+  const alarmSheet = async () => ((await page.textContent('[data-testid="alarm-settings"]')) ?? "").replace(/\s+/g, " ").trim();
+  const withAlarm = await alarmSheet();
+  if (!/Next alarm 6:30 AM/.test(withAlarm)) fail(`the 6:30 alarm isn't in the settings sheet: ${withAlarm.slice(0, 200)}`);
+  else await page.click('[data-testid="alarm-cancel"]');
+  await page.waitForFunction(() => /No alarm set/.test(document.body.innerText), null, { timeout: 20_000 }).catch(() => undefined);
+  const withoutAlarm = await alarmSheet();
+  if (!/No alarm set/.test(withoutAlarm)) fail(`cancelling didn't clear the alarm list: ${withoutAlarm.slice(0, 200)}`);
+  else {
+    const leftInOs = adb("shell", "dumpsys alarm | grep -ci soundwave || true").trim();
+    if (Number(leftInOs) > 0) fail(`the cancelled alarm is still in Android's alarm list (dumpsys alarm: ${leftInOs})`);
+    else ok("the settings sheet listed the 6:30 alarm, and cancelling it took it out of Android's alarm list too");
+  }
+  adb("shell", "input keyevent 4");
+  await page.waitForFunction(() => !/Read replies aloud/.test(document.body.innerText), null, { timeout: 10_000 }).catch(() => undefined);
+
   // Restart the app: still paired, conversation still there.
   const oldPid = webviewPid;
   adb("shell", `am force-stop ${PKG}`);
@@ -445,6 +552,15 @@ try {
   await bodyHas(page, /Typed in the Command Center during CI/, 30_000);
   await bodyHas(page, /Connected to/, 60_000);
   ok("after a restart the app is still paired and shows the conversation");
+  // The alarm's briefing was heard: coming back must not say it again.
+  const settledFake = await page.evaluate(() => [...document.querySelectorAll('[data-testid="msg-agent"]')].filter((e) => /fake gemini/i.test(e.innerText)).length);
+  await sleep(4000);
+  const afterRestart = await page.evaluate(() => ({
+    phase: document.querySelector('[data-testid="briefing-bar"]')?.getAttribute("data-phase") ?? null,
+    fake: [...document.querySelectorAll('[data-testid="msg-agent"]')].filter((e) => /fake gemini/i.test(e.innerText)).length,
+  }));
+  if (afterRestart.phase === "speaking" || afterRestart.fake > settledFake) fail(`the briefing was said again after a restart (phase ${afterRestart.phase}, briefing messages ${settledFake} → ${afterRestart.fake})`);
+  else ok("after a restart the briefing wasn't said again — the alarm's briefing stays spoken once");
   await sleep(1000);
   screenshot("7-after-restart");
 } catch (err) {

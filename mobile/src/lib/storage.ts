@@ -14,6 +14,8 @@ const KEYS = {
   outbox: "soundwave.outbox",
   /** Days whose morning briefing this phone already spoke. */
   heard: "soundwave.heardBriefings",
+  /** Alarms the PC asked for that this phone already set (so they run once). */
+  alarmsDone: "soundwave.alarmsDone",
 };
 
 function parse<T>(raw: string | null, ok: (v: unknown) => boolean): T | null {
@@ -111,6 +113,12 @@ export const storage = {
   },
   saveHeard(days: string[]): Promise<void> {
     return set(KEYS.heard, JSON.stringify(days.slice(-14)));
+  },
+  async loadAlarmsDone(): Promise<string[]> {
+    return parse<string[]>(await get(KEYS.alarmsDone), (v) => Array.isArray(v)) ?? [];
+  },
+  saveAlarmsDone(ids: string[]): Promise<void> {
+    return set(KEYS.alarmsDone, JSON.stringify(ids.slice(-50)));
   },
   /** "Unpair" (or the PC forgot this phone): forget the PC and everything from it, the key included. */
   async clearAll(): Promise<void> {

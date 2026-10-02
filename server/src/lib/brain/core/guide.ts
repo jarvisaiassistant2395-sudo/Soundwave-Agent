@@ -247,7 +247,7 @@ Install and pair (once):
 
 With the PC on (Soundwave AI running — the tray counts — and the phone on the same Wi-Fi): chat and talk to the full agent, make shorts, watch finished shorts (Watch button), hear replies in the Soundwave voices, and run the Morning Setup (it opens your morning apps on the PC). Messages from the phone show as "YOU (PHONE)" on the PC.
 
-With the PC off or out of reach: the app keeps chatting — Gemini answers directly on the phone, with the conversation and the agent's memory, so it knows what you did. It can explain every Soundwave feature, change your morning briefing, and give you the daily briefing on your own topics (it researches them with Gemini). Voice input works (Gemini transcribes it) and replies are read aloud in your Soundwave voice by the phone itself. It can't make shorts, show or download videos, or open things on the PC until the PC is back. Everything you said goes back into the PC's conversation and memory as soon as the phone reaches the PC again.
+With the PC off or out of reach: the app keeps chatting — Gemini answers directly on the phone, with the conversation and the agent's memory, so it knows what you did. It can explain every Soundwave feature, change your morning briefing, give you the daily briefing on your own topics (it researches them with Gemini), and set alarms on the phone itself. Voice input works (Gemini transcribes it) and replies are read aloud in your Soundwave voice by the phone itself. It can't make shorts, show or download videos, or open things on the PC until the PC is back. Everything you said goes back into the PC's conversation and memory as soon as the phone reaches the PC again.
 
 Chatting without the PC needs "Chat from the phone when this PC is off" in Settings → Phone on the PC (on by default) and a Gemini key in Settings → Brain. The PC then gives your paired phones a copy of the key and the memory, end-to-end encrypted. Turn it off and phones delete the key next time they connect.
 
@@ -256,6 +256,21 @@ Privacy: the phone talks straight to the PC over your Wi-Fi, end-to-end encrypte
 If it says "Can't reach your PC": check Soundwave AI is running on the PC, "Let my phone connect" is on, both are on the same Wi-Fi, and Windows Firewall allows Soundwave AI on Private networks (and the Wi-Fi is set to Private). Away from home: install a VPN such as Tailscale on both, then pair again.
 
 Updating the app: test builds are signed with a new key each time, so uninstall the old app first, install the new one and pair again. "This phone isn't paired anymore": it was removed on the PC — pair again. Unpair from the phone in its Settings, or remove phones in Settings → Phone on the PC.`,
+  },
+  {
+    id: "alarms",
+    title: "Alarms on the phone",
+    summary: "ask the agent for an alarm, Snooze and Turn off, the morning briefing starting after you turn it off, the seconds setting, permissions",
+    text: `The agent can set an alarm on your Android phone. Just ask: "set an alarm for 6:30" or "wake me at 7 with an alarm called Gym".
+
+What happens: Soundwave's own alarm screen opens at that time (over the lock screen) and the alarm rings — Snooze (9 minutes) or Turn off. The alarm lives on the phone, so it rings with the PC off, and it shows in the phone's notification bar while it's set.
+
+After you turn it off, your morning briefing starts by itself a few seconds later: the phone already has it, or writes it there if the PC is off. The wait is yours to set — phone app → Settings → "Alarm & the briefing": "Start my briefing ___ seconds after I turn off an alarm" (default 30, 0–600). You can also say it in the chat: "start my briefing a minute after I turn off my alarm".
+
+Ask for an alarm from the PC too (Command Center): if your phone is connected, it's set there; if it isn't, the alarm is set the next time the phone app is open — the agent tells you which happened. Ask the phone itself when the PC is off and it sets it on the spot.
+
+If the alarm doesn't ring, the phone needs to be allowed to notify: open the phone app → Settings → "Allow notifications" (Android 13+ asks the first time you set an alarm). Alarms are exact timers, so Android may also ask for "Alarms & reminders" permission the first time. Keep the phone's battery saver off for Soundwave if your phone has a strict one (Xiaomi, Huawei, Samsung) — otherwise the alarm can be delayed while the screen is off. Turning an alarm off before it rings: phone app → Settings → "Next alarm" → Cancel.`,
+
   },
   {
     id: "morning-setup",
@@ -277,7 +292,9 @@ Set it up — either way works, and both are saved in my memory (so the phone kn
 
 With the PC off: the phone does everything itself. When you open the app after the briefing time it researches your topics with Gemini, writes the briefing and reads it aloud in your Soundwave voice (the phone app can speak Microsoft's voices on its own). Weather and your last known shorts are included; nothing is opened on the PC. If the PC was on at briefing time, the briefing is already waiting and the phone starts talking right away. Either way it goes into the PC's conversation.
 
-On the phone: tap Stop to stop it, or the speaker button to hear it again. The phone's Settings → "Talk when I open the app" turns the automatic speaking off on that phone.
+Another way it starts by itself: set an alarm (ask the agent) and the briefing begins a few seconds after you turn the alarm off — the wait is set in the phone's Settings → "Alarm & the briefing" (30 seconds by default).
+
+On the phone: tap Stop to stop it, or the speaker button to hear it again. The phone's Settings → "Talk when I open the app" turns the automatic speaking off on that phone (the alarm still starts it when you ask for an alarm).
 
 Other Morning Setup settings (Settings → Morning Setup): the city for the weather (by default your PC's time zone city), the websites and apps the chip opens, "Open them when I start it from my phone", and "Include three short ideas". Without a Gemini key the briefing still has the weather and your shorts, but no research or ideas.`,
   },
