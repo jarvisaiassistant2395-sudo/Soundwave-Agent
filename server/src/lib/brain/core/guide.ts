@@ -92,6 +92,20 @@ Rendering takes a few minutes per clip; the clips are posted in this chat as the
 Only one video renders at a time (this and the normal shorts share that). Nothing is ever posted anywhere by itself.`,
   },
   {
+    id: "watch-channel",
+    title: "Watching a channel",
+    summary: "follow a creator and get shorts cut from every new video automatically — how to start, what it checks, limits",
+    text: `Tell the agent to watch a creator and every new video gets clipped by itself: "watch @MrBeast", "clip everything MrBeast posts, 2 shorts each", "keep an eye on @SomeChannel and cut the funny bits". Give the channel's link or its @handle — a video link is a different thing (that's the one-off "cut shorts out of this video").
+
+What happens: the PC checks the channel every few minutes. When a new video appears, the agent announces it in the chat and cuts the shorts you asked for (3 by default, 1–5), exactly like "shorts from a long video" — the agent's picks, vertical, captions, your clip limits — and posts them here as they're ready. You can give a focus ("the funny bits", "the part about pricing") that applies to every video.
+
+It only clips videos posted **after** you asked, unless you also say "and clip the latest one". So following a channel with 900 videos does not start 900 renders. If a channel posts several videos at once, the agent takes them in small batches (up to 3 per check) so the PC isn't swamped, and says when more are waiting.
+
+It runs on the PC while Soundwave AI is running — if the PC was off when the video was posted, it's picked up the next time Soundwave AI starts (the checks are about what's been seen, not about the clock). Ask "what channels are you watching?" any time for the state, and "stop watching @MrBeast" (or "stop watching all") to stop.
+
+One video renders at a time, clips and normal shorts together — that's why a queue can wait a few minutes. Up to 10 channels can be watched at once. The clips are the creator's own footage: keep them for yourself or use them where you have the right to (a repost of someone else's video needs their permission).`,
+  },
+  {
     id: "backgrounds",
     title: "Orbital NCG backgrounds",
     summary: "where the gameplay backgrounds come from, the never-reuse rule, history, reset, import problems",

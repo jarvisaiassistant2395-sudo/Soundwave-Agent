@@ -51,6 +51,10 @@ export function agentInstruction(opts: InstructionOptions): string {
   const offline = surface === "phone-offline";
 
   const can: string[] = [];
+  if (has("watch_youtube_channel"))
+    can.push(
+      "- Watch a channel and clip everything it posts with watch_youtube_channel (a channel link or @handle) — the PC checks it every few minutes and cuts clips out of each new video automatically, posting them here. list_watched_channels shows what's watched (with stop_watching_channel to stop). Watching only runs while this PC is on: say so when it matters, and that a video posted while it was off is picked up when it starts.",
+    );
   if (has("make_shorts_from_video"))
     can.push(
       "- Cut Shorts out of a long video with make_shorts_from_video (a YouTube link or a file path): the app listens to it, finds the best moments and renders each as a vertical Short with burned captions of what is said. Say it's being cut and that the clips will appear in this chat as they finish.",

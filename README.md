@@ -114,6 +114,17 @@ With the PC off the phone does the same itself and speaks through the native
 `EdgeTts` plugin (`mobile/android/.../EdgeTtsPlugin.java` — Microsoft's voices
 need headers a WebView can't send).
 
+**Watched channels** (desktop 1.5.4): tell it "watch @MrBeast, 2 shorts each" and
+that's it — the PC checks the channel every few minutes while Soundwave AI runs
+and, the moment something new is up, announces it in the chat and cuts the
+shorts out of it automatically (same pipeline as below). Only videos posted
+after you asked (or "clip the latest one too"); up to 10 channels; three videos
+per check at most, so a channel posting five videos doesn't swamp the PC; ask
+"what channels are you watching?" or "stop watching @MrBeast" any time.
+`lib/channelWatch.ts` + `brain/core/watch.ts` (pure rules: channel references,
+new-upload planning, status text). It lives on the PC: a video posted while it
+was off is picked up when it starts.
+
 **Shorts from a long video** (desktop 1.5.3): ask for it with a YouTube link or
 a video file already on the PC — "cut the best bits out of this", "3 clips from
 this video, the part about pricing". The agent downloads it (links), listens to

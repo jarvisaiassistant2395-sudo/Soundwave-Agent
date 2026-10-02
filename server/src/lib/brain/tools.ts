@@ -10,7 +10,9 @@ import { connectedPhone, pairedPhones } from "../companion/service.js";
 import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
 import { DEFAULT_CLIPS, MAX_CLIPS } from "./core/clips.js";
+import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } from "./core/watch.js";
 import { clipsBusy, startClipsJob } from "../videoClips.js";
+import { addWatch, kickChannelWatch, listWatches, removeWatch, watchStatuses } from "../channelWatch.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
 import { config } from "../../config.js";
 import { pcMemoryStore } from "../memory.js";
@@ -361,6 +363,107 @@ AGENT_TOOLS.push(
       } catch (err) {
         return { started: false, reason: (err as Error).message || "That video didn't work out." };
       }
+    },
+  },
+  {
+    declaration: {
+      name: "watch_youtube_channel",
+      description:
+        `Watch a YouTube channel and clip every new video it posts. Give the channel's link or its @handle (\"@MrBeast\", \"youtube.com/@MrBeast\") — not a video link. From then on the PC checks that channel every few minutes and, as soon as something new is up, cuts ${DEFAULT_WATCH_CLIPS} shorts out of it automatically (1–${MAX_WATCH_CLIPS}, or a focus like \"the funny bits\") and posts them in this chat. Use it whenever someone asks to follow a creator, to clip everything someone posts, or to keep an eye on a channel. It lives on this PC, so it only checks while Soundwave AI runs — anything posted while it was off is picked up the next time it starts.`,
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          channel: { type: "STRING", description: 'The channel to watch: "@MrBeast", "youtube.com/@MrBeast", or a /channel/UC… link.' },
+          clips: { type: "NUMBER", description: `How many shorts to cut out of each new video (1–${MAX_WATCH_CLIPS}, default ${DEFAULT_WATCH_CLIPS}).` },
+          focus: { type: "STRING", description: 'Optional: what to look for in each video, e.g. "the funny bits" or "the part about pricing".' },
+          latest: { type: "BOOLEAN", description: "Also clip the newest video that's already up, right now (default false — only videos posted from now on)." },
+        },
+        required: ["channel"],
+      },
+    },
+    // The clips are rendered on this PC.
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const channel = str(args.channel, 300);
+      const ref = parseChannelInput(channel);
+      if (!ref) {
+        return {
+          started: false,
+          reason:
+            'That has to be a channel, not a video — give me the channel link or its @handle (e.g. "@MrBeast" or "youtube.com/@MrBeast"). To cut one particular video, use make_shorts_from_video.',
+        };
+      }
+      const focus = str(args.focus, 300);
+      const wanted = Number(args.clips);
+      const already = listWatches().find((w) => w.slug === ref.slug);
+      try {
+        const watch = await addWatch({
+          channel,
+          ...(Number.isFinite(wanted) ? { clips: wanted } : {}),
+          ...(focus ? { focus } : {}),
+          ...(args.latest === true ? { latest: true } : {}),
+          resolution: ctx.resolution,
+          userId: ctx.userId,
+        });
+        ctx.effects.log.push(`Watching ${watch.channelName || watch.slug} (${watch.clips} clips per new video)`);
+        if (args.latest === true || !watch.lastCheckedAt) kickChannelWatch();
+        return {
+          started: true,
+          channel: watch.channelName || watch.slug,
+          clips: watch.clips,
+          ...(watch.focus ? { focus: watch.focus } : {}),
+          alreadyWatching: Boolean(already),
+          note: already
+            ? `${watch.channelName || watch.slug} was already being watched — I updated it: ${watch.clips} shorts out of every new video.`
+            : `From now on I'll check ${watch.channelName || watch.slug} every few minutes and cut ${watch.clips} short${watch.clips === 1 ? "" : "s"} out of each new video${
+                args.latest === true ? `, starting with the newest one now` : ` (videos already up are skipped — say "clip the latest one too" if you want that)`
+              }. The clips appear in this chat. This only runs while Soundwave AI is on the PC.`,
+        };
+      } catch (err) {
+        return { started: false, reason: (err as Error).message || "I couldn't start watching that channel." };
+      }
+    },
+  },
+  {
+    declaration: {
+      name: "list_watched_channels",
+      description:
+        "The YouTube channels being watched for new uploads: what's watched, how many shorts each new video gets, when it was last checked and what's waiting to be cut. Use it when someone asks what channels you're watching, or whether the watching still works.",
+    },
+    available: (ctx) => ctx.desktop,
+    async run() {
+      const watches = watchStatuses();
+      return {
+        watching: watches,
+        count: watches.length,
+        max: MAX_WATCHES,
+        ...(watches.length ? {} : { note: "Nothing is being watched yet. Ask for a channel's link or @handle to start." }),
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "stop_watching_channel",
+      description:
+        'Stop clipping a YouTube channel: give its @handle or link, or "all" to stop watching everything. Videos already cut stay in the conversation; nothing new is picked up.',
+      parameters: {
+        type: "OBJECT",
+        properties: { channel: { type: "STRING", description: '"@MrBeast", a channel link, or "all".' } },
+        required: ["channel"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const channel = str(args.channel, 300);
+      if (!channel) return { stopped: false, reason: "Which channel should I stop watching? Give its @handle, or say \"all\"." };
+      const { removed } = removeWatch(channel);
+      if (!removed.length) {
+        return { stopped: false, reason: `I'm not watching “${channel}” — ask list_watched_channels to see what I am watching.` };
+      }
+      ctx.effects.log.push(`Stopped watching ${removed.join(", ")}`);
+      return { stopped: true, channels: removed, note: `Stopped watching ${removed.join(", ")}.` };
     },
   },
   {

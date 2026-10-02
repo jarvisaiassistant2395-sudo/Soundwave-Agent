@@ -8,6 +8,7 @@ import { initConversation } from "./lib/conversation.js";
 import { initCompanion } from "./lib/companion/listener.js";
 import { initMemory } from "./lib/memory.js";
 import { initBriefingScheduler } from "./lib/briefing.js";
+import { initChannelWatch } from "./lib/channelWatch.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[soundwave] Handled asynchronous rejection:", reason);
@@ -54,6 +55,8 @@ async function main() {
   initMemory();
   // The morning briefing: prepared when it's due, spoken when an app is opened.
   initBriefingScheduler();
+  // Watched YouTube channels: new uploads are clipped by themselves.
+  initChannelWatch();
   if (config.companionAvailable) {
     initCompanion().catch((err) => console.warn("[companion] could not start:", (err as Error).message));
   }

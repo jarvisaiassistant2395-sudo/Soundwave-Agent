@@ -115,6 +115,19 @@ written from facts (weather included), the Memory tab and the YouTube tab.
 Update the guide (`server/src/lib/brain/core/guide.ts`) whenever a screen
 changes — `server/tests/memory_guide.test.ts` checks its key facts.
 
+1.5.4 adds watched channels: `watch_youtube_channel` (@handle or channel link),
+`list_watched_channels` and `stop_watching_channel`, plus `lib/channelWatch.ts`
+— a store in `channel-watches.json`, a check every 5 minutes while the server
+runs (4-minute floor per channel, one newest-15 listing each), a queue of new
+uploads that hands one video at a time to the clips pipeline while nothing else
+renders (a busy machine just waits for the next tick; a failed video is retried
+three times, then given up on out loud). Adding a watch remembers everything
+already up — only new uploads are clipped — unless "clip the latest one too".
+The pure rules (channel references, `planWatch`, status text) are in
+`brain/core/watch.ts`, covered with the tools and a real tick in
+`server/tests/channel_watch.test.ts` (15 tests: fake channel listings, fake
+clips pipeline, busy/retry/broken-check paths).
+
 1.5.3 adds shorts cut out of a long video: `make_shorts_from_video` takes a
 YouTube link (downloaded with yt-dlp, like every import) or a file on the PC,
 the agent listens to it (ffmpeg → 16 kHz PCM → the same whisper.cpp engine as
