@@ -1,14 +1,24 @@
-# Handoff: mirror release installers to a scratch branch so an egress-restricted
-# client (this workspace can reach github.com git but NOT release/artifact CDNs)
-# can fetch them with plain git. One-off style: only runs when THIS file changes.
-# Delete the `artifact-handoff` branch after fetching.
+# Handoff: mirror RELEASE installers to a scratch branch so an egress-restricted
+# client (a sandbox that can reach github.com git but NOT the release/artifact
+# CDNs) can fetch them with plain git.
+#
+# One-off, MANUAL: it used to run whenever this file changed, which meant every
+# edit to it failed on repositories that have no such release. Run it from the
+# Actions tab (Run workflow) when you actually want the mirror; delete the
+# `artifact-handoff` branch after fetching.
 name: Artifact Handoff
 
 on:
-  push:
-    branches: ["**"]
-    paths:
-      - ".github/workflows/handoff.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to mirror (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      pattern:
+        description: "Asset glob to download"
+        required: true
+        default: "SoundwaveAI-*.exe"
 
 permissions:
   contents: write
@@ -29,7 +39,7 @@ jobs:
         run: |
           mkdir -p handoff
           gh release download "${HANDOFF_TAG}" --repo "${GITHUB_REPOSITORY}" \
-            --pattern "SoundwaveAI-*.exe" --dir handoff
+            --pattern "${HANDOFF_PATTERN}" --dir handoff
           ls -la handoff
 
       - name: Split + mirror to artifact-handoff branch
@@ -41,8 +51,7 @@ jobs:
           manifest=manifest.json
           echo "{" > "$manifest"
           first=1
-          idx=0
-          for f in SoundwaveAI-*.exe; do
+          for f in ${HANDOFF_PATTERN}; do
             sum=$(sha256sum "$f" | cut -d' ' -f1)
             size=$(stat -c%s "$f")
             if [ $first -eq 0 ]; then echo "," >> "$manifest"; fi
@@ -50,7 +59,6 @@ jobs:
             echo "  \"$f\": {\"sha256\": \"$sum\", \"size\": $size}" >> "$manifest"
             # split into 60MB chunks (git max file size is 100MB without LFS)
             split -b 60m -d -a 3 "$f" "${f}.part"
-            idx=$((idx+1))
           done
           echo "}" >> "$manifest"
           cat "$manifest"
@@ -59,8 +67,9 @@ jobs:
           git config user.name "artifact-handoff"
           git config user.email "handoff@local"
           git checkout --orphan artifact-handoff
-          git add -f SoundwaveAI-*.exe.part* manifest.json
+          git add -f *.part* manifest.json
           git commit -m "artifact handoff for ${HANDOFF_TAG} (run ${GITHUB_RUN_ID})"
           git push --force origin artifact-handoff
         env:
-          HANDOFF_TAG: "v1.0.0"
+          HANDOFF_TAG: ${{ inputs.tag }}
+          HANDOFF_PATTERN: ${{ inputs.pattern }}
