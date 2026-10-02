@@ -20,7 +20,11 @@ const appRoot = path.join(desktopDir, "app");
 const binDir = path.join(desktopDir, "bin");
 const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-smoke-"));
 
-function get(url) {
+// A GET that waits like a person would. It used to cut off at 5 s — shorter
+// than the server's own Windows Start-menu scan (20 s PowerShell timeout, then
+// the shortcut fallback), so a cold runner killed the smoke test with nothing
+// but "exit code 1" to show for it.
+function get(url, timeoutMs = 60_000) {
   return new Promise((resolve, reject) => {
     const req = http.get(url, (res) => {
       let body = "";
@@ -28,8 +32,8 @@ function get(url) {
       res.on("end", () => resolve({ status: res.statusCode, body, headers: res.headers }));
     });
     req.on("error", reject);
-    req.setTimeout(5000, () => {
-      req.destroy(new Error("timeout"));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`timeout after ${Math.round(timeoutMs / 1000)}s: ${url}`));
     });
   });
 }
@@ -67,6 +71,23 @@ function annotate(level, title, message) {
 // Which checks passed before the failure — the run's log can be unreachable
 // (artifact/log CDNs are blocked in some workspaces), but annotations aren't.
 const recentChecks = [];
+/** What the test is doing right now, so a thrown error says where. */
+let stage = "setup";
+const at = (name) => {
+  stage = name;
+};
+
+/** A failure the run must never swallow: exit code 1 with an annotation that
+ *  says what was happening and which checks passed before it. */
+function die(err, kind = "failed") {
+  const message = err && err.message ? String(err.message).split("\n").slice(0, 6).join(" | ") : String(err);
+  console.error(`[smoke] ✗ FAIL (${kind} at ${stage}): ${message}`);
+  annotate("error", "Smoke test", `FAILED (${kind} at ${stage}): ${message}`);
+  if (recentChecks.length) annotate("notice", "Smoke test", `The last checks that passed: ${recentChecks.join(" ⇢ ")}`);
+  process.exit(1);
+}
+process.on("uncaughtException", (err) => die(err, "uncaught exception"));
+process.on("unhandledRejection", (err) => die(err, "unhandled rejection"));
 function assert(cond, label) {
   if (!cond) {
     console.error(`[smoke] ✗ FAIL: ${label}`);
@@ -125,6 +146,7 @@ try {
   // robotic built-in voice read the replies instead).
   const csp = String(spa.headers["content-security-policy"] || "");
   assert(/media-src 'self'/.test(csp) && !/media-src[^;]*data:/.test(csp), "CSP plays same-origin speech (media-src 'self')");
+  at("voices + speech engine");
   const speak = await get(`${appUrl}/api/v1/agent/speak/stream`);
   assert(
     speak.status === 400 && /json/.test(speak.headers["content-type"] || ""),
@@ -187,6 +209,7 @@ try {
   // Phone companion (Settings → Phone): off until turned on; then a separate
   // listener answers the paired phone — and nothing else of the app's API.
   const json = (value) => Buffer.from(JSON.stringify(value));
+  at("phone companion");
   const comp = JSON.parse((await get(`${appUrl}/api/v1/companion`)).body);
   assert(comp.available === true && comp.enabled === false && comp.listening === false, "phone companion is available and off by default");
   const on = await post(`${appUrl}/api/v1/companion/enabled`, json({ enabled: true }), "application/json", 20_000);
@@ -208,6 +231,7 @@ try {
   // The agent's brain (Settings → Brain): no key → it says so; a key → the
   // agent answers through Gemini (the fake one) and its tools run on this PC.
   const send = (method, url, value) => post(url, json(value ?? {}), "application/json", 30_000, method);
+  at("agent brain");
   const brain0 = JSON.parse((await get(`${appUrl}/api/v1/brain`)).body);
   assert(brain0.configured === false && brain0.settingsAvailable === true && brain0.desktopActions === true, "brain: Settings → Brain available, no key yet");
   const noKey = await send("POST", `${appUrl}/api/v1/agent/chat`, { message: "hello" });
@@ -219,6 +243,7 @@ try {
   assert(tested.status === 200 && tested.body.ok === true && tested.body.reply === "ready", `brain: Test → ${tested.body.modelLabel} answered in ${tested.body.latencyMs} ms`);
   const hi = await send("POST", `${appUrl}/api/v1/agent/chat`, { message: "hello", history: [{ sender: "assistant", text: "Hi!" }] });
   assert(hi.status === 200 && hi.body.reply === FAKE_HELLO && hi.body.brain?.model === "gemini-3.8-flash", "chat is answered by Gemini");
+  at("agent chat with tools");
   const asked = fakeGemini.seen.filter((r) => r.url.endsWith(":generateContent")).at(-1);
   const toolNames = asked?.body?.tools?.find((t) => t.functionDeclarations)?.functionDeclarations.map((d) => d.name) ?? [];
   assert(asked?.key === FAKE_KEY && toolNames.includes("make_youtube_short") && toolNames.includes("open_website"), `Gemini gets the key in its header and the agent's tools (${toolNames.join(", ")})`);
@@ -231,6 +256,7 @@ try {
   );
   let appsNote = "not on this OS";
   if (process.platform === "win32") {
+    at("Start menu scan (Windows; PowerShell + fallback)");
     const abilities = JSON.parse((await get(`${appUrl}/api/v1/brain/abilities?app=notepad`)).body);
     assert(abilities.openApps?.available === true && abilities.openApps.count > 0, `the agent sees ${abilities.openApps?.count} Start menu apps (${abilities.openApps?.source})`);
     appsNote = `${abilities.openApps.count} Start menu apps via ${abilities.openApps.source}; "notepad" → ${abilities.openApps.match ?? "no match"}`;
@@ -239,6 +265,7 @@ try {
 
   // 1.4.0: the guide, the memory and Morning Setup.
   assert(toolNames.includes("soundwave_guide") && toolNames.includes("remember") && toolNames.includes("run_morning_setup"), "the agent can explain Soundwave (guide), remember things and run Morning Setup");
+  at("memory");
   const note = await send("POST", `${appUrl}/api/v1/memory/notes`, { text: "The smoke test's channel is about space facts" });
   assert(note.status === 201 && fs.existsSync(path.join(userDataDir, "data", "agent-memory.json")), "memory: a note is saved in the user-data folder");
   const recalled = await send("POST", `${appUrl}/api/v1/agent/chat`, { message: "what do you remember about me?" });
@@ -247,6 +274,7 @@ try {
   // 1.5.0: the daily briefing on your own topics — Gemini researches them (2.5 Flash + Google Search).
   const due = new Date(Date.now() - 2 * 60_000);
   const dueAt = `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
+  at("daily briefing");
   const plan = await send("PUT", `${appUrl}/api/v1/morning`, { briefing: { topics: ["the latest news about open-source, free AI tools"], time: dueAt, auto: true } });
   assert(plan.status === 200 && plan.body.briefing?.topics?.length === 1 && plan.body.briefing.time === dueAt, "daily briefing: topics and time saved (in the agent's memory)");
   const prepared = await send("POST", `${appUrl}/api/v1/morning/briefing/prepare`, {});
@@ -260,6 +288,7 @@ try {
   assert(heardNow.status === 200 && heardNow.body.heard?.on === "pc", "daily briefing: marked heard (it isn't spoken again elsewhere)");
   annotate("notice", "Daily briefing", `Due ${dueAt}; researched “the latest news about open-source, free AI tools” with Gemini 2.5 Flash + Google Search (stand-in); briefing posted for ${prepared.body.day}.`);
 
+  at("Morning Setup");
   const morningSet = await send("PUT", `${appUrl}/api/v1/morning`, { items: [], city: "Kruševac" });
   assert(morningSet.status === 200 && morningSet.body.weatherCity === "Kruševac", "Morning Setup: settings saved");
   const briefing = await send("POST", `${appUrl}/api/v1/morning/run`, {});
@@ -317,6 +346,7 @@ try {
     `Built-ins listed; the diagnostics macro ran for real (${scanned.slice(0, 90)} | ${sysFacts.slice(0, 90)}); PC-only steps skip honestly without Electron.`,
   );
 
+  at("cleanup");
   const removed = await send("DELETE", `${appUrl}/api/v1/brain/key`);
   assert(removed.status === 200 && removed.body.configured === false, "brain: the key can be removed again");
   await fakeGemini.close();
@@ -324,6 +354,5 @@ try {
   console.log("[smoke] PASS — assembled app boots and serves the Command Center.");
   process.exit(0);
 } catch (err) {
-  console.error("[smoke] ✗ FAIL:", err);
-  process.exit(1);
+  die(err, "thrown error");
 }
