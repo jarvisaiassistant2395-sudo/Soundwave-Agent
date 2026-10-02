@@ -18,7 +18,7 @@ import {
 import { Navbar } from "../components/layout/Navbar";
 import { Logo } from "../components/Logo";
 import { Badge } from "../components/ui/Badge";
-import { DEFAULT_VOICES } from "../lib/voices";
+import { DEFAULT_VOICES, SAMPLE_SENTENCE } from "../lib/voices";
 import { cn } from "../lib/cn";
 import { useAuth } from "../store/auth";
 
@@ -110,9 +110,21 @@ function VoicePreviewSection() {
       setPlaying(null);
       return;
     }
-    if (audioRef.current) {
-      audioRef.current.src = url;
-      void audioRef.current.play();
+    const audio = audioRef.current;
+    if (audio) {
+      // Voices without a shipped MP3 sample preview from the live voice service.
+      audio.onerror = () => {
+        if (audio.dataset.live === "1") {
+          setPlaying(null);
+          return;
+        }
+        audio.dataset.live = "1";
+        audio.src = `/api/v1/agent/speak/stream?voice=${encodeURIComponent(id)}&text=${encodeURIComponent(SAMPLE_SENTENCE)}`;
+        void audio.play().catch(() => setPlaying(null));
+      };
+      audio.dataset.live = "";
+      audio.src = url;
+      void audio.play().catch(() => undefined);
     }
     setPlaying(id);
   };

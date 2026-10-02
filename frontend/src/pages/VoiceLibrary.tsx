@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Navbar } from "../components/layout/Navbar";
 import { Badge } from "../components/ui/Badge";
-import { DEFAULT_VOICES, loadAgentVoice } from "../lib/voices";
+import { DEFAULT_VOICES, loadAgentVoice, SAMPLE_SENTENCE } from "../lib/voices";
 import { cn } from "../lib/cn";
 
 type GenderFilter = "all" | "Female" | "Male";
@@ -46,7 +46,18 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
     }
     const audio = new Audio(url);
     audioRef.current = audio;
-    audio.play().catch(() => setPlaying(null));
+    // The newest voices don't ship an MP3 sample: preview them by asking the
+    // voice service to say the sample line (the same streamed route replies use).
+    audio.onerror = () => {
+      if (audio.dataset.live === "1") {
+        setPlaying(null);
+        return;
+      }
+      audio.dataset.live = "1";
+      audio.src = `/api/v1/agent/speak/stream?voice=${encodeURIComponent(id)}&text=${encodeURIComponent(SAMPLE_SENTENCE)}`;
+      void audio.play().catch(() => setPlaying(null));
+    };
+    audio.play().catch(() => undefined);
     audio.onended = () => setPlaying(null);
     setPlaying(id);
   };

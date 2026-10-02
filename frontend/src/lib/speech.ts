@@ -52,14 +52,10 @@ export function isSpeaking(): boolean {
   return active !== null;
 }
 
-/**
- * Speak `text` in a Soundwave voice (default: the agent's voice from
- * Settings). Interrupts whatever was being said. Returns false when there was
- * nothing to say.
- */
-export function speak(text: string, voice?: string, handlers: SpeakHandlers = {}): boolean {
+/** One piece (≤ splitForSpeech's max), streamed. The caller owns the flow. */
+function speakPiece(text: string, voice: string | undefined, handlers: SpeakHandlers): boolean {
   if (typeof window === "undefined") return false;
-  const clean = speechTextFor(text);
+  const clean = text.trim();
   if (!clean) return false;
 
   stopSpeaking();
@@ -115,30 +111,65 @@ export function splitForSpeech(text: string, max = 1100): string[] {
 }
 
 /**
- * Speak long text — the morning briefing — in full: piece after piece, each
- * streamed like a normal reply. stopSpeaking() ends it.
+ * Speak long text — a reply, the morning briefing, a guide explanation — IN
+ * FULL: piece after piece, each streamed like a normal reply. A piece that
+ * fails doesn't end the speech; the rest still gets read (the error is only
+ * reported when nothing could be spoken at all). stopSpeaking() ends it.
  */
-export function speakLong(text: string, voice?: string, handlers: SpeakHandlers = {}): boolean {
-  const pieces = splitForSpeech(text);
+function speakPieces(pieces: string[], voice: string | undefined, handlers: SpeakHandlers): boolean {
   if (!pieces.length) return false;
   let i = 0;
   let started = false;
+  let spokeSomething = false;
   const next = () => {
     const piece = pieces[i++]!;
-    speak(piece, voice, {
+    speakPiece(piece, voice, {
       onStart: () => {
+        spokeSomething = true;
         if (!started) {
           started = true;
           handlers.onStart?.();
         }
       },
-      onEnd: () => (i < pieces.length ? next() : handlers.onEnd?.()),
-      onError: handlers.onError,
+      onEnd: () => {
+        if (i < pieces.length) next();
+        else handlers.onEnd?.();
+      },
+      onError: () => {
+        // Keep going: one bad piece (a hiccup, a socket reset) used to cut the
+        // explanation off mid-sentence. Only give up when nothing was spoken.
+        if (i < pieces.length) {
+          next();
+          return;
+        }
+        if (spokeSomething) handlers.onEnd?.();
+        else handlers.onError?.();
+      },
       onBlocked: handlers.onBlocked,
     });
   };
   next();
   return true;
+}
+
+/**
+ * Speak `text` in a Soundwave voice (default: the agent's voice from
+ * Settings), all of it. Interrupts whatever was being said. Returns false when
+ * there was nothing to say.
+ */
+export function speak(text: string, voice?: string, handlers: SpeakHandlers = {}): boolean {
+  const pieces = splitForSpeech(text);
+  if (!pieces.length) return false;
+  stopSpeaking();
+  return speakPieces(pieces, voice, handlers);
+}
+
+/**
+ * Speak long text (the morning briefing, a long explanation). Alias of
+ * {@link speak}, which has spoken everything in pieces since 1.5.1.
+ */
+export function speakLong(text: string, voice?: string, handlers: SpeakHandlers = {}): boolean {
+  return speak(text, voice, handlers);
 }
 
 /** Why the last reply couldn't be spoken, in words for a toast. */

@@ -10,6 +10,13 @@ import { EdgeTTS } from "node-edge-tts";
 import { OUTPUT_FORMAT, streamEdgeTTS, synthesizeEdgeTTS } from "../src/lib/edgeTts.js";
 
 const SOUNDWAVE_VOICES = [
+  // The newest generation (listed first in the app's picker): the most natural
+  // free voices. Checked live here so a service-side change shows up as an
+  // annotation instead of a silent fallback.
+  "en-US-AvaMultilingualNeural",
+  "en-US-AndrewMultilingualNeural",
+  "en-US-EmmaMultilingualNeural",
+  "en-US-BrianMultilingualNeural",
   "en-US-GuyNeural",
   "en-US-ChristopherNeural",
   "en-GB-RyanNeural",

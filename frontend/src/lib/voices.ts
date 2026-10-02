@@ -14,6 +14,15 @@ interface VoiceMeta {
 }
 
 export const VOICE_META: VoiceMeta[] = [
+  // The newest (and most natural-sounding) free voices on Microsoft's Edge
+  // service: the "Multilingual" neural generation, noticeably more expressive
+  // and human than the older standard set. They're listed first for that
+  // reason; CI checks them against the real service on every desktop build
+  // (server/scripts/edge-tts-smoke.ts).
+  { id: "en-US-AvaMultilingualNeural", displayName: "Ava (most natural)", gender: "Female", accent: "American" },
+  { id: "en-US-AndrewMultilingualNeural", displayName: "Andrew (most natural)", gender: "Male", accent: "American" },
+  { id: "en-US-EmmaMultilingualNeural", displayName: "Emma (most natural)", gender: "Female", accent: "American" },
+  { id: "en-US-BrianMultilingualNeural", displayName: "Brian (most natural)", gender: "Male", accent: "American" },
   { id: "en-US-JennyNeural", displayName: "Jenny", gender: "Female", accent: "American" },
   { id: "en-US-AnaNeural", displayName: "Ana", gender: "Female", accent: "American" },
   { id: "en-GB-SoniaNeural", displayName: "Sonia", gender: "Female", accent: "British" },

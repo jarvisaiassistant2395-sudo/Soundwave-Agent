@@ -200,6 +200,79 @@ describe("Soundwave voice client (Microsoft Edge neural TTS)", () => {
   });
 });
 
+describe("Long explanations and natural pacing", () => {
+  it("reads a long explanation to the end — nothing is dropped", async () => {
+    // The guide's YouTube walkthrough is thousands of characters. It used to
+    // stop mid-sentence (the reply was cut to ~1200 characters before it was
+    // ever sent), so this is the regression test for "the voice stopped
+    // talking halfway through".
+    const long = Array.from(
+      { length: 40 },
+      (_, i) =>
+        `Step ${i + 1}: open Settings, then pick Phone, and turn on Let my phone connect. That is how the app links your PC to your phone for the morning briefing.`,
+    ).join(" ");
+    expect(long.length).toBeGreaterThan(4000);
+
+    const r = await tts.synthesizeEdgeTTS({ text: long, voice: "en-US-GuyNeural" }, { attempts: 1, pacing: false });
+
+    // More than one connection (splitForSynthesis cuts at 2000 characters)…
+    expect(seen.length).toBeGreaterThan(1);
+    const ssml = seen
+      .flatMap((s) => s.messages.filter((m) => m.includes("Path:ssml")))
+      .map((m) => m.slice(m.indexOf("<speak")))
+      .join("\n");
+    // …and every sentence is in there, first to last.
+    expect(ssml).toContain("Step 1: open Settings");
+    expect(ssml).toContain("Step 40: open Settings");
+    expect(r.duration).toBeGreaterThan(0);
+  });
+
+  it("speaks at a natural pace: symbols become words, sentences get a short pause", async () => {
+    const chunks: Buffer[] = [];
+    await tts.streamEdgeTTS(
+      { text: "Settings → Brain & Memory. It's free. Try it!", voice: "en-US-GuyNeural" },
+      { onAudio: (c) => chunks.push(c) },
+    );
+    const ssml = seen[0]!.messages.find((m) => m.includes("Path:ssml"))!;
+    expect(ssml).toContain("Settings to Brain and Memory.");
+    expect(ssml).not.toContain("→");
+    expect(ssml).not.toContain("&amp;");
+    // A pause after each sentence (and the default narrator cadence, -5%).
+    expect(ssml).toMatch(/Memory\. <break time="170ms"\/>/);
+    expect(ssml).toMatch(/rate='-5%'/);
+    expect(chunks.length).toBeGreaterThan(0);
+  });
+
+  it("keeps abbreviations out of the voice: e.g. and i.e. are read as words", () => {
+    expect(tts.formatNaturalSpeechPacing("Use a fine voice, e.g. Ava, i.e. the natural one.")).toBe(
+      "Use a fine voice, for example Ava, that is the natural one.",
+    );
+  });
+
+  it("speaks a full client piece (1100 characters) without cutting it", async () => {
+    const sentence = "Open the settings page on your PC and follow the steps exactly as they are written here. ";
+    const piece = sentence.repeat(13).trim(); // ~1160 characters — what the apps send
+    expect(piece.length).toBeGreaterThan(1000);
+    expect(piece.length).toBeLessThan(1200);
+
+    seen.length = 0;
+    const res = await request(createApp())
+      .get("/api/v1/agent/speak/stream")
+      .query({ text: piece, voice: "en-US-GuyNeural" })
+      .buffer(true)
+      .parse((r, cb) => {
+        const parts: Buffer[] = [];
+        r.on("data", (c: Buffer) => parts.push(c));
+        r.on("end", () => cb(null, Buffer.concat(parts)));
+      });
+    expect(res.status).toBe(200);
+    const ssml = seen.flatMap((s) => s.messages.filter((m) => m.includes("Path:ssml"))).join(" ");
+    expect(ssml).toContain("Open the settings page on your PC");
+    // The last words of the piece really were sent to the service.
+    expect(ssml).toContain("as they are written here.");
+  });
+});
+
 describe("Agent speech endpoints", () => {
   it("streams the reply as same-origin MP3 (allowed by the desktop app's CSP)", async () => {
     const res = await request(createApp())

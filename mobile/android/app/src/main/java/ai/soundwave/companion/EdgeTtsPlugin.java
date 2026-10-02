@@ -242,8 +242,17 @@ public class EdgeTtsPlugin extends Plugin {
         return "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='" + lang + "'>"
             + "<voice name='" + longVoiceName(voice) + "'>"
             + "<prosody pitch='+0Hz' rate='" + rate + "' volume='+0%'>"
-            + escapeXml(text)
+            + withSentencePauses(escapeXml(text))
             + "</prosody></voice></speak>";
+    }
+
+    /**
+     * A small pause at every sentence end — the same trick the PC's voice uses
+     * (server/src/lib/edgeTts.ts, withSentencePauses) so the phone's offline
+     * speech sounds like the same narrator.
+     */
+    static String withSentencePauses(String escaped) {
+        return escaped.replaceAll("([.!?])\\s+(?=[^<])", "$1 <break time=\"170ms\"/> ");
     }
 
     /** "en-US-GuyNeural" → "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)". */

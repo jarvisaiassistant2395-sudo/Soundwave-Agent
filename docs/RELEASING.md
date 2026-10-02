@@ -115,6 +115,14 @@ written from facts (weather included), the Memory tab and the YouTube tab.
 Update the guide (`server/src/lib/brain/core/guide.ts`) whenever a screen
 changes — `server/tests/memory_guide.test.ts` checks its key facts.
 
+1.5.1 (phone 1.2.1) makes the voice read every reply to the end: replies are
+split into pieces at sentence boundaries and each piece is spoken, so a long
+explanation (like the YouTube setup walkthrough) is never cut off part-way, and
+a hiccup in one piece no longer stops the rest. It also sounds more natural at
+no cost: the most natural Microsoft Edge voices (Ava/Andrew/Emma/Brian
+Multilingual) are listed first in the Voice Library, sentences get a short pause
+between them, and the narration cadence is slightly slower.
+
 1.5.0 adds the daily briefing: topics researched with Gemini 2.5 Flash + Google
 Search (free tier; the public feeds as backup), written when due, spoken when
 an app opens. The smoke test, the packaged-app E2E and the phone E2E check it

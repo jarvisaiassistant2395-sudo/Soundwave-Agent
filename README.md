@@ -104,7 +104,7 @@ built-in scripts) and tells you how to add one. Servers can set
 `core/` (the Gemini client, tool loop, instruction, guide, memory and Morning
 Setup briefing) is plain TypeScript that the phone app compiles too.
 
-**Daily briefing** (desktop 1.5.0 / phone 1.2.0): the plan (topics, time,
+**Daily briefing** (desktop 1.5.1 / phone 1.2.1): the plan (topics, time,
 automatic) lives in the agent's memory. The PC writes the briefing when it's
 due (`lib/briefing.ts`, catching up at start-up within 10 hours) and posts it
 in the conversation marked with its day; the phone app and the Command Center

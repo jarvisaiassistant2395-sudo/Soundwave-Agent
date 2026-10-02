@@ -141,6 +141,15 @@ function langFor(voice: string): string {
   return m ? m[0] : "en-US";
 }
 
+/**
+ * A small pause at every sentence end — the single biggest "sounds like a
+ * person, not a reader" win in the free Edge voices. Applied to already-escaped
+ * text, so the tags survive.
+ */
+export function withSentencePauses(escaped: string): string {
+  return escaped.replace(/([.!?])\s+(?=[^<])/g, '$1 <break time="170ms"/> ');
+}
+
 function escapeXml(text: string): string {
   return text
     // Control characters the service rejects.
@@ -158,6 +167,17 @@ function escapeXml(text: string): string {
  */
 export function formatNaturalSpeechPacing(text: string): string {
   let paced = text
+    // Symbols and abbreviations that read badly out loud.
+    .replace(/\s*[→➔➜]\s*/g, " to ")
+    .replace(/\s*(?:->|=>)\s*/g, " to ")
+    .replace(/&/g, " and ")
+    .replace(/\b(?:e\.g\.|eg\.)\s*,?/gi, "for example ")
+    .replace(/\b(?:i\.e\.|ie\.)\s*,?/gi, "that is ")
+    .replace(/\betc\./gi, "and so on")
+    .replace(/\bvs\.?\b/gi, "versus")
+    // "Settings → Brain" style labels, bullets and em-dashes become pauses.
+    .replace(/^\s*[•·▪●︎-]\s+/gm, "")
+    .replace(/\s*[—–]\s*/g, ", ")
     .replace(/\s+/g, " ")
     .replace(/(\d+)\.\s+/g, "$1: ")
     .replace(/\b(Did you know that)\b/gi, "$1...")
@@ -170,7 +190,7 @@ export function formatNaturalSpeechPacing(text: string): string {
     .replace(/\b(Think about this)\b/gi, "$1...")
     .trim();
 
-  if (!/[.!?]$/.test(paced)) {
+  if (!/[.!?:]$/.test(paced)) {
     paced += ".";
   }
   return paced;
@@ -375,7 +395,7 @@ function synthesizeChunk(
         `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${langFor(voice)}'>` +
         `<voice name='${longVoiceName(voice)}'>` +
         `<prosody pitch='${prosody.pitch}' rate='${prosody.rate}' volume='${prosody.volume}'>` +
-        `${escapeXml(text)}` +
+        `${withSentencePauses(escapeXml(text))}` +
         "</prosody></voice></speak>";
       ws.send(
         `X-RequestId:${randomUUID().replace(/-/g, "")}\r\n` +
@@ -613,7 +633,7 @@ export async function streamEdgeTTS(
 ): Promise<{ bytes: number; duration: number }> {
   const voice = normalizeVoiceId(input.voice);
   const text = input.pacing === false ? input.text.replace(/\s+/g, " ").trim() : formatNaturalSpeechPacing(input.text);
-  const prosody: Prosody = { rate: rateString(input.speed ?? 1), pitch: "+0Hz", volume: "+0%" };
+  const prosody: Prosody = { rate: rateString(input.speed), pitch: "+0Hz", volume: "+0%" };
   try {
     const r = await synthesizeOnce(text, voice, prosody, opts);
     noteSuccess();

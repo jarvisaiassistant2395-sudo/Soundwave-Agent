@@ -131,6 +131,9 @@ type Args = Record<string, unknown>;
 
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.slice(0, max) : "");
 
+/** Guard for one phone speech piece (the phone splits replies at 1200 characters). */
+const MAX_COMPANION_SPEECH_CHARS = 2000;
+
 async function openJobSnapshots(messages: ChatMessage[]): Promise<JobSnapshot[]> {
   const out: JobSnapshot[] = [];
   for (const { jobId, topic } of openJobs(messages).slice(-3)) {
@@ -372,12 +375,20 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
   },
 
   // A reply read aloud in a Soundwave voice; the payload is the MP3.
+  // The phone sends one piece at a time (<= 1200 characters), so the cap below
+  // is only a guard — and it warns instead of quietly dropping the tail.
   async speak(args) {
-    const text = str(args.text, 3000).replace(/\s+/g, " ").trim().slice(0, 1500);
+    const asked = str(args.text, 4000).replace(/\s+/g, " ").trim();
+    const text = asked.slice(0, MAX_COMPANION_SPEECH_CHARS);
+    if (asked.length > text.length) {
+      console.warn(`[companion] speech text longer than ${MAX_COMPANION_SPEECH_CHARS} characters (${asked.length}) — speaking only the first part; the phone should send it in pieces`);
+    }
     if (!text) throw new OpError("EMPTY", "Nothing to say.");
     const voice = normalizeVoiceId(args.voice || getConversation().voice);
     try {
-      const out = await synthesizeEdgeTTS({ text, voice, speed: 1 }, { attempts: 2 });
+      // No explicit speed: the shared default is the relaxed narrator cadence
+      // (same as the PC's own playback).
+      const out = await synthesizeEdgeTTS({ text, voice }, { attempts: 2 });
       return { result: { mime: out.mimeType, voice, duration: out.duration }, payload: Buffer.from(out.audioBase64, "base64") };
     } catch (err) {
       throw new OpError("VOICE_UNAVAILABLE", (err as Error).message || "The Soundwave voice service didn't answer.");

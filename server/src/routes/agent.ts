@@ -23,8 +23,13 @@ router.use("/", agentShortRouter);
 // There is no browser/OS voice fallback: if the voice service can't be
 // reached the app shows why instead of reading replies in a robotic voice.
 
-/** Longest reply the agent reads aloud in one go. */
-const MAX_SPOKEN_CHARS = 1500;
+/**
+ * Longest text one /speak/stream request may carry. The apps split long
+ * replies into ~1100-character pieces and speak them in order (the Command
+ * Center's lib/speech, the phone's lib/voice), so this is only a guard against
+ * an oversized URL — never the thing that decides how much of a reply is read.
+ */
+const MAX_SPOKEN_CHARS = 2000;
 
 // POST /speak — whole utterance as base64 JSON (the Python desktop runner uses this).
 const speakSchema = z.object({
@@ -55,9 +60,15 @@ router.post("/speak", optionalAuth, validate({ body: speakSchema }), async (req,
 // it, so the Command Center starts talking within a fraction of a second.
 // Same-origin audio, so the desktop app's CSP (media-src 'self') allows it.
 router.get("/speak/stream", optionalAuth, async (req, res) => {
-  const text = typeof req.query.text === "string" ? req.query.text.replace(/\s+/g, " ").trim().slice(0, MAX_SPOKEN_CHARS) : "";
-  if (!text) {
+  const asked = typeof req.query.text === "string" ? req.query.text.replace(/\s+/g, " ").trim() : "";
+  if (!asked) {
     return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "Nothing to say: pass ?text=" } });
+  }
+  const text = asked.slice(0, MAX_SPOKEN_CHARS);
+  if (asked.length > text.length) {
+    // The apps chunk long replies; if this ever fires, something sent one huge
+    // piece and the person would hear a reply stop early — say so in the log.
+    console.warn(`[voice] text longer than ${MAX_SPOKEN_CHARS} characters (${asked.length}) — speaking only the first part; the caller should split it`);
   }
   const voice = normalizeVoiceId(req.query.voice);
 
@@ -70,7 +81,8 @@ router.get("/speak/stream", optionalAuth, async (req, res) => {
   let started = false;
   try {
     await streamEdgeTTS(
-      { text, voice, speed: 1 },
+      // No speed: the natural, slightly-slower narrator cadence (lib/edgeTts).
+      { text, voice },
       {
         signal: controller.signal,
         onAudio: (chunk) => {

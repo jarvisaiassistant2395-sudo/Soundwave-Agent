@@ -223,12 +223,12 @@ On the phone: tap the mic in the app. While the PC is reachable the recording is
   {
     id: "voices",
     title: "The agent's voices",
-    summary: "the six Soundwave voices and every place to change them, reading replies aloud on PC and phone",
-    text: `Soundwave speaks and narrates shorts with six Microsoft neural voices: Guy, Christopher (US male), Ryan (UK male), Jenny, Ana (US female) and Sonia (UK female). The same voice is used for replies and for the shorts it makes.
+    summary: "the Soundwave voices (which sound most natural) and every place to change them, reading replies aloud on PC and phone",
+    text: `Soundwave speaks and narrates shorts with Microsoft's neural voices — all free, nothing to install. The most natural ones are the newest "Multilingual" generation: Ava and Emma (US female) and Andrew and Brian (US male). The classic set is still there: Guy, Christopher (US male), Ryan (UK male), Jenny, Ana (US female) and Sonia (UK female). Pick the ones marked "most natural" in the Voice Library first — they are noticeably warmer and less flat. The same voice is used for replies and for the shorts it makes.
 
 Change it in any of these places: the voice picker in the Command Center's top bar; the generator window ("Narrator"); gear → General & Voice → Soundwave Voice ("Test Voice" plays a sample); Settings → Preferences → Agent voice; or the Voice Library page (preview each voice, then "Use in Command Center").
 
-Reading replies aloud: gear → General & Voice → "Speak Replies Aloud" (also in Settings → Voice & Desktop). Every reply has a speaker button to hear it again. Replies start playing while they're still being made.
+Reading replies aloud: gear → General & Voice → "Speak Replies Aloud" (also in Settings → Voice & Desktop). Every reply has a speaker button to hear it again. Replies start playing while they're still being made, at a natural pace with a short pause at each sentence, and long explanations are read to the end (they're spoken in pieces, so nothing stops halfway).
 
 On the phone: Settings → "Read replies aloud" (When I talk / Always / Never) and "Voice" (same as the PC, or pick one for the phone).
 

@@ -76,8 +76,12 @@ export function playReply(bytes: Uint8Array, mime: string): Promise<void> {
   });
 }
 
-/** Long text → pieces of at most `max` characters, cut at sentence (then word) ends. */
-export function splitSpeech(text: string, max = 1800): string[] {
+/**
+ * Long text → pieces of at most `max` characters, cut at sentence (then word)
+ * ends. 1200 keeps every piece inside the PC's /speak/stream limit and each
+ * synthesis fast; speakLong() reads them all, in order.
+ */
+export function splitSpeech(text: string, max = 1200): string[] {
   const chunks: string[] = [];
   let rest = text.replace(/\s+/g, " ").trim();
   while (rest.length > max) {
@@ -104,14 +108,30 @@ export async function speakLong(
 ): Promise<void> {
   const pieces = splitSpeech(text);
   if (!pieces.length) return;
+  let spokeSomething = false;
   let next = synth(pieces[0]!);
+  next.catch(() => undefined); // surfaces below
   for (let i = 0; i < pieces.length; i++) {
-    const current = await next;
+    let current: { audio: Uint8Array; mime: string };
+    try {
+      current = await next;
+    } catch (err) {
+      // One piece failing (a hiccup, the PC dropping) must not cut the rest of
+      // the reply off — keep reading. Only give up if nothing was spoken.
+      if (i + 1 < pieces.length) {
+        next = synth(pieces[i + 1]!);
+        next.catch(() => undefined);
+        continue;
+      }
+      if (!spokeSomething) throw err;
+      return;
+    }
     if (i + 1 < pieces.length) {
       next = synth(pieces[i + 1]!);
-      next.catch(() => undefined); // surfaces on the next await
+      next.catch(() => undefined);
     }
     if (stopped()) return;
+    spokeSomething = true;
     await playReply(current.audio, current.mime);
     if (stopped()) return;
   }
@@ -130,6 +150,8 @@ export function speakableBriefing(text: string): string {
 export function speakable(m: { text: string; jobState?: string; topic?: string; youtubeUrl?: string }): string {
   if (m.jobState === "done") return `Your short about ${m.topic || "that"} is ready${m.youtubeUrl ? ", and it's up on YouTube" : ""}.`;
   if (m.jobState === "failed") return `I couldn't finish the short about ${m.topic || "that"}.`;
+  // The whole message — speakLong() splits it into pieces. (It used to be cut
+  // at 700 characters here, which made long explanations stop halfway.)
   return m.text
     .split("\n")
     .filter((line) => !/^\s*Background:/i.test(line))
@@ -137,6 +159,5 @@ export function speakable(m: { text: string; jobState?: string; topic?: string; 
     .replace(/https?:\/\/[^\s)]+/g, "")
     .replace(/\(\s*\)/g, "")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 700);
+    .trim();
 }
