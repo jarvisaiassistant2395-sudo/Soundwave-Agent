@@ -1,7 +1,9 @@
-// ── "Connect YouTube account": Google sign-in for the desktop app ───────────
-// The installed-app (loopback) flow with PKCE: the person's own OAuth client
-// (type "Desktop app", created in Google Cloud — see the guide) signs them in
-// through their web browser, and Google redirects back to this app on
+// ── "Connect YouTube": Google sign-in for the desktop app ───────────────────
+// The installed-app (loopback) flow with PKCE. The OAuth client is Soundwave's
+// own (shipped in the build → the customer just presses Connect and signs in),
+// or, when a build has none, the person's own "Desktop app" client from Google
+// Cloud (see the guide). Either way it signs them in through their web browser,
+// and Google redirects back to this app on
 // http://127.0.0.1:<its port> (any port works for Desktop clients). The
 // refresh token is saved without anyone copying tokens around. The callback
 // arrives at "/" — the plain loopback address from Google's own examples —
@@ -34,9 +36,12 @@ function prune(): void {
 
 /** The Google sign-in address to open in the browser. `port`: where this server listens. */
 export function startYouTubeConnect(port: number): { url: string; redirectUri: string } {
-  const cfg = youtubeService.getConfig();
-  if (!cfg.clientId?.trim() || !cfg.clientSecret?.trim()) {
-    throw new ConnectError("NO_CLIENT", "Paste your Client ID and Client Secret first and press “Save API Keys”, then connect.");
+  const client = youtubeService.client();
+  if (!client) {
+    throw new ConnectError(
+      "NO_CLIENT",
+      "This build doesn't include Soundwave's own Google app, so YouTube needs your own free OAuth client once: open “Advanced: your own Google Cloud project” in Settings → YouTube & Shorts, follow the three steps, paste what you get and press Connect.",
+    );
   }
   prune();
   const state = b64url(randomBytes(18));
@@ -44,7 +49,7 @@ export function startYouTubeConnect(port: number): { url: string; redirectUri: s
   const redirectUri = `http://127.0.0.1:${port}`;
   pending.set(state, { verifier, redirectUri, at: Date.now() });
   const q = new URLSearchParams({
-    client_id: cfg.clientId.trim(),
+    client_id: client.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: YOUTUBE_SCOPES.join(" "),
@@ -84,15 +89,16 @@ export async function finishYouTubeConnect(query: Record<string, unknown>): Prom
     const code = query.error;
     return { ok: false, code, message: HINTS[code] ?? `Google said: ${code}${typeof query.error_description === "string" ? ` — ${query.error_description}` : ""}` };
   }
-  const cfg = youtubeService.getConfig();
+  const client = youtubeService.client();
+  if (!client) return { ok: false, code: "no_client", message: HINTS.invalid_client ?? "No OAuth client to finish the sign-in with." };
   let res: Response;
   try {
     res = await fetch(config.googleOAuthTokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: cfg.clientId.trim(),
-        client_secret: cfg.clientSecret.trim(),
+        client_id: client.clientId,
+        client_secret: client.clientSecret,
         code: String(query.code),
         code_verifier: entry.verifier,
         grant_type: "authorization_code",
@@ -111,7 +117,7 @@ export async function finishYouTubeConnect(query: Record<string, unknown>): Prom
   if (!body.refresh_token) {
     return { ok: false, code: "no_refresh_token", message: "Google didn't send a refresh token. Remove Soundwave's access at myaccount.google.com/permissions, then connect again." };
   }
-  youtubeService.saveConfig({ refreshToken: body.refresh_token });
+  youtubeService.saveConfig({ refreshToken: body.refresh_token, clientSource: client.source, connectedClientId: client.clientId });
   if (body.access_token) youtubeService.saveConfig({ accessToken: body.access_token, tokenExpiry: Date.now() + (body.expires_in ?? 3600) * 1000 });
   const granted = (body.scope ?? "").split(/\s+/);
   const test = await youtubeService.testConnection();
@@ -133,7 +139,7 @@ export function connectPage(r: ConnectResult): string {
   const title = r.ok ? (r.warning ? "YouTube is connected — with a warning" : "YouTube is connected") : "YouTube isn't connected";
   const lines = r.ok
     ? [r.channelTitle ? `Channel: <b>${esc(r.channelTitle)}</b>` : "", r.warning ? esc(r.warning) : "", "You can close this tab and go back to Soundwave AI."]
-    : [esc(r.message), "Close this tab and try again in Soundwave AI (Command Center → gear → YouTube API &amp; Shorts)."];
+    : [esc(r.message), "Close this tab and try again in Soundwave AI (Command Center → gear → YouTube &amp; Shorts)."];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Soundwave AI — ${esc(title)}</title><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#070b14;color:#e5e7eb;font:16px/1.5 system-ui,sans-serif}main{max-width:520px;padding:32px;border:1px solid #1f2a44;border-radius:18px;background:#0a1224}h1{margin:0 0 12px;font-size:22px;color:${r.ok ? "#34d399" : "#fca5a5"}}p{margin:8px 0}</style></head>
 <body><main><h1>${esc(title)}</h1>${lines.filter(Boolean).map((l) => `<p>${l}</p>`).join("")}</main></body></html>`;

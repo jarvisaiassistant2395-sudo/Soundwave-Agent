@@ -228,6 +228,24 @@ try {
     `Listener opened on port ${on.body.port} and closed again. Addresses in the pairing code: ${(code.body.addresses ?? []).map((a) => `${a.address} (${a.name})`).join(", ") || "none"}.`,
   );
 
+  // Connect YouTube (Settings → YouTube & Shorts). A build can ship Soundwave's
+  // own Google client (config/youtube-client.json, baked in CI from a secret):
+  // then connecting is one press and the customer never sees Google Cloud.
+  // Without it the app must say so honestly and show the own-client path.
+  at("YouTube connect");
+  const yt = JSON.parse((await get(`${appUrl}/api/v1/youtube/status`)).body);
+  const shipsClient = fs.existsSync(path.join(appRoot, "config", "youtube-client.json"));
+  assert(
+    yt.clientSource === (shipsClient ? "built-in" : "none") && yt.oneClick === shipsClient && yt.connected === false,
+    `YouTube: ${shipsClient ? "the shipped Google client makes Connect YouTube a single press" : "no shipped client, so the app asks for the person's own (3 clicks)"} (clientSource=${yt.clientSource}, oneClick=${yt.oneClick})`,
+  );
+  const ytGuide = JSON.parse((await get(`${appUrl}/api/v1/youtube/oauth-guide`)).body);
+  assert(
+    ytGuide.mode === (shipsClient ? "one-click" : "own-client") && ytGuide.steps.length === (shipsClient ? 3 : 4),
+    `YouTube: the walkthrough matches the build (${ytGuide.mode}, ${ytGuide.steps.length} steps)`,
+  );
+  annotate("notice", "Connect YouTube", `${shipsClient ? "One press: the build ships Soundwave's own Google client." : "This build has no Soundwave Google client — the app shows the person's own 3-click client path."} Guide mode: ${ytGuide.mode}.`);
+
   // The agent's brain (Settings → Brain): no key → it says so; a key → the
   // agent answers through Gemini (the fake one) and its tools run on this PC.
   const send = (method, url, value) => post(url, json(value ?? {}), "application/json", 30_000, method);

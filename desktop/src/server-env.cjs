@@ -85,6 +85,26 @@ function prepareYtDlp({ binDir, userDataDir }) {
 }
 
 /**
+ * Soundwave's own Google OAuth client, when this build ships one. It lives at
+ * appRoot/config/youtube-client.json — written by CI from a repository secret,
+ * never committed (see .gitignore) — and makes "Connect YouTube" a single
+ * button: the customer signs in and is done, no Google Cloud project, no client
+ * ID to paste. Applies to the packaged app and to the smoke test alike, since
+ * both bootstrap through here.
+ */
+function loadYouTubeClient(appRoot) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(appRoot, "config", "youtube-client.json"), "utf8"));
+    const node = raw.installed ?? raw.web ?? raw.desktop ?? raw;
+    const clientId = String(node.client_id ?? node.clientId ?? "").trim();
+    const clientSecret = String(node.client_secret ?? node.clientSecret ?? "").trim();
+    return clientId && clientSecret ? { clientId, clientSecret } : null;
+  } catch {
+    return null; // no file (or not usable): builds without it show the own-client path
+  }
+}
+
+/**
  * Apply the packaged-mode environment and chdir into the bundled server.
  * The API itself stays loopback-only; the phone companion (COMPANION=1) opens
  * its separate LAN listener only while Settings → Phone has it turned on.
@@ -156,6 +176,14 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
     if (autoUpdateYtDlp && ytdlp.writable) env.YTDLP_AUTO_UPDATE = process.env.YTDLP_AUTO_UPDATE || "nightly";
   }
 
+  // One-click "Connect YouTube": the shipped Google client, if any. Anything
+  // already in the environment (a developer, CI, a power user) wins over it.
+  const youtubeClient = loadYouTubeClient(appRoot);
+  if (youtubeClient) {
+    if (!process.env.SOUNDWAVE_YOUTUBE_CLIENT_ID) env.SOUNDWAVE_YOUTUBE_CLIENT_ID = youtubeClient.clientId;
+    if (!process.env.SOUNDWAVE_YOUTUBE_CLIENT_SECRET) env.SOUNDWAVE_YOUTUBE_CLIENT_SECRET = youtubeClient.clientSecret;
+  }
+
   // Voice input: the bundled whisper.cpp CLI + model (bin/whisper/). The
   // server finds the model next to the CLI.
   const whisperCli = path.join(binDir, "whisper", isWin ? "whisper-cli.exe" : "whisper-cli");
@@ -167,4 +195,4 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
   return { serverRoot, webDist, appUrl, port, dataDir };
 }
 
-module.exports = { applyServerEnv, getFreePort, loadSecrets, prepareYtDlp };
+module.exports = { applyServerEnv, getFreePort, loadSecrets, loadYouTubeClient, prepareYtDlp };

@@ -55,13 +55,16 @@ export function Help() {
 
         {/* YouTube */}
         <Section icon={<Youtube className="h-4 w-4" />} title="Link Your YouTube Channel">
-          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-gray-300">
-            <li>In console.cloud.google.com (with the account that owns the channel) create a project and enable <strong className="text-white">YouTube Data API v3</strong>.</li>
-            <li>Google Auth platform → Get started (External), then Audience → Test users → add your Gmail (or <em>Publish app</em> so you don't have to reconnect every 7 days).</li>
-            <li>Clients → Create client → <strong className="text-white">Desktop app</strong> → copy the Client ID and secret.</li>
-            <li>Command Center → gear → <em>YouTube API &amp; Shorts</em> → paste both → <em>Connect YouTube account</em> → sign in with Google in your browser. Done.</li>
-          </ol>
-          <p className="mt-3 text-xs text-gray-400">YouTube keeps uploads from new Google Cloud projects private until the project passes YouTube's API audit. Ask the agent for the details.</p>
+          <p className="text-sm text-gray-300">
+            Command Center → gear → <em>YouTube &amp; Shorts</em> → <strong className="text-white">Connect YouTube</strong> → sign in with Google and allow it. That's the
+            whole thing: <strong className="text-white">one press, nothing to set up in Google Cloud</strong>. The app carries its own Google client and asks only for
+            permission to upload videos and read your channel's name. Remove the access any time at myaccount.google.com/permissions.
+          </p>
+          <p className="mt-3 text-xs text-gray-400">
+            Developer or self-hosted build without Soundwave's Google client? The panel says so and shows the short path instead: your own free OAuth client
+            (type <em>Desktop app</em>) in Google Cloud — three clicks, the app links straight to the pages. YouTube keeps uploads from brand-new projects private
+            until the project passes YouTube's API audit. Ask the agent for the details, or press <em>Ask Soundwave to walk me through it</em> in the same tab.
+          </p>
         </Section>
 
         {/* How the agent renders */}

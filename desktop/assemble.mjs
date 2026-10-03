@@ -5,6 +5,8 @@
 //     server/         package.json + package-lock.json + dist/ + prod node_modules/
 //     frontend/dist/  built SPA
 //     scripts/assets/ bundled static assets (music)
+//     config/         youtube-client.json, when the build ships one (one-click
+//                     "Connect YouTube"; gitignored, CI writes it from a secret)
 //
 // Binaries (ffmpeg.exe, yt-dlp.exe) are NOT staged here — they live in
 // desktop/bin/ and are attached as electron-builder extraResources.
@@ -53,6 +55,18 @@ execFileSync(
   // shell (EINVAL since the 2024 CVE fix), so enable shell on win32 only.
   { cwd: path.join(stage, "server"), stdio: "inherit", shell: process.platform === "win32" },
 );
+
+// A build can ship Soundwave's own Google OAuth client so customers connect
+// YouTube with one press. Optional: without it the app asks for the person's
+// own free client instead, and says so honestly.
+const youtubeClient = path.join(desktopDir, "config", "youtube-client.json");
+if (fs.existsSync(youtubeClient)) {
+  console.log("[assemble] one-click YouTube client (config/youtube-client.json) …");
+  fs.mkdirSync(path.join(stage, "config"), { recursive: true });
+  fs.copyFileSync(youtubeClient, path.join(stage, "config", "youtube-client.json"));
+} else {
+  console.log("[assemble] no config/youtube-client.json — Connect YouTube will ask for the person's own Google client");
+}
 
 console.log("[assemble] frontend dist …");
 fs.mkdirSync(path.join(stage, "frontend"), { recursive: true });

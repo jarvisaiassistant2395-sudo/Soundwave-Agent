@@ -239,6 +239,11 @@ export function AgentHub() {
     hasClientId?: boolean;
     hasClientSecret?: boolean;
     hasRefreshToken?: boolean;
+    /** The saved sign-in was made with a different Google client — connect again. */
+    needsReconnect?: boolean;
+    /** This build ships Soundwave's own Google app: connecting is one press. */
+    oneClick?: boolean;
+    clientSource?: "own" | "built-in" | "none";
   }>({
     connected: false,
     configured: false,
@@ -248,8 +253,9 @@ export function AgentHub() {
     defaultPrivacy: "public",
     defaultTags: ["shorts", "minecraft", "viral"],
   });
-  const [ytClientId, setYtClientId] = useState("");
-  const [ytClientSecret, setYtClientSecret] = useState("");
+  // One box: the downloaded client_secret_….json, or the Client ID and secret
+  // pasted together. The server picks them apart (extractOAuthClient).
+  const [ytClientPaste, setYtClientPaste] = useState("");
   const [ytRefreshToken, setYtRefreshToken] = useState("");
   const [ytAutoPublish, setYtAutoPublish] = useState(false);
   const [ytPrivacy, setYtPrivacy] = useState<"public" | "unlisted" | "private">("public");
@@ -900,7 +906,10 @@ export function AgentHub() {
   const handleConnectYt = async () => {
     try {
       setIsConnectingYt(true);
-      if (ytClientId.trim() || ytClientSecret.trim()) await handleSaveYtConfig();
+      if (ytClientPaste.trim() || ytRefreshToken.trim()) {
+        const saved = await handleSaveYtConfig();
+        if (!saved) return; // the toast already says what was wrong with the paste
+      }
       const res = await fetch("/api/v1/youtube/connect", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error?.message || "Couldn't start the Google sign-in.");
@@ -989,15 +998,14 @@ export function AgentHub() {
     }
   };
 
-  const handleSaveYtConfig = async () => {
+  const handleSaveYtConfig = async (): Promise<boolean> => {
     try {
       setIsSavingYt(true);
       const payload: any = {
         autoPublish: ytAutoPublish,
         defaultPrivacy: ytPrivacy,
       };
-      if (ytClientId.trim()) payload.clientId = ytClientId.trim();
-      if (ytClientSecret.trim()) payload.clientSecret = ytClientSecret.trim();
+      if (ytClientPaste.trim()) payload.clientJson = ytClientPaste.trim();
       if (ytRefreshToken.trim()) payload.refreshToken = ytRefreshToken.trim();
 
       const res = await fetch("/api/v1/youtube/config", {
@@ -1007,13 +1015,16 @@ export function AgentHub() {
       });
       const data = await res.json();
       if (res.ok && data.ok) {
+        if (payload.clientJson) setYtClientPaste("");
         toast.success("YouTube Settings Saved", data.connected ? "Channel linked and auto-publish ready!" : "Preferences updated.");
         fetchYtStatus();
-      } else {
-        toast.error("Save Error", data.error || "Failed to update configuration");
+        return true;
       }
+      toast.error("Save Error", data.error?.message || data.error || "Failed to update configuration");
+      return false;
     } catch (err: any) {
       toast.error("Save Error", err.message);
+      return false;
     } finally {
       setIsSavingYt(false);
     }
@@ -1021,7 +1032,7 @@ export function AgentHub() {
 
   const handleManualUploadYt = async (targetVideoUrl: string, scriptText?: string) => {
     if (!ytStatus.connected && !ytStatus.configured) {
-      toast.error("YouTube Not Connected", "Please enter your YouTube API credentials in Settings first.");
+      toast.error("YouTube Not Connected", "Connect your channel in Settings → YouTube & Shorts first — it takes one press.");
       setSettingsOpen(true);
       return;
     }
@@ -1558,11 +1569,11 @@ export function AgentHub() {
                 YouTube Automation
               </span>
               <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                ytStatus.connected || ytStatus.configured
+                ytStatus.connected
                   ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                   : "bg-gray-800 text-gray-400 border border-gray-700"
               }`}>
-                {ytStatus.connected || ytStatus.configured ? (ytStatus.channelTitle || "CONNECTED") : "NOT LINKED"}
+                {ytStatus.connected ? (ytStatus.channelTitle || "CONNECTED") : "NOT LINKED"}
               </span>
             </div>
 
@@ -1620,7 +1631,7 @@ export function AgentHub() {
                 type="button"
                 onClick={() => setSettingsOpen(true)}
                 className="rounded-lg border border-[#14233D] bg-[#070D18] hover:border-cyan-400 text-gray-300 hover:text-white px-2 py-1 text-[11px] transition-all cursor-pointer flex items-center gap-1"
-                title="Configure YouTube API Keys"
+                title="Connect YouTube"
               >
                 <SettingsIcon className="h-3 w-3" />
                 Setup
@@ -2210,11 +2221,11 @@ export function AgentHub() {
                   YouTube Shorts Auto-Publish
                 </span>
                 <span className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${
-                  ytStatus.connected || ytStatus.configured
+                  ytStatus.connected
                     ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     : "bg-gray-800 text-gray-400 border border-gray-700"
                 }`}>
-                  {ytStatus.connected || ytStatus.configured ? (ytStatus.channelTitle || "LINKED") : "NOT LINKED"}
+                  {ytStatus.connected ? (ytStatus.channelTitle || "LINKED") : "NOT LINKED"}
                 </span>
               </div>
 
@@ -2239,9 +2250,9 @@ export function AgentHub() {
                 </select>
               </div>
 
-              {(!ytStatus.connected && !ytStatus.configured) && (
+              {!ytStatus.connected && (
                 <p className="text-[10px] text-gray-400">
-                  Tip: Add your Google OAuth keys in{" "}
+                  Tip: Connect YouTube in{" "}
                   <button
                     type="button"
                     onClick={() => {
@@ -2252,7 +2263,7 @@ export function AgentHub() {
                   >
                     Assistant Settings
                   </button>{" "}
-                  to enable automatic posting.
+                  {ytStatus.oneClick ? " — one press, nothing to set up." : " to enable automatic posting."}
                 </p>
               )}
             </div>
@@ -2451,7 +2462,7 @@ export function AgentHub() {
                 }`}
               >
                 <Youtube className="h-3.5 w-3.5 text-red-500" />
-                YouTube API & Shorts
+                YouTube & Shorts
               </button>
               <button
                 type="button"
@@ -2682,82 +2693,141 @@ export function AgentHub() {
               </div>
             )}
 
-            {/* TAB 2: YouTube API & Shorts Auto-Publish */}
+            {/* TAB 2: YouTube & Shorts — connecting, then auto-publish */}
             {settingsTab === "youtube" && (
               <div className="space-y-3.5 animate-fadeIn">
                 <div className="p-3 rounded-lg border border-red-500/30 bg-[#070D18] space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Youtube className="h-4 w-4 text-red-500" />
-                      <span className="text-xs font-bold text-white">YouTube Data API v3 & Auto-Publish</span>
+                      <span className="text-xs font-bold text-white">YouTube Shorts &amp; Auto-Publish</span>
                     </div>
-                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                      ytStatus.connected || ytStatus.configured
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                        : "bg-gray-800 text-gray-400"
-                    }`}>
-                      {ytStatus.connected || ytStatus.configured ? (ytStatus.channelTitle || "CONNECTED") : "NOT CONFIGURED"}
+                    <span
+                      data-testid="yt-badge"
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                        ytStatus.connected
+                          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          : ytStatus.needsReconnect
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : "bg-gray-800 text-gray-400"
+                      }`}
+                    >
+                      {ytStatus.connected ? ytStatus.channelTitle || "CONNECTED" : ytStatus.needsReconnect ? "CONNECT AGAIN" : "NOT LINKED"}
                     </span>
                   </div>
 
-                  <p className="text-[10px] text-gray-400">
-                    Link your channel so Soundwave can post shorts for you. Google needs your own free OAuth client (type <b className="text-gray-200">Desktop app</b>) — about 10 minutes, once.
-                  </p>
-
-                  <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-gray-400" data-testid="yt-steps">
-                    <li>console.cloud.google.com → create a project (use the account that owns the channel).</li>
-                    <li>APIs &amp; Services → Library → <b className="text-gray-300">YouTube Data API v3</b> → Enable.</li>
-                    <li>Google Auth platform → Get started: name, your email, Audience <b className="text-gray-300">External</b> → Create.</li>
-                    <li>Audience → Test users → add your Gmail (or <b className="text-gray-300">Publish app</b> to skip re-linking every 7 days).</li>
-                    <li>Clients → Create client → <b className="text-gray-300">Desktop app</b> → copy the Client ID and secret.</li>
-                    <li>Paste them below and press <b className="text-gray-300">Connect YouTube account</b>.</li>
-                  </ol>
-
-                  <div className="space-y-2 pt-1">
-                    <div>
-                      <label className="text-[10px] text-gray-400 block mb-0.5">Google OAuth Client ID</label>
-                      <input
-                        type="text"
-                        placeholder={ytStatus.hasClientId ? "Saved — paste a new one to replace it" : "e.g. 123456789-abc.apps.googleusercontent.com"}
-                        value={ytClientId}
-                        onChange={(e) => setYtClientId(e.target.value)}
-                        className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] text-gray-400 block mb-0.5">Client Secret</label>
-                      <input
-                        type="password"
-                        placeholder={ytStatus.hasClientSecret ? "Saved — paste a new one to replace it" : "GOCSPX-..."}
-                        value={ytClientSecret}
-                        onChange={(e) => setYtClientSecret(e.target.value)}
-                        className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleConnectYt()}
-                        disabled={isConnectingYt}
-                        data-testid="yt-connect"
-                        className="flex items-center gap-1.5 rounded bg-red-600 hover:bg-red-500 text-white px-3.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer shadow-sm shadow-red-600/30 disabled:opacity-60"
-                      >
-                        {isConnectingYt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
-                        {isConnectingYt ? "Waiting for Google…" : ytStatus.connected ? "Reconnect YouTube account" : "Connect YouTube account"}
-                      </button>
-                      <span className="text-[10px] text-gray-500">Opens Google's sign-in in your browser; the link is saved automatically.</span>
-                    </div>
-
-                    <p className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200/80">
-                      YouTube keeps uploads from new Google Cloud projects <b>Private</b> until the project passes YouTube's API audit (the agent can explain). You can always download the MP4 and post it in YouTube Studio.
+                  {ytStatus.connected ? (
+                    <p className="text-[10px] text-gray-400">
+                      Linked to <b className="text-gray-200">{ytStatus.channelTitle || "your channel"}</b>. Post any rendered short from the chat, or let new ones post themselves.
                     </p>
+                  ) : (
+                    <>
+                      {ytStatus.needsReconnect && (
+                        <p className="rounded border border-amber-500/25 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200/90">
+                          Your saved sign-in was made with a different Google app — connecting again fixes it (one press).
+                        </p>
+                      )}
+                      {ytStatus.oneClick ? (
+                        <div className="space-y-2" data-testid="yt-oneclick">
+                          <p className="text-[10px] text-gray-400">
+                            One press: sign in with Google and Soundwave can post your shorts.{" "}
+                            <b className="text-gray-200">Nothing to set up in Google Cloud.</b>
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleConnectYt()}
+                              disabled={isConnectingYt}
+                              data-testid="yt-connect"
+                              className="flex items-center gap-1.5 rounded bg-red-600 hover:bg-red-500 text-white px-3.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer shadow-sm shadow-red-600/30 disabled:opacity-60"
+                            >
+                              {isConnectingYt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                              {isConnectingYt ? "Waiting for Google…" : "Connect YouTube"}
+                            </button>
+                            <span className="text-[10px] text-gray-500">Opens Google's sign-in in your browser and comes straight back.</span>
+                          </div>
+                          <p className="text-[10px] text-gray-500">
+                            Soundwave asks Google for two things only: uploading videos and the channel's name. You can remove access any time at{" "}
+                            <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
+                              myaccount.google.com/permissions
+                            </a>
+                            .
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2" data-testid="yt-manual">
+                          <p className="text-[10px] text-gray-400">
+                            This build doesn't include Soundwave's own Google app, so YouTube needs{" "}
+                            <b className="text-gray-200">your own free OAuth client once</b> — three clicks in Google Cloud, about two minutes:
+                          </p>
+                          <textarea
+                            rows={2}
+                            data-testid="yt-client-box"
+                            value={ytClientPaste}
+                            onChange={(e) => setYtClientPaste(e.target.value)}
+                            placeholder="Paste the client_secret_….json you downloaded — or the Client ID and the secret together"
+                            className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleConnectYt()}
+                              disabled={isConnectingYt}
+                              data-testid="yt-connect"
+                              className="flex items-center gap-1.5 rounded bg-red-600 hover:bg-red-500 text-white px-3.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer shadow-sm shadow-red-600/30 disabled:opacity-60"
+                            >
+                              {isConnectingYt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                              {isConnectingYt ? "Waiting for Google…" : "Connect YouTube"}
+                            </button>
+                            <span className="text-[10px] text-gray-500">Saves what you pasted, then opens Google's sign-in. The link is kept automatically.</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
 
-                    <details className="text-[10px] text-gray-400">
-                      <summary className="cursor-pointer select-none hover:text-gray-200">Advanced: paste a refresh token instead (OAuth Playground)</summary>
-                      <div className="mt-1.5">
-                        <label className="text-[10px] text-gray-400 block mb-0.5">OAuth Refresh Token</label>
+                  <details className="text-[10px] text-gray-400" data-testid="yt-advanced">
+                    <summary className="cursor-pointer select-none hover:text-gray-200">
+                      {ytStatus.oneClick && !ytStatus.connected
+                        ? "Advanced: use your own Google Cloud project instead (or an OAuth Playground refresh token)"
+                        : "The Google Cloud clicks, step by step (and the refresh-token route)"}
+                    </summary>
+                    <div className="mt-1.5 space-y-2">
+                      {ytStatus.oneClick && (
+                        <textarea
+                          rows={2}
+                          data-testid="yt-client-box-advanced"
+                          value={ytClientPaste}
+                          onChange={(e) => setYtClientPaste(e.target.value)}
+                          placeholder="Your own client: paste the client_secret_….json — or the Client ID and secret together"
+                          className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
+                        />
+                      )}
+                      <ol className="list-decimal space-y-1 pl-4" data-testid="yt-steps">
+                        <li>
+                          Open the{" "}
+                          <a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
+                            OAuth clients page
+                          </a>{" "}
+                          with the account that owns your channel — Google walks you through the project and the consent screen the first time (accept the defaults). If it asks to enable the API first,{" "}
+                          <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
+                            it's one click here
+                          </a>
+                          .
+                        </li>
+                        <li>
+                          Add your Gmail under <b className="text-gray-300">Audience → Test users</b>, or press <b className="text-gray-300">Publish app</b> so Google doesn't end the sign-in after 7 days.
+                        </li>
+                        <li>
+                          <b className="text-gray-300">Create client</b> → type <b className="text-gray-300">Desktop app</b> → Create → <b className="text-gray-300">Download JSON</b>.
+                        </li>
+                        <li>
+                          Paste it above and press <b className="text-gray-300">Connect YouTube</b> — sign in with Google and you're done.
+                        </li>
+                      </ol>
+
+                      <div>
+                        <label className="text-[10px] text-gray-400 block mb-0.5">Or paste an OAuth Playground refresh token</label>
                         <input
                           type="password"
                           placeholder="1//04..."
@@ -2767,34 +2837,13 @@ export function AgentHub() {
                         />
                         <p className="mt-1 text-gray-500">Needs a “Web application” client with https://developers.google.com/oauthplayground as redirect URI and the scopes youtube.upload + youtube.readonly.</p>
                       </div>
-                    </details>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <label className="text-gray-300 text-[11px] flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={ytAutoPublish}
-                          onChange={(e) => setYtAutoPublish(e.target.checked)}
-                          className="rounded border-[#172A4A] bg-[#070D18] text-red-600 focus:ring-0 cursor-pointer"
-                        />
-                        <span>Auto-Publish Shorts to YouTube upon generation</span>
-                      </label>
+                      {!ytStatus.oneClick && (
+                        <p className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200/80">
+                          YouTube keeps uploads from new Google Cloud projects <b>Private</b> until the project passes YouTube's API audit (the agent can explain). You can always download the MP4 and post it in YouTube Studio.
+                        </p>
+                      )}
 
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-gray-400">Privacy:</span>
-                        <select
-                          value={ytPrivacy}
-                          onChange={(e) => setYtPrivacy(e.target.value as any)}
-                          className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1 text-[10px] text-white focus:outline-none"
-                        >
-                          <option value="public">Public</option>
-                          <option value="unlisted">Unlisted</option>
-                          <option value="private">Private</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center pt-2 border-t border-[#172A4A]/60">
                       <button
                         type="button"
                         onClick={() => {
@@ -2807,26 +2856,51 @@ export function AgentHub() {
                         <Sparkles className="h-2.5 w-2.5" />
                         Ask Soundwave to walk me through it
                       </button>
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleTestYt}
-                          disabled={isTestingYt}
-                          className="rounded border border-[#172A4A] bg-[#0A1224] hover:bg-[#111E3A] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          {isTestingYt ? "Testing..." : "Test Connection"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveYtConfig}
-                          disabled={isSavingYt}
-                          className="rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 text-red-200 px-3.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          {isSavingYt ? "Saving..." : "Save API Keys"}
-                        </button>
-                      </div>
                     </div>
+                  </details>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <label className="text-gray-300 text-[11px] flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ytAutoPublish}
+                        onChange={(e) => setYtAutoPublish(e.target.checked)}
+                        className="rounded border-[#172A4A] bg-[#070D18] text-red-600 focus:ring-0 cursor-pointer"
+                      />
+                      <span>Auto-Publish Shorts to YouTube upon generation</span>
+                    </label>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-400">Privacy:</span>
+                      <select
+                        value={ytPrivacy}
+                        onChange={(e) => setYtPrivacy(e.target.value as any)}
+                        className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1 text-[10px] text-white focus:outline-none"
+                      >
+                        <option value="public">Public</option>
+                        <option value="unlisted">Unlisted</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end items-center gap-2 pt-2 border-t border-[#172A4A]/60">
+                    <button
+                      type="button"
+                      onClick={handleTestYt}
+                      disabled={isTestingYt}
+                      className="rounded border border-[#172A4A] bg-[#0A1224] hover:bg-[#111E3A] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isTestingYt ? "Testing..." : "Test Connection"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveYtConfig()}
+                      disabled={isSavingYt}
+                      className="rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 text-red-200 px-3.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingYt ? "Saving..." : "Save settings"}
+                    </button>
                   </div>
                 </div>
               </div>

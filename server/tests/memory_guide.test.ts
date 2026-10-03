@@ -210,11 +210,11 @@ describe("the Soundwave guide", () => {
       .find((d) => d.name === "soundwave_guide")!;
     expect(decl.parameters.properties.section.enum).toEqual(guide.GUIDE_IDS);
     expect(instructionOf(0)).toMatch(/call soundwave_guide for the right section first/);
-    expect(instructionOf(0)).toMatch(/- youtube-link: the complete walkthrough/);
+    expect(instructionOf(0)).toMatch(/- youtube-link: one press when the app ships/);
 
     const section = lastResponse(1).response.sections[0];
     expect(section.id).toBe("youtube-link");
-    for (const fact of ["YouTube Data API v3", "Google Auth platform", "Test users", "Desktop app", "Connect YouTube account", "audit", "7 days", "100 uploads", "redirect_uri_mismatch"]) {
+    for (const fact of ["YouTube Data API v3", "Google Auth platform", "Test users", "Desktop app", "Connect YouTube", "audit", "7 days", "100 uploads", "redirect_uri_mismatch"]) {
       expect(section.text).toContain(fact);
     }
   });

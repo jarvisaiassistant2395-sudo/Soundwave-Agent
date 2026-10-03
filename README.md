@@ -159,13 +159,22 @@ lighter Flash-Lite model when the chat outgrows the 24 messages sent along,
 and when you press Clear), and the last Morning Setup. Command Center → gear
 → **Memory** shows and edits it.
 
-**Link YouTube** (desktop 1.4.0+): create a free OAuth client of type
-**Desktop app** in Google Cloud (YouTube Data API v3 enabled, yourself as a
-test user), paste its ID and secret in Command Center → gear → **YouTube API
-& Shorts**, press **Connect YouTube account** and sign in with Google in your
-browser — the app catches the loopback redirect (PKCE) and saves the refresh
-token. Uploads from unaudited Google Cloud projects stay private until
-YouTube's API audit; "Testing" consent screens expire the sign-in after 7 days
+**Connect YouTube** (desktop 1.5.5+): Command Center → gear → **YouTube &
+Shorts** → **Connect YouTube** → sign in with Google. That is the whole
+setup — one press, nothing to create in Google Cloud, because release builds
+ship Soundwave's own Google client (the app catches the loopback redirect with
+PKCE and saves the refresh token). Two repository secrets make it so for every
+installer: create one **Desktop app** OAuth client for the shop, save it as
+`SOUNDWAVE_YOUTUBE_CLIENT_ID` / `SOUNDWAVE_YOUTUBE_CLIENT_SECRET`, and the
+release workflow bakes it into `app/config/youtube-client.json` (gitignored;
+`desktop/src/server-env.cjs` reads it — an already-set environment variable
+wins, so a developer can point a build at a different client). Developer and
+self-hosted builds without it say so honestly and fall back to the person's
+own free OAuth client: three clicks in Google Cloud (the panel links to the
+exact pages), set your Gmail as a test user or hit *Publish app*, download the
+client JSON, paste it — one box takes the file's contents or both values — and
+press Connect. Uploads from unaudited projects stay private until YouTube's
+API audit, and "Testing" consent screens expire the sign-in after 7 days
 (publish the app to avoid it). The agent explains all of this on request.
 
 ## Get the phone app (Android)

@@ -312,11 +312,20 @@ try {
   const memoryNow = await main.evaluate(async () => (await fetch("/api/v1/memory")).json());
   if (!memoryNow.notes?.some((n) => /space facts/.test(n.text))) await fail(`Memory tab: the note isn't in the agent's memory (${JSON.stringify(memoryNow).slice(0, 200)})`);
   await main.screenshot({ path: path.join(shotsDir, "9-memory-tab.png"), timeout: 15_000 }).catch(() => {});
-  await main.click('button:has-text("YouTube API & Shorts")');
+  await main.click('button:has-text("YouTube & Shorts")');
   await main.waitForSelector('[data-testid="yt-connect"]', { timeout: 15_000 });
+  const ytMode = await main.evaluate(async () => (await fetch("/api/v1/youtube/status")).json());
+  const oneClickPanel = await main.$('[data-testid="yt-oneclick"]');
+  const manualPanel = await main.$('[data-testid="yt-manual"]');
+  if (!ytMode.connected) {
+    if (ytMode.oneClick && !oneClickPanel) await fail(`YouTube: the API says one-click but the panel doesn't show the one-press block (${JSON.stringify(ytMode)})`);
+    if (!ytMode.oneClick && !manualPanel) await fail(`YouTube: no built-in client, but the panel doesn't show the own-client path (${JSON.stringify(ytMode)})`);
+  }
   await main.screenshot({ path: path.join(shotsDir, "10-youtube-tab.png"), timeout: 15_000 }).catch(() => {});
   await main.keyboard.press("Escape");
-  ok('Memory tab: a note added in the app is in the agent\'s memory; the YouTube tab has "Connect YouTube account" and the steps');
+  ok(
+    `Memory tab: a note added in the app is in the agent's memory; the YouTube tab offers Connect YouTube (${ytMode.oneClick ? "one press — Soundwave's own Google app is baked in" : "with the person's own Google client, 3 short steps"})`,
+  );
 
   // ── 3e. Ghost Operator macros really run: a clipboard round trip through ──
   // Electron, and an honest skip for what Soundwave can't do yet.

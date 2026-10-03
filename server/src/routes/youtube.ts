@@ -4,7 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 import { optionalAuth } from "../middleware/auth.js";
-import { youtubeService, type YouTubeConfig } from "../lib/youtube.js";
+import { extractOAuthClient, youtubeService, type YouTubeConfig } from "../lib/youtube.js";
 import { config } from "../config.js";
 import { ConnectError, startYouTubeConnect, YOUTUBE_SCOPES } from "../lib/youtubeOAuth.js";
 import { notFromApp } from "../middleware/localApp.js";
@@ -14,12 +14,19 @@ const router = Router();
 // GET /api/v1/youtube/status
 router.get("/status", (_req, res) => {
   const cfg = youtubeService.getConfig();
-  const isConnected = !!(cfg.clientId && cfg.clientSecret && cfg.refreshToken);
+  const client = youtubeService.client();
+  const { connected, needsReconnect } = youtubeService.connectionState();
   res.json({
-    connected: isConnected,
-    configured: isConnected,
-    channelTitle: cfg.channelTitle || null,
-    channelId: cfg.channelId || null,
+    connected,
+    needsReconnect,
+    configured: connected,
+    // One-click: this build ships Soundwave's own Google app, so connecting is
+    // a single button and the customer never sees Google Cloud. Without it the
+    // panel shows the short "use your own client" path instead.
+    oneClick: client?.source === "built-in",
+    clientSource: client?.source ?? "none",
+    channelTitle: connected ? cfg.channelTitle || null : null,
+    channelId: connected ? cfg.channelId || null : null,
     autoPublish: cfg.autoPublish,
     defaultPrivacy: cfg.defaultPrivacy,
     defaultTags: cfg.defaultTags,
@@ -34,6 +41,9 @@ router.get("/status", (_req, res) => {
 const configSchema = z.object({
   clientId: z.string().optional(),
   clientSecret: z.string().optional(),
+  // The whole client_secret_….json (or the two values) pasted into one box —
+  // the server picks the ID and secret out of it.
+  clientJson: z.string().max(20_000).optional(),
   refreshToken: z.string().optional(),
   autoPublish: z.boolean().optional(),
   defaultPrivacy: z.enum(["public", "unlisted", "private"]).optional(),
@@ -42,26 +52,39 @@ const configSchema = z.object({
 });
 
 router.post("/config", optionalAuth, validate({ body: configSchema }), (req, res) => {
-  const updates = req.body as Partial<YouTubeConfig>;
+  const { clientJson, ...updates } = req.body as Partial<YouTubeConfig> & { clientJson?: string };
+  if (clientJson?.trim()) {
+    const parsed = extractOAuthClient(clientJson);
+    if (!parsed) {
+      return res.status(400).json({
+        error: {
+          code: "BAD_CLIENT_JSON",
+          message: "That doesn't look like an OAuth client. Paste the whole client_secret_….json file you downloaded, or the Client ID and the secret together.",
+        },
+      });
+    }
+    updates.clientId = parsed.clientId;
+    updates.clientSecret = parsed.clientSecret;
+  }
   const updated = youtubeService.saveConfig(updates);
-  const isConnected = !!(updated.clientId && updated.clientSecret && updated.refreshToken);
-  res.json({
-    ok: true,
-    status: {
-      connected: isConnected,
-      configured: isConnected,
-      channelTitle: updated.channelTitle,
-      autoPublish: updated.autoPublish,
-      defaultPrivacy: updated.defaultPrivacy,
-      defaultTags: updated.defaultTags,
-    },
-    connected: isConnected,
-    configured: isConnected,
-    channelTitle: updated.channelTitle,
+  const client = youtubeService.client();
+  const { connected, needsReconnect } = youtubeService.connectionState();
+  const status = {
+    connected,
+    needsReconnect,
+    configured: connected,
+    oneClick: client?.source === "built-in",
+    clientSource: client?.source ?? "none",
+    channelTitle: connected ? updated.channelTitle ?? null : null,
+    channelId: connected ? updated.channelId ?? null : null,
     autoPublish: updated.autoPublish,
     defaultPrivacy: updated.defaultPrivacy,
     defaultTags: updated.defaultTags,
-  });
+    hasClientId: !!updated.clientId,
+    hasClientSecret: !!updated.clientSecret,
+    hasRefreshToken: !!updated.refreshToken,
+  };
+  res.json({ ok: true, ...status, status });
 });
 
 // POST /api/v1/youtube/test - Test credentials and update channel info
@@ -168,16 +191,32 @@ router.post("/connect", (req, res) => {
 
 // GET /api/v1/youtube/oauth-guide — the short version of the guide (the agent explains it in detail).
 router.get("/oauth-guide", (_req, res) => {
+  const oneClick = youtubeService.client()?.source === "built-in";
   res.json({
-    steps: [
-      "1. Open console.cloud.google.com with the Google account that owns your channel and create a project.",
-      "2. APIs & Services → Library → YouTube Data API v3 → Enable.",
-      "3. Google Auth platform → Get started: app name, your email, Audience: External, agree → Create.",
-      "4. Google Auth platform → Audience → Test users → add your Gmail (or press Publish app to avoid re-connecting every 7 days).",
-      "5. Google Auth platform → Clients → Create client → Desktop app → copy the Client ID and Client secret.",
-      "6. In Soundwave: Command Center → gear → YouTube API & Shorts → paste both → Save API Keys → Connect YouTube account.",
-    ],
-    note: "New Google Cloud projects upload as Private until YouTube's API audit approves them.",
+    mode: oneClick ? "one-click" : "own-client",
+    headline: oneClick
+      ? "Connecting takes one press: sign in with Google, allow Soundwave to upload, done. Nothing to set up in Google Cloud."
+      : "This build doesn't include Soundwave's own Google app, so you connect with your own free OAuth client — three clicks in Google Cloud, two minutes once.",
+    steps: oneClick
+      ? [
+          "1. Settings → YouTube & Shorts → Connect YouTube.",
+          "2. Pick your Google account and allow Soundwave to upload videos (and read the channel's name).",
+          "3. Close the tab that says “YouTube is connected” — Soundwave shows your channel name.",
+        ]
+      : [
+          "1. Open the clients page with the account that owns your channel: console.cloud.google.com/auth/clients/create (Google walks you through creating a project and the consent screen the first time — accept the defaults).",
+          "2. If it asks you to enable the API first: console.cloud.google.com/apis/library/youtube.googleapis.com → Enable. Then, on the consent screen, add your Gmail under Audience → Test users (or press “Publish app” to avoid re-linking every 7 days).",
+          "3. Create client → Application type: Desktop app → Create → “Download JSON”.",
+          "4. In Soundwave: paste that file's contents (or the Client ID and secret) into the one box and press Connect YouTube — the sign-in opens in your browser and comes straight back.",
+        ],
+    note: oneClick
+      ? "Google then keeps the sign-in until you remove it (myaccount.google.com/permissions) or change the account. New, unaudited apps upload as Private until YouTube approves the app for public uploads."
+      : "New Google Cloud projects upload as Private until YouTube's API audit approves them.",
+    links: {
+      createClient: "https://console.cloud.google.com/auth/clients/create",
+      enableApi: "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
+      removeAccess: "https://myaccount.google.com/permissions",
+    },
     scope: YOUTUBE_SCOPES.join(" "),
     requiredScopes: YOUTUBE_SCOPES,
   });

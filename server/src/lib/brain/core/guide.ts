@@ -26,7 +26,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
 Main parts:
 - Command Center: the main page (it opens first). Type or talk to the agent; it makes shorts, answers questions, explains the app, opens websites and apps, and checks the PC.
 - Shorts: the agent writes a script for the topic (with Gemini), narrates it in a Soundwave voice, adds big word-by-word captions over gameplay from the Orbital NCG YouTube channel, and renders a 9:16 video — a few minutes per short.
-- YouTube: link a channel once and shorts can be posted automatically or with one click.
+- YouTube: link a channel once — in a normal build it's one press and a Google sign-in — and shorts can be posted automatically or with one click.
 - Brain: Google Gemini with the user's own free API key (Settings → Brain).
 - Memory: notes the agent saves, a summary of earlier conversations, and the list of shorts made — so it remembers what you did together.
 - Voice: tap the mic, hold it to talk, or press Ctrl+Shift+Space from any app. Speech is recognized on the PC; replies are spoken in Microsoft neural voices.
@@ -87,7 +87,7 @@ To cut Shorts out of a video that already exists (a long recording, someone else
 
 It then cuts each moment into a vertical Short: the video cropped to 9:16, the sound exactly as recorded, and captions of what is being said, burned in. Nothing else is added — no narration, no new background — it's your own footage. Ask for 1 to 5 (3 by default); 720p or 1080p comes from Settings → Quality, as for every short.
 
-Rendering takes a few minutes per clip; the clips are posted in this chat as they're ready, and can be watched, downloaded and uploaded to YouTube from here (Settings → YouTube API & Shorts). This runs on the PC, so it needs Soundwave AI running — the phone asks the PC for it, like every short. The speech engine (whisper.cpp, the same one voice input uses) writes the captions; without it the clips are still cut, just without captions, and a video with no speech (music, gameplay) is cut without them too.
+Rendering takes a few minutes per clip; the clips are posted in this chat as they're ready, and can be watched, downloaded and uploaded to YouTube from here (Settings → YouTube & Shorts). This runs on the PC, so it needs Soundwave AI running — the phone asks the PC for it, like every short. The speech engine (whisper.cpp, the same one voice input uses) writes the captions; without it the clips are still cut, just without captions, and a video with no speech (music, gameplay) is cut without them too.
 
 Only one video renders at a time (this and the normal shorts share that). Nothing is ever posted anywhere by itself.`,
   },
@@ -121,38 +121,29 @@ If importing fails: YouTube sometimes blocks downloads ("Sign in to confirm you'
   },
   {
     id: "youtube-link",
-    title: "Linking a YouTube channel (step by step)",
-    summary: "the complete walkthrough: Google Cloud project, YouTube Data API, consent screen, Desktop OAuth client, Connect button, common errors",
-    text: `Linking lets Soundwave upload shorts to your channel. It's free and takes about 10 minutes once. You create your own small "app" in Google Cloud (Google requires it), then connect it in Soundwave.
+    title: "Linking a YouTube channel",
+    summary: "one press when the app ships Soundwave's own Google client; otherwise your own free client in three clicks; the private-upload rule and the usual errors",
+    text: `Linking lets Soundwave upload shorts to your channel. In a normal build it is one press: Settings (gear) → YouTube & Shorts → Connect YouTube → sign in with Google → allow → done. Nothing to set up in Google Cloud — the app carries its own Google client, and asks Google only for permission to upload videos and read the channel's name.
 
-Part A — in Google Cloud (use the Google account that owns the YouTube channel):
-1. Open console.cloud.google.com and sign in.
-2. Create a project: click the project picker at the top → New Project → name it, e.g. "Soundwave" → Create. Make sure it's selected at the top.
-3. Turn on the YouTube API: menu (☰) → APIs & Services → Library → search "YouTube Data API v3" → open it → Enable.
-4. Set up the sign-in screen: menu → Google Auth platform (older consoles: APIs & Services → OAuth consent screen) → Get started. App name: "Soundwave"; support email: your Gmail → Next. Audience: External → Next. Contact email: your Gmail → Next. Agree to the policy → Continue → Create.
-5. Allow your account: Google Auth platform → Audience → Test users → Add users → enter the same Gmail → Save. (Or press "Publish app" here instead — see "Good to know" below.)
-6. Create the client: Google Auth platform → Clients → Create client → Application type: Desktop app → name "Soundwave desktop" → Create. Copy the Client ID (ends in .apps.googleusercontent.com) and the Client secret (starts with GOCSPX-). It must be the "Desktop app" type.
+If the build has no built-in Google client (a developer or self-hosted build), the panel says so and asks for your own free OAuth client instead — three clicks, about two minutes:
+1. Open console.cloud.google.com/auth/clients/create with the account that owns the channel. Google walks you through creating a project and the consent screen the first time; accept the defaults. If it asks you to enable the API first: YouTube Data API v3 at console.cloud.google.com/apis/library/youtube.googleapis.com → Enable.
+2. Add your Gmail under Google Auth platform → Audience → Test users (or press "Publish app" so Google doesn't end the sign-in after 7 days).
+3. Create client → Application type: Desktop app → Create → "Download JSON".
+4. In Soundwave: Settings → YouTube & Shorts → paste that file's contents (or the Client ID and the secret) into the one box → Connect YouTube → sign in with Google. The browser comes straight back; the badge shows your channel name.
 
-Part B — in Soundwave on the PC:
-7. Command Center → gear button → "YouTube API & Shorts" tab. Paste the Client ID and the Client Secret, then press "Save API Keys".
-8. Press "Connect YouTube account". Your web browser opens Google's sign-in: pick the account (and the channel, if it asks). Google warns "Google hasn't verified this app" — that's expected because it's your own app: click Continue. Allow both permissions (upload videos, see your YouTube account) → Continue. The page says "YouTube is connected" — close it and go back to Soundwave. The badge now shows your channel name.
-9. Optional: tick "Auto-Publish Shorts to YouTube upon generation", pick the Privacy (Public, Unlisted, Private) and press "Save API Keys". "Test Connection" checks the link any time.
+Then, if you want: tick "Auto-Publish Shorts to YouTube upon generation", choose the Privacy (Public, Unlisted, Private) and press "Save settings". "Test Connection" checks the link any time, and you can remove Soundwave's access at myaccount.google.com/permissions.
 
-Good to know (important):
-- Private lock: YouTube restricts videos uploaded through the API from new, unaudited Google Cloud projects to private viewing. Uploads work, but they stay Private until your project passes YouTube's API compliance audit — request it with the YouTube API Services audit form (support.google.com/youtube/contact/yt_api_form). Until then, to publish publicly, download the MP4 in Soundwave and upload it in YouTube Studio.
-- Weekly re-linking: while the app in Google Auth platform is in "Testing", Google ends the sign-in after 7 days and uploads fail until you press "Connect YouTube account" again. To avoid that, open Google Auth platform → Audience → "Publish app" (In production). No review is needed for your own use; you'll just see the "unverified app" warning when connecting.
-- Limits: up to 100 uploads per day per Google Cloud project — plenty for shorts.
+Good to know:
+- Private lock: videos uploaded through the YouTube API from a new, unaudited project can stay Private until the project passes YouTube's API compliance audit (support.google.com/youtube/contact/yt_api_form). Until it does, to publish publicly, download the MP4 in Soundwave and upload it in YouTube Studio.
+- Weekly re-linking (your own client, still in "Testing"): Google ends those sign-ins after 7 days — press Connect YouTube again, or press "Publish app" in Google Auth platform → Audience.
+- Limits: up to 100 uploads per day per project — plenty for shorts.
 
 If something goes wrong:
-- "redirect_uri_mismatch": the client isn't a Desktop app — create a new client with type Desktop app (step 6) and paste its ID and secret.
-- "Access blocked" / "access_denied" / "has not completed the Google verification process": add your Gmail as a test user (step 5) or publish the app. If you pressed Cancel, just connect again.
-- "invalid_grant" or uploads suddenly failing: the sign-in expired or was removed — press "Connect YouTube account" again.
-- "No YouTube channel": that Google account has no channel — create one at youtube.com, or connect with the right account.
-- "insufficientPermissions" on Test Connection: connect again and allow both permissions.
-
-Advanced alternative: paste a refresh token from Google's OAuth 2.0 Playground (needs a "Web application" client with https://developers.google.com/oauthplayground as redirect URI, and the scopes youtube.upload and youtube.readonly) into the "OAuth Refresh Token" field.
-
-To unlink: delete the fields and save, and remove the app's access at myaccount.google.com/permissions.`,
+- "Access blocked", "access_denied" or "hasn't completed the Google verification process": add your Gmail as a test user (step 2) or publish the app. If you pressed Cancel, just connect again.
+- "redirect_uri_mismatch": the client isn't a Desktop app — create a new client of type Desktop app.
+- "invalid_grant", or uploads suddenly failing: the sign-in expired or was removed — press Connect YouTube again.
+- "No YouTube channel": that Google account has none — create one at youtube.com, or connect with the right account.
+`,
   },
   {
     id: "youtube-publish",
@@ -353,7 +344,7 @@ Other Morning Setup settings (Settings → Morning Setup): the city for the weat
 - Phone: let my phone connect (pairing QR code), chat from the phone when this PC is off, paired phones, help if the phone can't connect.
 - Morning Setup: your daily briefing (every morning at…, your topics), weather city, websites and apps to open, open them from the phone, short ideas.
 
-In the Command Center, the gear button opens Assistant Configuration: General & Voice, Memory, YouTube API & Shorts, Thinking Orb.`,
+In the Command Center, the gear button opens Assistant Configuration: General & Voice, Memory, YouTube & Shorts, Thinking Orb.`,
   },
   {
     id: "desktop-app",

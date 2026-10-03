@@ -2,6 +2,53 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
 
+/**
+ * Soundwave's own Google OAuth app, when a packaged build ships one. Then
+ * "Connect YouTube" is a single button: nobody has to make a Google Cloud
+ * project, enable an API or paste a client ID — the customer only signs in.
+ * Desktop apps' client secrets are not treated as confidential by Google (the
+ * loopback + PKCE sign-in below is designed for exactly this), and it arrives
+ * from appRoot/config/youtube-client.json (desktop/src/server-env.cjs) or the
+ * environment at build time — never from the person's saved settings.
+ */
+export function builtInYouTubeClient(): { clientId: string; clientSecret: string } | null {
+  const clientId = (process.env.SOUNDWAVE_YOUTUBE_CLIENT_ID ?? "").trim();
+  const clientSecret = (process.env.SOUNDWAVE_YOUTUBE_CLIENT_SECRET ?? "").trim();
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+/** Which OAuth client a request should use: the person's own if they made one
+ *  (power users, self-hosted builds), otherwise Soundwave's built-in one. */
+export interface YouTubeClient {
+  clientId: string;
+  clientSecret: string;
+  source: "own" | "built-in";
+}
+
+/**
+ * Pull the Client ID and secret out of what people actually paste: the whole
+ * downloaded client_secret_….json file, or the two values copied one after the
+ * other. Returns null when either half is missing.
+ */
+export function extractOAuthClient(text: string): { clientId: string; clientSecret: string } | null {
+  const raw = (text ?? "").trim();
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as Record<string, any>;
+    const node = data?.installed ?? data?.web ?? data?.desktop ?? data?.config ?? data;
+    const id = node?.client_id ?? node?.clientId;
+    const secret = node?.client_secret ?? node?.clientSecret;
+    if (typeof id === "string" && typeof secret === "string" && id.trim() && secret.trim()) {
+      return { clientId: id.trim(), clientSecret: secret.trim() };
+    }
+  } catch {
+    /* not JSON — the two values were pasted */
+  }
+  const clientId = raw.match(/[0-9A-Za-z_-]{6,}\.apps\.googleusercontent\.com/)?.[0];
+  const clientSecret = raw.match(/GOCSPX-[A-Za-z0-9_-]{4,}/)?.[0];
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
 export interface YouTubeConfig {
   clientId: string;
   clientSecret: string;
@@ -14,6 +61,11 @@ export interface YouTubeConfig {
   defaultPrivacy: "public" | "unlisted" | "private";
   defaultTags: string[];
   titleSuffix: string;
+  /** Which client minted the saved refresh token, and its ID: a client switch
+   *  (own ↔ built-in) asks for a reconnect instead of failing later with
+   *  Google's invalid_client. */
+  clientSource?: "own" | "built-in";
+  connectedClientId?: string;
 }
 
 export class YouTubeService {
@@ -75,9 +127,39 @@ export class YouTubeService {
         delete merged.channelId;
       }
     }
+    if (changed("refreshToken") && updates.clientSource === undefined) {
+      const ownId = (merged.clientId ?? "").trim();
+      const builtIn = builtInYouTubeClient();
+      merged.clientSource = ownId && (merged.clientSecret ?? "").trim() ? "own" : builtIn ? "built-in" : undefined;
+      merged.connectedClientId = merged.clientSource === "own" ? ownId : builtIn?.clientId;
+    }
     fs.mkdirSync(path.dirname(this.configFile), { recursive: true });
     fs.writeFileSync(this.configFile, JSON.stringify(merged, null, 2), "utf-8");
     return merged;
+  }
+
+  /** The OAuth client to sign in / refresh with (own one first, else built-in). */
+  public client(): YouTubeClient | null {
+    const cfg = this.ensureConfig();
+    const clientId = (cfg.clientId ?? "").trim();
+    const clientSecret = (cfg.clientSecret ?? "").trim();
+    if (clientId && clientSecret) return { clientId, clientSecret, source: "own" };
+    const builtIn = builtInYouTubeClient();
+    return builtIn ? { ...builtIn, source: "built-in" } : null;
+  }
+
+  /**
+   * Is the saved sign-in usable right now? `needsReconnect` is true when a
+   * token exists but was minted by a different OAuth client than the one we'd
+   * use now — the honest answer is "connect again", not "connected".
+   */
+  public connectionState(): { connected: boolean; needsReconnect: boolean } {
+    const cfg = this.ensureConfig();
+    const client = this.client();
+    if (!client || !(cfg.refreshToken ?? "").trim()) return { connected: false, needsReconnect: false };
+    const minted = cfg.connectedClientId;
+    const same = minted ? minted === client.clientId : (cfg.clientSource ?? "own") === client.source;
+    return same ? { connected: true, needsReconnect: false } : { connected: false, needsReconnect: true };
   }
 
   /**
@@ -85,9 +167,10 @@ export class YouTubeService {
    */
   public async getValidAccessToken(): Promise<string> {
     const cfg = this.ensureConfig();
+    const client = this.client();
 
-    if (!cfg.clientId || !cfg.clientSecret || !cfg.refreshToken) {
-      throw new Error("YouTube API credentials incomplete. Please configure Client ID, Client Secret, and Refresh Token.");
+    if (!client || !cfg.refreshToken) {
+      throw new Error("YouTube isn't connected yet — press “Connect YouTube” in Settings → YouTube & Shorts.");
     }
 
     // Return cached token if still valid for > 60 seconds
@@ -98,8 +181,8 @@ export class YouTubeService {
     console.log("[YouTubeService] Refreshing Google OAuth2 access token...");
 
     const params = new URLSearchParams({
-      client_id: cfg.clientId.trim(),
-      client_secret: cfg.clientSecret.trim(),
+      client_id: client.clientId,
+      client_secret: client.clientSecret,
       refresh_token: cfg.refreshToken.trim(),
       grant_type: "refresh_token",
     });

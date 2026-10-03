@@ -115,6 +115,29 @@ written from facts (weather included), the Memory tab and the YouTube tab.
 Update the guide (`server/src/lib/brain/core/guide.ts`) whenever a screen
 changes — `server/tests/memory_guide.test.ts` checks its key facts.
 
+1.5.5 makes connecting YouTube comfortable: release builds ship Soundwave's
+own Google OAuth client, so Settings → **YouTube & Shorts** → **Connect
+YouTube** is one press and a Google sign-in — the customer never opens Google
+Cloud. Create ONE **Desktop app** client for the shop and save it as the
+repository secrets `SOUNDWAVE_YOUTUBE_CLIENT_ID` / `SOUNDWAVE_YOUTUBE_CLIENT_SECRET`;
+the release workflow writes `desktop/config/youtube-client.json` (gitignored),
+`assemble.mjs` stages it as `app/config/youtube-client.json`, and
+`desktop/src/server-env.cjs` turns it into `SOUNDWAVE_YOUTUBE_CLIENT_*` for the
+bundled server (a variable already in the environment wins — handy for testing
+against another client). `server/src/lib/youtube.ts` prefers the person's own
+client when they pasted one, else the built-in one, and `connectionState()`
+reports `needsReconnect` when a saved token was minted by a different client
+instead of pretending to be connected. Builds without the secrets say so
+honestly and show the short own-client path: one box that takes the downloaded
+`client_secret_….json` or both values (`extractOAuthClient`), the three deep
+links to Google's own pages, and a single Connect button that saves and
+connects. Signing in still uses the installed-app loopback flow with PKCE;
+`/api/v1/youtube/status` gained `oneClick`, `clientSource` and `needsReconnect`,
+and `/api/v1/youtube/oauth-guide` is mode-aware (3 steps one-click / 4 steps
+own-client). Covered by `server/tests/youtube_oneclick.test.ts` (7 tests) and
+`desktop/test/youtube-client.test.cjs` (3), with the existing connect tests
+unchanged.
+
 1.5.4 adds watched channels: `watch_youtube_channel` (@handle or channel link),
 `list_watched_channels` and `stop_watching_channel`, plus `lib/channelWatch.ts`
 — a store in `channel-watches.json`, a check every 5 minutes while the server

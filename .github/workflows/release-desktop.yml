@@ -167,6 +167,27 @@ jobs:
         working-directory: desktop
         run: npm test
 
+      # Optional, one-time setup for the shop: create ONE Google OAuth client
+      # (type "Desktop app") for Soundwave itself and save it as the repository
+      # secrets SOUNDWAVE_YOUTUBE_CLIENT_ID / SOUNDWAVE_YOUTUBE_CLIENT_SECRET.
+      # Then customers press "Connect YouTube" once and are done — no Google
+      # Cloud project, no key pasting. Without the secrets this step says so and
+      # the app keeps the honest "paste your own client" path.
+      - name: Bake the one-click YouTube client (only when the secret is set)
+        shell: pwsh
+        env:
+          YT_CLIENT_ID: ${{ secrets.SOUNDWAVE_YOUTUBE_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.SOUNDWAVE_YOUTUBE_CLIENT_SECRET }}
+        run: |
+          if (-not $env:YT_CLIENT_ID -or -not $env:YT_CLIENT_SECRET) {
+            Write-Host "No SOUNDWAVE_YOUTUBE_CLIENT_ID/SECRET set - Connect YouTube will ask for the person's own Google client."
+            exit 0
+          }
+          New-Item -ItemType Directory -Force desktop/config | Out-Null
+          @{ client_id = $env:YT_CLIENT_ID; client_secret = $env:YT_CLIENT_SECRET } |
+            ConvertTo-Json | Set-Content -Encoding utf8 desktop/config/youtube-client.json
+          Write-Host "Baked Soundwave's own Google client: Connect YouTube is one press in this build."
+
       - name: Assemble packaged app
         working-directory: desktop
         run: node assemble.mjs
