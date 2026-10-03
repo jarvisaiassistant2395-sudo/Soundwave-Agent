@@ -18,6 +18,7 @@
 import { GeminiError, generateContent, isGemini3, visibleText, type GenerateRequest } from "./gemini.js";
 import { activeBrain, FALLBACK_MODEL, noteBrainError } from "./settings.js";
 import { cleanScript, wordCount } from "./prompt.js";
+import { loadTrendDigest } from "../trends.js";
 import {
   DEFAULT_SECONDS,
   buildScriptInstruction,
@@ -40,6 +41,8 @@ export interface WrittenScript {
   passes: number;
   /** What the doctor still disliked, if the repair couldn't fix everything. */
   issues: string[];
+  /** When the trend research this script was written to was done (absent: none yet). */
+  trendsAt?: number;
 }
 
 export interface WriteShortScriptOptions {
@@ -87,6 +90,10 @@ export async function writeShortScript(
   const niche: Niche = opts.nicheId ? detectNiche(opts.nicheId) : detectNiche(topic);
   const { target } = scriptWordTarget(seconds);
   const models = [...new Set([brain.model, FALLBACK_MODEL])];
+  // What the scout last found on the web (lib/trends.ts): current formats and
+  // hooks. Stale is still better than none — the brief shows its age.
+  const digest = loadTrendDigest();
+  const trendOpts = digest?.findings.length ? { trends: digest.findings, trendsAt: digest.researchedAt } : {};
 
   for (const model of models) {
     const write = (instruction: string) =>
@@ -100,7 +107,7 @@ export async function writeShortScript(
 
     try {
       // 1. The draft, written to the brief the research produced.
-      const draft = await write(buildScriptInstruction({ seconds, niche, brief }));
+      const draft = await write(buildScriptInstruction({ seconds, niche, brief, ...trendOpts }));
       if (wordCount(draft) < 25) continue; // nothing usable — try the next model
       let best = { script: draft, lint: lintScript(draft, { seconds, nicheId: niche.id }) };
       let passes = 1;
@@ -110,7 +117,7 @@ export async function writeShortScript(
       if (!best.lint.ok) {
         try {
           const repaired = await write(
-            buildScriptInstruction({ seconds, niche, brief, previous: draft, issues: best.lint.issues }),
+            buildScriptInstruction({ seconds, niche, brief, previous: draft, issues: best.lint.issues, ...trendOpts }),
           );
           if (wordCount(repaired) >= 25) {
             passes = 2;
@@ -130,6 +137,7 @@ export async function writeShortScript(
         words: wordCount(best.script),
         passes,
         issues: best.lint.issues,
+        ...(trendOpts.trendsAt ? { trendsAt: trendOpts.trendsAt } : {}),
       };
     } catch (err) {
       const retryable = err instanceof GeminiError && (err.kind === "quota" || err.kind === "overloaded" || err.kind === "timeout");

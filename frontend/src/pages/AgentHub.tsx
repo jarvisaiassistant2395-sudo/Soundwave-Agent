@@ -118,6 +118,18 @@ interface OrbitalUsedEntry {
 }
 
 /** GET /api/v1/agent/orbital — which Orbital NCG videos were used / are left. */
+/** GET /api/v1/agent/trends — what the agent last found going viral. */
+export interface TrendStatus {
+  available: boolean;
+  researchedAt: string | null;
+  ageDays: number | null;
+  due: boolean;
+  refreshing: boolean;
+  needsKey: boolean;
+  findings: string[];
+  sources: string[];
+}
+
 export interface OrbitalStatus {
   channelUrl: string;
   channelName: string;
@@ -178,6 +190,9 @@ export function AgentHub() {
 
   // Orbital NCG background source (unused videos, history)
   const [orbitalStatus, setOrbitalStatus] = useState<OrbitalStatus | null>(null);
+  const [trendStatus, setTrendStatus] = useState<TrendStatus | null>(null);
+  const [trendRefreshing, setTrendRefreshing] = useState(false);
+  const [trendNote, setTrendNote] = useState<string | null>(null);
   const [orbitalHistoryOpen, setOrbitalHistoryOpen] = useState(false);
   const [isRefreshingOrbital, setIsRefreshingOrbital] = useState(false);
   const [isResettingOrbital, setIsResettingOrbital] = useState(false);
@@ -326,6 +341,32 @@ export function AgentHub() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Status Fetchers
+  const fetchTrendStatus = async () => {
+    try {
+      const res = await fetch("/api/v1/agent/trends");
+      if (res.ok) {
+        const data = (await res.json()) as { trends: TrendStatus };
+        setTrendStatus(data.trends);
+      }
+    } catch {}
+  };
+
+  const refreshTrends = async () => {
+    if (trendRefreshing) return;
+    setTrendRefreshing(true);
+    try {
+      const res = await fetch("/api/v1/agent/trends/refresh", { method: "POST" });
+      const data = (await res.json()) as { ok: boolean; reason?: string; trends?: TrendStatus };
+      if (data.trends) setTrendStatus(data.trends);
+      if (!data.ok && data.reason) setTrendNote(data.reason);
+      else setTrendNote(null);
+    } catch {
+      setTrendNote("The trend search didn't go through just now.");
+    } finally {
+      setTrendRefreshing(false);
+    }
+  };
+
   const fetchOrbitalStatus = async () => {
     try {
       const res = await fetch("/api/v1/agent/orbital");
@@ -378,9 +419,10 @@ export function AgentHub() {
       })
       .catch(() => {});
 
-    // Initial Orbital background status & YouTube status
+    // Initial Orbital background status, YouTube status & what's viral right now
     fetchOrbitalStatus();
     fetchYtStatus();
+    fetchTrendStatus();
   }, []);
 
   // Clock & Uptime Ticker
@@ -2223,6 +2265,52 @@ export function AgentHub() {
               minutes longer to render than 720p. Without a Gemini key (Settings → Brain) I use my built-in
               60-second scripts.
             </p>
+
+            {/* What's viral right now: the agent re-searches the web every few days
+                and writes the scripts to it; this is where it can be checked/forced. */}
+            <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-gray-300 flex items-center gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
+                  What's viral right now
+                </span>
+                <button
+                  onClick={refreshTrends}
+                  disabled={trendRefreshing || trendStatus?.refreshing || trendStatus?.needsKey}
+                  className="rounded-md border border-[#172A4A] px-2 py-0.5 text-[10px] font-semibold text-gray-300 hover:text-white hover:border-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={trendStatus?.needsKey ? "Needs a Gemini API key (Settings → Brain)" : "Search again now"}
+                >
+                  {trendRefreshing || trendStatus?.refreshing ? "Searching…" : "Search again"}
+                </button>
+              </div>
+              {trendStatus?.available ? (
+                <>
+                  <p className="text-[10px] text-gray-400">
+                    Researched{" "}
+                    {trendStatus.ageDays === 0
+                      ? "today"
+                      : trendStatus.ageDays === 1
+                        ? "yesterday"
+                        : `${trendStatus.ageDays} days ago`}
+                    {trendStatus.due ? " — refreshing in the background" : " · the agent looks again every few days"}.
+                  </p>
+                  <ul className="space-y-0.5">
+                    {trendStatus.findings.slice(0, 3).map((f, i) => (
+                      <li key={i} className="text-[10px] text-gray-500 leading-snug line-clamp-1">
+                        • {f}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="text-[10px] text-gray-500 leading-normal">
+                  {trendStatus?.needsKey
+                    ? "I need a Gemini API key (Settings → Brain) so I can search what's working on Shorts — until then I write from the standing research."
+                    : "I haven't researched what's working on Shorts yet. I do it by myself every few days while the PC is on."}
+                </p>
+              )}
+              {trendNote && <p className="text-[10px] text-amber-400/80 leading-normal">{trendNote}</p>}
+            </div>
 
             {/* Background Footage Source: Orbital NCG via the YouTube link importer */}
             <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-2">

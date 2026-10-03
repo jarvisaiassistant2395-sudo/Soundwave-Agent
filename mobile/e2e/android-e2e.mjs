@@ -199,6 +199,17 @@ try {
   const release = adb("shell", "getprop", "ro.build.version.release").trim();
   ok(`installed on Android ${release} (API ${sdk})`);
 
+  // Belt and braces for the address the stand-in is reached at: from the guest
+  // 10.0.2.2 is the host, and adb reverse makes the guest's own localhost work
+  // too — so whichever address the app was paired with, the requests land.
+  try {
+    adb("reverse", "tcp:4100", "tcp:4100");
+    adb("reverse", "tcp:4000", "tcp:4000");
+    console.log(adb("reverse", "--list").trim());
+  } catch (e) {
+    annotate("warning", "Phone app E2E", `adb reverse didn't set up (${e.message}) — relying on 10.0.2.2`);
+  }
+
   // The PC: phone access on, a fresh pairing code.
   await pc("/api/v1/companion/enabled", { enabled: true });
   const status = await pc("/api/v1/companion/pairing", {});
@@ -357,7 +368,18 @@ try {
     }
   }
   if (offlineText) ok(`answered on the phone itself while the PC was off: "${firstLine(offlineText)}"`);
-  else fail("the phone never answered on its own while the PC was off");
+  else {
+    // Say *why* from the emulator's side: can the guest reach the stand-in at
+    // all? (A refused connection here is the difference between "the address
+    // the app dialled is wrong" and "the stand-in isn't listening".)
+    let reach = "not checked (no curl in the image?)";
+    try {
+      reach = adb("shell", "curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", "http://10.0.2.2:4100/_fake/requests").trim();
+    } catch (e) {
+      reach = `curl failed: ${String(e.message).slice(0, 120)}`;
+    }
+    await fail(`the phone never answered on its own while the PC was off (emulator → http://10.0.2.2:4100 says: ${reach})`);
+  }
   if (!(await page.$('[data-testid="answered-on-phone"]'))) fail('the phone\'s own answer isn\'t marked "on phone"');
 
   // The briefing is due: open the app again (as in the morning) — with the PC off, the phone

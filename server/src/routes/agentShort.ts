@@ -234,6 +234,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
             scriptWords: written.words,
             scriptPasses: written.passes,
             scriptIssues: written.issues,
+            ...(written.trendsAt ? { scriptTrendsAt: new Date(written.trendsAt).toISOString() } : {}),
           };
         }
       } catch (err) {
@@ -249,7 +250,8 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       scriptMeta = { ...scriptMeta, scriptSeconds: Math.round(wordCount(script) / WORDS_PER_SECOND) };
     }
     jobSettings = { ...jobSettings, script, scriptSource, ...scriptMeta };
-    await reportProgress(22, `Script ready (${wordCount(script)} words ≈ ${Math.round(wordCount(script) / WORDS_PER_SECOND)}s). Preparing neural narrator...`);
+    const trendChecked = typeof scriptMeta.scriptTrendsAt === "string" ? ", written to the latest Shorts trends" : "";
+    await reportProgress(22, `Script ready (${wordCount(script)} words ≈ ${Math.round(wordCount(script) / WORDS_PER_SECOND)}s${trendChecked}). Preparing neural narrator...`);
 
     // 2. Voiceover Synthesis (28% -> 40%)
     stage = "voice";

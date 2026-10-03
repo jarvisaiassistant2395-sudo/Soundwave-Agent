@@ -36,6 +36,7 @@ const gemini = await import("../src/lib/brain/gemini.js");
 const prompt = await import("../src/lib/brain/prompt.js");
 const pc = await import("../src/lib/brain/pc.js");
 const { writeShortScript } = await import("../src/lib/brain/script.js");
+const trends = await import("../src/lib/trends.js");
 const viral = await import("../src/lib/brain/core/viral.js");
 const { contentsFor, buildRequest } = await import("../src/lib/brain/chat.js");
 const { buildShortVideo } = await import("../src/routes/agentShort.js");
@@ -103,6 +104,9 @@ afterAll(() => {
 
 beforeEach(() => {
   settings.resetBrainSettingsForTests();
+  // The trend digest lives in the shared data dir (lib/trends.ts) — no test
+  // here should be written to whatever another file researched.
+  trends.resetTrendsForTests();
   fake.seen.length = 0;
   fake.queue.length = 0;
   mocks.startShortJob.mockClear();

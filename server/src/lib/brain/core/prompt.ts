@@ -75,6 +75,10 @@ export function agentInstruction(opts: InstructionOptions): string {
     can.push(
       "- Make YouTube Shorts with make_youtube_short — the heart of this app. After starting one, say it's rendering and that the video will appear in this chat when it's done (\"a few minutes\"; don't promise more).",
     );
+  if (has("whats_trending"))
+    can.push(
+      "- Say what's working on Shorts right now with whats_trending: the app re-searches the web for it every few days and writes the scripts to it. Use it for \"what's trending\", \"why did my short flop\" and \"what should I make next\", and say how fresh it is.",
+    );
   if (has("show_video") || has("list_my_videos"))
     can.push("- Check on shorts and find finished videos with get_short_progress, list_my_videos and show_video (show_video puts a player in the chat).");
   if (has("open_website")) can.push("- Open web pages in this PC's browser with open_website. For a search, open a Google or YouTube results page.");

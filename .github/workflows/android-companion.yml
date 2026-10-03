@@ -200,7 +200,10 @@ jobs:
         # Install/build with dev dependencies (NODE_ENV=production would make
         # npm skip them, and tsc fail); only the server itself runs in production mode.
         run: |
-          nohup node ../desktop/test/fake-gemini.mjs --port 4100 > "$RUNNER_TEMP/fake-gemini.log" 2>&1 &
+          # --host 0.0.0.0: the emulator reaches this machine at 10.0.2.2, which
+          # does not land on a loopback-only listener (the PC server binds 0.0.0.0
+          # too, which is why the companion itself always worked).
+          nohup node ../desktop/test/fake-gemini.mjs --port 4100 --host 0.0.0.0 > "$RUNNER_TEMP/fake-gemini.log" 2>&1 &
           npm ci
           npm run build
           curl -sf -o /dev/null http://127.0.0.1:4100/_fake/requests || { echo "the fake Gemini didn't start"; cat "$RUNNER_TEMP/fake-gemini.log"; exit 1; }

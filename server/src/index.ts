@@ -9,6 +9,7 @@ import { initCompanion } from "./lib/companion/listener.js";
 import { initMemory } from "./lib/memory.js";
 import { initBriefingScheduler } from "./lib/briefing.js";
 import { initChannelWatch } from "./lib/channelWatch.js";
+import { initTrendScout } from "./lib/trends.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[soundwave] Handled asynchronous rejection:", reason);
@@ -57,6 +58,9 @@ async function main() {
   initBriefingScheduler();
   // Watched YouTube channels: new uploads are clipped by themselves.
   initChannelWatch();
+  // What's going viral on Shorts: re-searched every few days so the scripts
+  // (and the agent's answers) don't drift into last season's playbook.
+  initTrendScout();
   if (config.companionAvailable) {
     initCompanion().catch((err) => console.warn("[companion] could not start:", (err as Error).message));
   }

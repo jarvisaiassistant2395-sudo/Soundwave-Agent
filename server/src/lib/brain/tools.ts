@@ -14,6 +14,7 @@ import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS } from "./core/viral.js";
 import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } from "./core/watch.js";
 import { clipsBusy, startClipsJob } from "../videoClips.js";
 import { defaultEyes, type Eyes } from "../eyes.js";
+import { trendsStatus } from "../trends.js";
 import { clock } from "./core/transcript.js";
 import { addWatch, kickChannelWatch, listWatches, removeWatch, watchStatuses } from "../channelWatch.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
@@ -577,6 +578,37 @@ AGENT_TOOLS.push(
       } catch (err) {
         return { ok: false, reason: (err as Error).message || "The YouTube search didn't work." };
       }
+    },
+  },
+  {
+    declaration: {
+      name: "whats_trending",
+      description:
+        "What is actually working on YouTube Shorts right now: the app's trend scout searches the web every few days and this returns its latest digest — current formats, hook styles, topic areas and platform changes, with when it was researched and where it was seen. Use it when the user asks what's trending or viral, why a short underperformed, or what to make next. The scripts the app writes already follow this digest; say how old it is when you use it.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    available: (ctx) => ctx.desktop,
+    async run() {
+      const status = trendsStatus();
+      if (!status.available) {
+        return {
+          ok: false,
+          reason: status.needsKey
+            ? "I haven't researched what's going viral yet — I need a Gemini API key (Settings → Brain) to search. Until then I write from the standing research."
+            : "The trend search hasn't come back with anything usable yet. I'll look again in the background.",
+        };
+      }
+      return {
+        ok: true,
+        researchedAt: status.researchedAt,
+        ageDays: status.ageDays,
+        stale: status.due,
+        findings: status.findings,
+        sources: status.sources,
+        note: status.due
+          ? `This research is ${status.ageDays === 0 ? "from today" : `${status.ageDays} days old`} — I look again every few days; it will refresh by itself.`
+          : "Fresh research — the newest scripts are written to this.",
+      };
     },
   },
   {

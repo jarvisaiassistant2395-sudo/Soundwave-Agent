@@ -8,6 +8,7 @@ import { getStore } from "../lib/store.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../lib/orbitalBackground.js";
 import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, startShortJob } from "./agentShort.js";
 import { nicheCatalog } from "../lib/brain/core/viral.js";
+import { TREND_REFRESH_DAYS, refreshTrends, trendsStatus } from "../lib/trends.js";
 import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
 import { SttError, getSttStatus, transcribe } from "../lib/stt.js";
 import type { ChatReply } from "../lib/chatMessages.js";
@@ -417,6 +418,31 @@ router.get("/status", async (_req, res) => {
 // writer is given, and the same samples the no-key fallback speaks).
 router.get("/niches", (_req, res) => {
   res.json({ niches: nicheCatalog() });
+});
+
+// GET /trends — what the scout last found going viral on Shorts (lib/trends.ts).
+// The script writer reads the same digest; this is for the app to show it.
+router.get("/trends", (_req, res) => {
+  res.json({ trends: trendsStatus(), refreshDays: TREND_REFRESH_DAYS });
+});
+
+// POST /trends/refresh — look again now (the Agent Hub button). Without a
+// Gemini key there is nothing to search with, and the answer says so instead
+// of pretending: the previous digest (if any) stays.
+router.post("/trends/refresh", async (req, res, next) => {
+  try {
+    const result = await refreshTrends({ reason: "manual", signal: (req as express.Request & { signal?: AbortSignal }).signal });
+    if (!result.ok) {
+      const reason =
+        result.reason === "no-key"
+          ? "Add a Gemini API key in Settings → Brain and I can search what's going viral right now."
+          : `I couldn't finish the trend search just now${result.detail ? ` (${result.detail})` : ""}. The research I already have stays in use.`;
+      return res.json({ ok: false, reason, trends: trendsStatus() });
+    }
+    res.json({ ok: true, trends: trendsStatus() });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // POST /generate-script

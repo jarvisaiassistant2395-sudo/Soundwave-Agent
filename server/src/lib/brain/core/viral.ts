@@ -509,6 +509,23 @@ export interface ScriptInstructionOptions {
   previous?: string;
   /** The script doctor's findings on `previous`. */
   issues?: string[];
+  /**
+   * What the trend scout found on the web a few days ago (lib/trends.ts) —
+   * current formats and hooks, so the script isn't written to last year's
+   * playbook. Empty/absent: the standing research above is all there is.
+   */
+  trends?: string[];
+  /** When `trends` was researched (ms epoch), shown as an age in the brief. */
+  trendsAt?: number;
+}
+
+/** “today”, “yesterday”, “4 days ago” — how old the trend research is. */
+function ageLabel(ms: number | undefined, now = Date.now()): string {
+  if (!ms) return "recently";
+  const days = Math.max(0, Math.floor((now - ms) / 86_400_000));
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
 }
 
 /** The full writing brief: shape, niche recipe, hook shapes, rules, examples. */
@@ -544,6 +561,20 @@ export function buildScriptInstruction(opts: ScriptInstructionOptions): string {
     `HOOK SHAPES THAT WORK HERE (pick one, never name it in the script):`,
     hookShapes,
     ``,
+  ];
+
+  // The scout's findings are current and specific — they steer the angle and the
+  // format, but never override the rules below (they are what keeps a script
+  // watchable at all).
+  if (opts.trends?.length) {
+    lines.push(
+      `WHAT'S WORKING RIGHT NOW (Web research, ${ageLabel(opts.trendsAt)} — follow these over your instincts; the RULES below still beat everything):`,
+      ...opts.trends.map((t) => `- ${t}`),
+      ``,
+    );
+  }
+
+  lines.push(
     `RULES:`,
     `- Only real, checkable facts. Never invent a number, date, study or quote. If you are not certain of an exact figure, say the true thing without it.`,
     `- Plain spoken English a person would say out loud. No lists, no labels ("Hook:"), no stage directions, no emoji, no hashtags, no markdown.`,
@@ -551,7 +582,7 @@ export function buildScriptInstruction(opts: ScriptInstructionOptions): string {
     `- Sentences under 25 words. Vary the openings.`,
     `- Banned everywhere: "did you know", "in this video", "hey guys", "let's dive in", "subscribe", "like and follow", "thanks for watching", "stay tuned", "at the end of the day".`,
     `- Write for the ear and for captions: names, numbers and short clauses land; long subordinate sentences do not.`,
-  ];
+  );
 
   if (opts.previous?.trim() && opts.issues?.length) {
     lines.push(

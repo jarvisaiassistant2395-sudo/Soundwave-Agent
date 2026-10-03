@@ -120,7 +120,7 @@ const FORECAST = {
   daily: { weather_code: [2], temperature_2m_max: [19.4], temperature_2m_min: [8.1], precipitation_probability_max: [10] },
 };
 
-export async function startFakeGemini({ port = 0 } = {}) {
+export async function startFakeGemini({ port = 0, host = "127.0.0.1" } = {}) {
   const seen = [];
   const server = http.createServer((req, res) => {
     let raw = "";
@@ -160,15 +160,22 @@ export async function startFakeGemini({ port = 0 } = {}) {
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolve);
+    server.listen(port, host, resolve);
   });
   const url = `http://127.0.0.1:${server.address().port}`;
   return { url, seen, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
-// Run on its own: node fake-gemini.mjs [--port N]
+// Run on its own: node fake-gemini.mjs [--port N] [--host 0.0.0.0]
+// --host: the Android emulator reaches the host through its own address
+// (10.0.2.2 maps to the host, not to 127.0.0.1 inside the guest), so the
+// phone-emulator run binds the stand-in like the PC server does.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const i = process.argv.indexOf("--port");
-  const { url } = await startFakeGemini({ port: i > 0 ? Number(process.argv[i + 1]) : 0 });
+  const h = process.argv.indexOf("--host");
+  const { url } = await startFakeGemini({
+    port: i > 0 ? Number(process.argv[i + 1]) : 0,
+    ...(h > 0 ? { host: process.argv[h + 1] } : {}),
+  });
   console.log(`fake Gemini listening on ${url} (key ${FAKE_KEY})`);
 }
