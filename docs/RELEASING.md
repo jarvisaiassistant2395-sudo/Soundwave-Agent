@@ -186,7 +186,7 @@ count limits) is pinned in `server/tests/clips_tool.test.ts`; the desktop E2E
 builds a 13-second video from whisper.cpp's jfk.wav, asks the agent to cut a
 clip out of it and plays the rendered MP4 in the chat.
 
-1.5.2 (phone 1.3.0) adds alarms on the phone: the agent's `set_phone_alarm`
+1.5.2 (phone 1.3.0) added alarms on the phone: the agent's `set_phone_alarm`
 tool (time HH:MM or in_seconds, label, briefing delay) leaves a control message
 in the shared conversation, and the phone app runs it through its native
 `Alarm` plugin — an AlarmManager alarm clock with its own alarm screen over the
@@ -196,7 +196,23 @@ delay (Settings → "Alarm & the briefing", 0–600 s, default 30). Covered by
 `server/tests/phone_alarm.test.ts`, `mobile/src/lib/alarm.test.ts`, the fake
 Gemini's alarm branch and the phone E2E (sets one through the chat, checks
 Android's own alarm list, rings a 20-second alarm, turns it off on its screen
-and waits for the briefing to start talking). The ring plays on the connected
+and waits for the briefing to start talking).
+
+1.3.1 (phone-only): the ring in Bluetooth earbuds and a briefing that could
+stay quiet. `AlarmAudio` now asks Android for the audio focus, sets the
+preferred output before *and* after `prepare()`, and then verifies the sound
+really started (a started player advances its position) — a phone that accepts
+the earbud route and plays nothing gets the alarm on its own speaker, with the
+alarm screen saying where it really rang (`AlarmActivity` re-reads it after the
+service starts). On the app side, `lib/voice.ts` puts a watchdog on playback:
+if the phone never starts making a sound (a dead route, a stuck player) the
+briefing stops with an honest error instead of reading on in silence, one retry
+covers a Bluetooth link that is still waking up, and a briefing the user asked
+for (after an alarm, or "Hear today's briefing now") turns a *zero* media volume
+up — the alarm raises the alarm stream, not the media one the voice plays on —
+and puts the level back when it is done. The PC's voice service failing now
+falls back to the phone's own Soundwave voice instead of skipping the speech.
+The ring plays on the connected
 Bluetooth earbuds/headset when there are any — `AlarmAudio` picks the output
 Android's own routing often ignores for alarms, lifts the alarm volume for the
 ring and puts it back — and Settings → "Alarm & the briefing" plus the alarm

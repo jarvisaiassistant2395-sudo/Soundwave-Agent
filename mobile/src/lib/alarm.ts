@@ -36,9 +36,14 @@ interface AlarmPlugin extends Plugin {
   consumePendingBriefing(): Promise<{ due: boolean; at?: number }>;
   notificationsAllowed(): Promise<{ allowed: boolean }>;
   /** Where the alarm will ring right now (the earbuds' name, when any are connected). */
-  audioOutput(): Promise<{ bluetooth?: string; useEarbuds?: boolean }>;
+  audioOutput(): Promise<{ bluetooth?: string; useEarbuds?: boolean; earbudsConnected?: boolean; lastRoute?: string }>;
   setUseEarbuds(opts: { enabled: boolean }): Promise<{ useEarbuds: boolean }>;
   requestNotifications(): Promise<{ allowed: boolean }>;
+  /** The media stream the briefing's voice plays on (the alarm uses its own). */
+  mediaVolume(): Promise<{ volume: number; max: number; silent: boolean }>;
+  /** For a briefing the person asked to hear now: turns a silent media volume up. */
+  raiseMediaVolume(): Promise<{ previous: number }>;
+  restoreMediaVolume(opts: { previous: number }): Promise<{ restored: boolean }>;
 }
 
 const Alarm = registerPlugin<AlarmPlugin>("Alarm");
@@ -139,6 +144,12 @@ export interface AlarmAudioOutput {
   bluetooth: string | null;
   /** Ring on the Bluetooth earbuds when they're connected. */
   useEarbuds: boolean;
+  /**
+   * A Bluetooth output that sits in someone's ears is connected (and is a real
+   * audio route Android would let us use) — not the same as `bluetooth`, which
+   * is what the phone calls it. Older app builds don't report this.
+   */
+  earbudsConnected: boolean;
 }
 
 /** Null when there's no phone app here (a desktop browser) — nothing to ring. */
@@ -146,7 +157,11 @@ export async function alarmAudioOutput(): Promise<AlarmAudioOutput | null> {
   if (!alarmAvailable()) return null;
   try {
     const r = await Alarm.audioOutput();
-    return { bluetooth: r.bluetooth ?? null, useEarbuds: r.useEarbuds !== false };
+    return {
+      bluetooth: r.bluetooth ?? null,
+      useEarbuds: r.useEarbuds !== false,
+      earbudsConnected: r.earbudsConnected ?? Boolean(r.bluetooth),
+    };
   } catch {
     return null;
   }
@@ -158,6 +173,31 @@ export async function setAlarmEarbuds(enabled: boolean): Promise<boolean> {
     return (await Alarm.setUseEarbuds({ enabled })).useEarbuds !== false;
   } catch {
     return enabled;
+  }
+}
+
+/**
+ * The briefing's voice plays on the media stream, but the alarm raises the
+ * *alarm* stream — so an alarm can ring while the media volume sits at zero and
+ * the briefing is spoken to nobody. This turns it up when it is silent and
+ * gives back the level to put it back afterwards (-1: nothing was changed).
+ */
+export async function raiseMediaVolumeForBriefing(): Promise<number> {
+  if (!alarmAvailable()) return -1;
+  try {
+    return (await Alarm.raiseMediaVolume()).previous;
+  } catch {
+    return -1;
+  }
+}
+
+/** Puts the media volume back (`previous` from raiseMediaVolumeForBriefing). */
+export async function restoreMediaVolume(previous: number): Promise<void> {
+  if (!alarmAvailable() || previous < 0) return;
+  try {
+    await Alarm.restoreMediaVolume({ previous });
+  } catch {
+    // it stays where we raised it: louder is the better failure
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { speakable, speakableBriefing, splitSpeech } from "./voice";
+import { SpeechPlaybackError, speakable, speakableBriefing, speakLong, splitSpeech } from "./voice";
 
 describe("what the phone reads aloud", () => {
   it("skips links and the background credits", () => {
@@ -51,5 +51,48 @@ describe("the morning briefing, read in full", () => {
     const spoken = speakableBriefing(text);
     expect(spoken.length).toBeGreaterThan(1000);
     expect(spoken).not.toMatch(/https?:/);
+  });
+});
+
+// The phone that makes no sound is the one thing a briefing must not pretend
+// about: a stuck player (it "plays" but never starts advancing) used to leave
+// the bar up and the room silent — and every later piece was silent too.
+describe("when the phone itself can't make a sound", () => {
+  const piece = { audio: new Uint8Array([7]), mime: "audio/mpeg" };
+  const synth = async () => piece;
+  /** A briefing long enough to be read in several pieces (splitSpeech caps at 1200). */
+  const BRIEFING = "This is one sentence of the morning briefing. ".repeat(60);
+  const piecesInBriefing = splitSpeech(BRIEFING).length;
+
+  it("stops the briefing and says so, instead of reading on in silence", async () => {
+    let plays = 0;
+    const play = async () => {
+      plays += 1;
+      throw new SpeechPlaybackError("no sound came out");
+    };
+    expect(piecesInBriefing).toBeGreaterThan(1);
+    await expect(speakLong(BRIEFING, synth, () => false, play)).rejects.toThrow(SpeechPlaybackError);
+    expect(plays).toBe(1); // it did not pretend to read the rest
+  });
+
+  it("keeps reading when one piece fails for another reason", async () => {
+    let plays = 0;
+    const play = async () => {
+      plays += 1;
+      if (plays === 1) throw new Error("one file the player didn't like");
+    };
+    await expect(speakLong(BRIEFING, synth, () => false, play)).resolves.toBeUndefined();
+    expect(plays).toBe(piecesInBriefing); // the failed piece is skipped, the rest is read
+  });
+
+  it("stops at once when the person taps Stop", async () => {
+    let plays = 0;
+    let stopped = false;
+    const play = async () => {
+      plays += 1;
+      stopped = true; // the like of stopBriefing() while the first piece plays
+    };
+    await speakLong(BRIEFING, synth, () => stopped, play);
+    expect(plays).toBe(1);
   });
 });

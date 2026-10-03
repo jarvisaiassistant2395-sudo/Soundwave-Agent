@@ -33,6 +33,23 @@ export function micProblem(err: unknown): string {
 
 // ── Playback: one reply at a time ───────────────────────────────────────────
 
+/**
+ * The phone accepted the sound and then made none — a dead audio route, a
+ * wake-up it never got, a media volume that is muted to zero. Saying the
+ * briefing was read when nothing was heard is worse than saying so.
+ */
+export class SpeechPlaybackError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SpeechPlaybackError";
+  }
+}
+
+/** The sound must start within this; if it doesn't, the route is dead. */
+const START_TIMEOUT_MS = 4000;
+/** A retry, because Bluetooth links take a moment to wake up. */
+const RETRY_DELAY_MS = 500;
+
 let player: HTMLAudioElement | null = null;
 let playingUrl: string | null = null;
 let onStopped: (() => void) | null = null;
@@ -50,29 +67,79 @@ export function stopSpeaking(): void {
   cb?.();
 }
 
-/** Plays an MP3 the PC made; resolves when it ends (or is stopped / fails). */
+/**
+ * Plays an MP3 the PC made; resolves when it ends, rejects with
+ * SpeechPlaybackError when the phone never started making a sound (after one
+ * retry — an earbud route often needs a second attempt to wake up).
+ */
 export function playReply(bytes: Uint8Array, mime: string): Promise<void> {
+  return playOnce(bytes, mime, 0);
+}
+
+function playOnce(bytes: Uint8Array, mime: string, attempt: number): Promise<void> {
   stopSpeaking();
   player ??= new Audio();
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime || "audio/mpeg" }));
   playingUrl = url;
   const audio = player;
-  return new Promise<void>((resolve) => {
-    const done = () => {
+  return new Promise<void>((resolve, reject) => {
+    let started = false;
+    let settled = false;
+    // A player that "plays" but never advances is stuck on a route that isn't
+    // there — the same thing as silence, and it must not hang the briefing.
+    const startTimer = setTimeout(() => {
+      if (!started) finish(false);
+    }, START_TIMEOUT_MS);
+
+    const clean = () => {
+      clearTimeout(startTimer);
+      audio.onplaying = null;
       audio.onended = null;
       audio.onerror = null;
+      audio.ontimeupdate = null;
       if (playingUrl === url) {
         URL.revokeObjectURL(url);
         playingUrl = null;
       }
       onStopped = null;
-      resolve();
     };
-    onStopped = done;
-    audio.onended = done;
-    audio.onerror = done;
+
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clean();
+      if (ok) {
+        resolve();
+        return;
+      }
+      // One retry, then the honest answer.
+      if (attempt < 1) {
+        setTimeout(() => {
+          playOnce(bytes, mime, attempt + 1).then(resolve, reject);
+        }, RETRY_DELAY_MS);
+        return;
+      }
+      reject(
+        new SpeechPlaybackError(
+          "the phone couldn't make a sound come out (it is likely sending the audio to a Bluetooth device that isn't playing it, or the media volume is at zero) — ask me again, or tap “Hear today's briefing now”",
+        ),
+      );
+    };
+
+    const started_ = () => {
+      if (settled) return;
+      started = true;
+      clearTimeout(startTimer);
+    };
+    onStopped = () => finish(true); // someone stopped it: not a failure
+    audio.onplaying = started_;
+    audio.ontimeupdate = () => {
+      if (audio.currentTime > 0) started_();
+    };
+    audio.onended = () => finish(true);
+    audio.onerror = () => finish(false);
     audio.src = url;
-    audio.play().catch(done);
+    audio.play().catch(() => finish(false));
   });
 }
 
@@ -105,6 +172,7 @@ export async function speakLong(
   text: string,
   synth: (piece: string) => Promise<{ audio: Uint8Array; mime: string }>,
   stopped: () => boolean,
+  play: (audio: Uint8Array, mime: string) => Promise<void> = playReply,
 ): Promise<void> {
   const pieces = splitSpeech(text);
   if (!pieces.length) return;
@@ -131,8 +199,16 @@ export async function speakLong(
       next.catch(() => undefined);
     }
     if (stopped()) return;
+    try {
+      await play(current.audio, current.mime);
+    } catch (err) {
+      // The phone refused to make a sound (a dead audio route, a stuck
+      // player): the rest of the text would be just as silent, so say so
+      // instead of finishing a briefing nobody heard.
+      if (err instanceof SpeechPlaybackError) throw err;
+      // Any other playback hiccup (one file the player didn't like) — keep reading.
+    }
     spokeSomething = true;
-    await playReply(current.audio, current.mime);
     if (stopped()) return;
   }
 }

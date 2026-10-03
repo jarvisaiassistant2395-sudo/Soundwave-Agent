@@ -4,7 +4,7 @@
 // reasoning — the times, the delay, and the honest answers.
 import { describe, expect, it } from "vitest";
 import { alarmLabel, alarmTarget, briefingAfterSeconds, clockLabel, nextAlarmAt } from "../../../server/src/lib/brain/core/alarm";
-import { ALARM_TOO_OLD_MS, alarmAudioOutput, setAlarmEarbuds, setAlarmNow } from "./alarm";
+import { ALARM_TOO_OLD_MS, alarmAudioOutput, raiseMediaVolumeForBriefing, restoreMediaVolume, setAlarmEarbuds, setAlarmNow } from "./alarm";
 
 const at = (iso: string) => new Date(iso);
 
@@ -58,5 +58,10 @@ describe("an alarm the PC asked for", () => {
     const run = await setAlarmNow({ at: Date.now() + 60_000 }, new Date());
     expect(run.result.set).toBe(false);
     expect(String(run.problem)).toContain("phone app");
+  });
+
+  it("leaves the media volume alone off the phone (the briefing raises it on one)", async () => {
+    expect(await raiseMediaVolumeForBriefing()).toBe(-1);
+    await expect(restoreMediaVolume(0)).resolves.toBeUndefined();
   });
 });

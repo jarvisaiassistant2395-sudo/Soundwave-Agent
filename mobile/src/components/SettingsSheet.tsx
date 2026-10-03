@@ -178,14 +178,17 @@ export function SettingsSheet({ open, onClose, companion }: { open: boolean; onC
               <span className="min-w-0 flex-1 text-[13px] leading-snug text-gray-300">
                 {companion.alarmOutput.bluetooth && companion.alarmOutput.useEarbuds ? (
                   <>
-                    Rings on <span className="font-semibold text-gray-100">{companion.alarmOutput.bluetooth}</span> (Bluetooth)
+                    Rings in <span className="font-semibold text-gray-100">{companion.alarmOutput.bluetooth}</span> when they're connected — the alarm screen says where it really rang.
                   </>
                 ) : companion.alarmOutput.bluetooth ? (
                   <>
                     Rings on the phone speaker — <span className="text-gray-100">{companion.alarmOutput.bluetooth}</span> are connected, but ringing in them is off.
                   </>
                 ) : (
-                  <>Rings on the phone speaker — connect your earbuds and it rings there instead.</>
+                  <>
+                    Rings on the phone speaker — connect your earbuds and it rings in them instead. The alarm screen always says where it really rang. (A pair
+                    your phone took as <span className="text-gray-100">media only</span>, not as a headset, can't take the alarm's sound.)
+                  </>
                 )}
               </span>
               {companion.alarmOutput.bluetooth && (

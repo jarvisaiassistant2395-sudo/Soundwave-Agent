@@ -566,6 +566,16 @@ try {
   if (alarmProblem) fail(`the briefing after the alarm failed: ${alarmProblem}`);
   else if (!alarmSpoke) fail("the briefing never started talking after the alarm was turned off");
   else ok(`turned off → the briefing started talking ${Math.round((Date.now() - turnedOffAt) / 1000)} s later (the alarm said 5 s; then today's briefing is fetched and the voice starts)`);
+  // A briefing that "speaks" into a phone that can't make a sound is the bug
+  // this checks for: the app must notice and say so, not stay quiet for a minute.
+  let silentProblem = null;
+  for (let i = 0; i < 16 && !silentProblem; i++) {
+    await sleep(500);
+    const text = await page.evaluate(() => document.body.innerText).catch(() => "");
+    silentProblem = /didn't work this time: the phone couldn't make any sound come out/.exec(text)?.[0] ?? null;
+  }
+  if (silentProblem) fail(`the phone didn't actually play the briefing: ${silentProblem}`);
+  else ok("the briefing was really played by the phone (no silent-player failure)");
   await sleep(500);
   screenshot("9-alarm-briefing");
 
@@ -578,6 +588,34 @@ try {
   const outputLine = (await page.locator('[data-testid="alarm-output"]').textContent({ timeout: 10_000 }).catch(() => null)) ?? "";
   if (!/Rings on/.test(outputLine)) fail(`the sheet doesn't say where the alarm rings: “${outputLine.slice(0, 160)}”`);
   else ok(`the sheet says where the alarm rings: “${outputLine.replace(/\s+/g, " ").trim()}”`);
+  // The phone's own answer behind that line, and the media volume the briefing
+  // is spoken at (the alarm raises the alarm stream, not this one).
+  const audio = await page
+    .evaluate(async () => {
+      try {
+        const p = window.Capacitor?.Plugins?.Alarm;
+        if (!p) return null;
+        const out = await p.audioOutput();
+        const media = await p.mediaVolume();
+        const raised = await p.raiseMediaVolume();
+        if (raised && raised.previous >= 0) await p.restoreMediaVolume({ previous: raised.previous });
+        return { out, media, raised };
+      } catch (e) {
+        return { error: String(e?.message ?? e) };
+      }
+    })
+    .catch((e) => ({ error: String(e.message) }));
+  if (!audio || audio.error) fail(`the phone's audio details couldn't be read: ${JSON.stringify(audio)}`);
+  else {
+    const { out, media, raised } = audio;
+    if (out.earbudsConnected !== false) fail(`the emulator has no Bluetooth audio, but the phone says earbudsConnected=${out.earbudsConnected}`);
+    else if (!(media.max > 0) || !(media.volume >= 0) || media.silent !== (media.volume === 0)) fail(`the media volume reads oddly: ${JSON.stringify(media)}`);
+    else if (raised.previous !== (media.silent ? 0 : -1)) fail(`raising a ${media.silent ? "silent" : "heard"} media volume answered ${raised.previous}`);
+    else
+      ok(
+        `the phone answers the audio questions: no earbuds connected, media volume ${media.volume}/${media.max}${media.silent ? " (silent — a forced briefing turns it up and puts it back)" : ""}`,
+      );
+  }
   // The app re-reads the phone's alarms when it comes back to the front (right
   // after Turn off), so the one that rang must not be listed any more.
   let withAlarm = await alarmSheet();

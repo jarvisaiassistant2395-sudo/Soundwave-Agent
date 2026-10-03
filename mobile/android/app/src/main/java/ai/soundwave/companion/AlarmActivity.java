@@ -40,19 +40,35 @@ public class AlarmActivity extends AppCompatActivity {
         long at = alarm != null ? alarm.at : System.currentTimeMillis();
         ((TextView) findViewById(R.id.alarm_time)).setText(android.text.format.DateFormat.getTimeFormat(this).format(at));
         ((TextView) findViewById(R.id.alarm_label)).setText(alarm == null || alarm.label.isEmpty() ? "Soundwave alarm" : alarm.label);
-        // Say where it rings (the countdown takes this line over when it's turned off).
-        String earbuds = AlarmAudio.earbudsName(this);
-        if (earbuds != null && AlarmStore.useEarbuds(this)) {
-            TextView where = findViewById(R.id.alarm_countdown);
-            where.setText("Ringing on " + earbuds);
-            where.setVisibility(View.VISIBLE);
-        }
         findViewById(R.id.alarm_dismiss).setOnClickListener((v) -> dismiss());
         findViewById(R.id.alarm_snooze).setOnClickListener((v) -> snooze());
 
         // The service rings; if this screen was opened some other way, this starts it.
         startService(new Intent(this, AlarmService.class).setAction(AlarmService.ACTION_RING)
                 .putExtra(AlarmScheduler.EXTRA_ALARM_ID, id));
+        // Say where it rings — what the sound really did, not what was asked for
+        // (a phone can keep the alarm off the earbuds; then this says so).
+        showWhereItRings();
+        handler.postDelayed(this::showWhereItRings, 1500);
+    }
+
+    private void showWhereItRings() {
+        if (secondsLeft > 0) return; // the countdown owns this line now
+        String route = AlarmAudio.routeLabel();
+        String earbuds = AlarmAudio.earbudsName(this);
+        TextView where = findViewById(R.id.alarm_countdown);
+        if (route != null) {
+            where.setText("Ringing on " + route);
+            where.setVisibility(View.VISIBLE);
+        } else if (earbuds != null && AlarmStore.useEarbuds(this)) {
+            where.setText("Ringing on this phone — " + earbuds + " are connected but the sound stayed here");
+            where.setVisibility(View.VISIBLE);
+        } else if (earbuds != null) {
+            where.setText("Ringing on this phone — " + earbuds + " are connected, but ringing in them is switched off");
+            where.setVisibility(View.VISIBLE);
+        } else {
+            where.setVisibility(View.GONE);
+        }
     }
 
     private void dismiss() {

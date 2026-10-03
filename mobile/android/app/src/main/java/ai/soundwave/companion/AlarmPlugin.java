@@ -2,6 +2,7 @@ package ai.soundwave.companion;
 
 import android.Manifest;
 import android.app.Activity;
+import android.media.AudioManager;
 import android.os.Build;
 
 import androidx.core.app.ActivityCompat;
@@ -155,7 +156,14 @@ public class AlarmPlugin extends Plugin {
         JSObject result = new JSObject();
         String earbuds = AlarmAudio.earbudsName(getContext());
         if (earbuds != null) result.put("bluetooth", earbuds);
+        // A Bluetooth output that sits in someone's ears being *connected* is not
+        // the same as it being a usable audio route — say both, so the app can be
+        // honest instead of promising the sound is in the earbuds.
+        result.put("earbudsConnected", AlarmAudio.earbuds(getContext()) != null);
         result.put("useEarbuds", AlarmStore.useEarbuds(getContext()));
+        // Where the last ring really went (the alarm screen reads this too).
+        String lastRoute = AlarmAudio.routeLabel();
+        if (lastRoute != null) result.put("lastRoute", lastRoute);
         call.resolve(result);
     }
 
@@ -167,6 +175,77 @@ public class AlarmPlugin extends Plugin {
         AlarmStore.setUseEarbuds(getContext(), on);
         JSObject result = new JSObject();
         result.put("useEarbuds", on);
+        call.resolve(result);
+    }
+
+    /**
+     * The media volume the briefing will be spoken at. The alarm raises its own
+     * (alarm) stream, so an alarm can ring while the media stream — the one the
+     * briefing's voice uses — sits at zero: the person then sees the briefing
+     * "speaking" and hears nothing.
+     */
+    @PluginMethod
+    public void mediaVolume(PluginCall call) {
+        JSObject result = new JSObject();
+        AudioManager am = (AudioManager) getContext().getSystemService(android.content.Context.AUDIO_SERVICE);
+        int volume = -1;
+        int max = -1;
+        try {
+            if (am != null) {
+                volume = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+                max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            }
+        } catch (Exception ignored) {
+            // unknown: the app says nothing about the volume
+        }
+        result.put("volume", volume);
+        result.put("max", max);
+        result.put("silent", volume == 0);
+        call.resolve(result);
+    }
+
+    /**
+     * Turns the media volume up when it is at zero, for a briefing the person
+     * asked to hear right now (they turned an alarm off, or tapped to hear it).
+     * Returns the level to put back (-1: untouched — it wasn't silent).
+     */
+    @PluginMethod
+    public void raiseMediaVolume(PluginCall call) {
+        JSObject result = new JSObject();
+        int previous = -1;
+        AudioManager am = (AudioManager) getContext().getSystemService(android.content.Context.AUDIO_SERVICE);
+        try {
+            if (am != null) {
+                int now = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+                int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                if (now == 0 && max > 0) {
+                    previous = 0;
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, Math.max(1, Math.round(max * 0.35f)), 0);
+                }
+            }
+        } catch (Exception ignored) {
+            previous = -1;
+        }
+        result.put("previous", previous);
+        call.resolve(result);
+    }
+
+    /** Puts the media volume back the way the person had it. */
+    @PluginMethod
+    public void restoreMediaVolume(PluginCall call) {
+        Integer previous = call.getInt("previous");
+        JSObject result = new JSObject();
+        boolean restored = false;
+        AudioManager am = (AudioManager) getContext().getSystemService(android.content.Context.AUDIO_SERVICE);
+        try {
+            if (am != null && previous != null && previous >= 0 && am.getStreamVolume(AudioManager.STREAM_MUSIC) != previous) {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, previous, 0);
+                restored = true;
+            }
+        } catch (Exception ignored) {
+            // nothing to put back
+        }
+        result.put("restored", restored);
         call.resolve(result);
     }
 

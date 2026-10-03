@@ -28,12 +28,12 @@ public class AlarmService extends Service {
     static final String ACTION_DISMISS = "ai.soundwave.companion.action.DISMISS";
     static final String ACTION_SNOOZE = "ai.soundwave.companion.action.SNOOZE";
 
-    private MediaPlayer player;
+    private volatile MediaPlayer player;
     private Ringtone ringtone;
-    private int volumeBefore = -1;
+    private volatile int volumeBefore = -1;
     private Vibrator vibrator;
     private PowerManager.WakeLock wakeLock;
-    private boolean ringing = false;
+    private volatile boolean ringing = false;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -67,9 +67,11 @@ public class AlarmService extends Service {
         AlarmStore.setRinging(this, alarm == null ? null : alarm.id);
         startForeground(AlarmNotifications.RINGING_ID, AlarmNotifications.ringing(this, alarm));
         if (ringing) return;
-        ringing = true;
         acquireWakeLock();
-        playAlarm();
+        // The sound is prepared on its own thread: choosing the earbuds and
+        // checking that it really started must never block the ringing itself.
+        ringing = true;
+        new Thread(this::playAlarm, "soundwave-alarm-audio").start();
         vibrate();
         // Usually the full-screen intent opens the alarm screen; this is the same thing from here.
         try {
@@ -89,17 +91,29 @@ public class AlarmService extends Service {
     /**
      * The alarm sound: the phone's alarm tone, on the connected Bluetooth
      * earbuds when the person wants it there, with the alarm volume turned up
-     * for the ring. If the platform won't play it that way, the plain ringtone
-     * still rings — an alarm is never silent.
+     * for the ring. AlarmAudio verifies the sound really started (a phone can
+     * accept the earbud request and then play nothing) and falls back to the
+     * phone's own output — an alarm is never silent. The alarm screen shows
+     * where it ended up.
      */
     private void playAlarm() {
         Uri uri = AlarmAudio.toneUri();
         if (uri == null) return;
         volumeBefore = AlarmAudio.raiseVolume(this);
+        MediaPlayer started = null;
         try {
-            player = AlarmAudio.start(this, uri, AlarmStore.useEarbuds(this));
+            started = AlarmAudio.start(this, uri, AlarmStore.useEarbuds(this));
         } catch (Exception e) {
             playRingtoneFallback(uri);
+        }
+        if (started == null) return;
+        synchronized (this) {
+            // Turned off (or snoozed) while the sound was still starting.
+            if (!ringing) {
+                AlarmAudio.stop(this, started);
+                return;
+            }
+            player = started;
         }
     }
 
@@ -145,15 +159,11 @@ public class AlarmService extends Service {
 
     private void stopRinging() {
         ringing = false;
-        try {
-            if (player != null) {
-                if (player.isPlaying()) player.stop();
-                player.release();
-            }
-        } catch (Exception ignored) {
-            // already stopped
+        synchronized (this) {
+            // The player, the audio focus and the route all belong to AlarmAudio.
+            AlarmAudio.stop(this, player);
+            player = null;
         }
-        player = null;
         try {
             if (ringtone != null && ringtone.isPlaying()) ringtone.stop();
         } catch (Exception ignored) {

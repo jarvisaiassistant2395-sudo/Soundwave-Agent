@@ -20,7 +20,7 @@ import {
 import type { PairingLink } from "../lib/protocol";
 import { APP_VERSION, deviceInfo, onForegroundChange } from "../lib/native";
 import { DEFAULT_SETTINGS, storage, type AppSettings } from "../lib/storage";
-import { playReply, speakable, speakableBriefing, speakLong, stopSpeaking } from "../lib/voice";
+import { playReply, speakable, speakableBriefing, speakLong, SpeechPlaybackError, stopSpeaking } from "../lib/voice";
 import {
   effectiveMemory,
   offlineMorning,
@@ -42,7 +42,9 @@ import {
   listAlarms,
   notificationsAllowed,
   onBriefingDue,
+  raiseMediaVolumeForBriefing,
   requestNotifications,
+  restoreMediaVolume,
   setAlarmNow,
   setAlarmEarbuds,
   setBriefingDelay as setPhoneBriefingDelay,
@@ -252,9 +254,17 @@ export function useCompanion(): Companion {
         setAlarms(await listAlarms());
         const at = Date.now();
         const alarm = run.alarm;
+        // Say where it will ring, the way the phone sees it right now: the
+        // earbuds when they're connected (and wanted), the phone otherwise.
+        const audio = await alarmAudioOutput().catch(() => null);
+        setAlarmOutput(audio);
+        const where =
+          audio?.bluetooth && audio.useEarbuds
+            ? ` It rings in ${audio.bluetooth}; if the phone can't hand the sound over, it rings on the phone and the alarm screen says so.`
+            : "";
         const text = run.problem
           ? `⚠️ ${run.problem}`
-          : `⏰ Alarm set for ${clockLabel(alarm!.at)}${alarm!.label ? ` — “${alarm!.label}”` : ""}. When you turn it off, your briefing starts ${alarm!.briefingAfterSeconds === 0 ? "right away" : `${alarm!.briefingAfterSeconds} seconds later`}.`;
+          : `⏰ Alarm set for ${clockLabel(alarm!.at)}${alarm!.label ? ` — “${alarm!.label}”` : ""}. When you turn it off, your briefing starts ${alarm!.briefingAfterSeconds === 0 ? "right away" : `${alarm!.briefingAfterSeconds} seconds later`}.${where}`;
         addLocal([{ id: phoneMessageId(at), sender: "assistant", text, time: timeLabel(at), at, tag: "SYS", answeredBy: "phone" }]);
       }
     },
@@ -385,12 +395,19 @@ export function useCompanion(): Companion {
   /** The Soundwave voice to speak with: the phone's pick, else the PC's. */
   const voiceFor = useCallback(() => settingsRef.current.voice ?? pcRef.current?.voice ?? kitRef.current?.voice ?? "en-US-GuyNeural", []);
 
-  /** Who makes the speech: the PC while it's reachable, else the phone itself (Android app). */
+  /**
+   * Who makes the speech: the PC while it's reachable, else the phone itself
+   * (Android app). When the PC is online but its voice service won't answer,
+   * the phone's own Soundwave voice reads it instead — the same Microsoft
+   * neural voice, so the briefing is never silently skipped.
+   */
   const synthesizer = useCallback((): ((piece: string) => Promise<{ audio: Uint8Array; mime: string }>) | null => {
     const c = clientRef.current;
-    if (c && stateRef.current.kind === "online") return (piece) => c.speak(piece, voiceFor());
-    if (phoneVoiceAvailable()) return (piece) => synthesizeOnPhone(piece, voiceFor());
-    return null;
+    const pcSpeech = c && stateRef.current.kind === "online" ? (piece: string) => c.speak(piece, voiceFor()) : null;
+    const phoneSpeech = phoneVoiceAvailable() ? (piece: string) => synthesizeOnPhone(piece, voiceFor()) : null;
+    if (!pcSpeech) return phoneSpeech;
+    if (!phoneSpeech) return pcSpeech;
+    return (piece) => pcSpeech(piece).catch(() => phoneSpeech(piece));
   }, [voiceFor]);
 
   const speak = useCallback(
@@ -408,8 +425,10 @@ export function useCompanion(): Companion {
           const { audio, mime } = await synth(text);
           await playReply(audio, mime);
         }
-      } catch {
-        /* the voice service is down: the reply is on screen anyway */
+      } catch (err) {
+        // The voice service being down is not worth nagging about (the reply is
+        // on screen), but a phone that made no sound at all is worth saying.
+        if (err instanceof SpeechPlaybackError) toast("I couldn't make a sound just now — the phone's media volume may be at zero.", "error", 6000);
       } finally {
         setSpeaking(false);
       }
@@ -462,6 +481,12 @@ export function useCompanion(): Companion {
       if (!opts.force && (!settingsRef.current.talkOnOpen || !plan?.auto || !inBriefingWindow(plan.time, now) || heardRef.current.includes(day))) return;
       briefingBusy.current = true;
       briefingStop.current = false;
+      // A briefing the person asked for right now (they turned an alarm off, or
+      // tapped to hear it): if the media volume — which the voice plays on, and
+      // which the alarm does not touch — is at zero, turn it up so it is heard.
+      // The level is put back when the briefing is done.
+      const volumeBefore = opts.force ? await raiseMediaVolumeForBriefing().catch(() => -1) : -1;
+      if (volumeBefore >= 0) toast("Your media volume was at zero — I turned it up so you can hear the briefing.", "info", 6000);
       try {
         await settled(8000);
         const c = clientRef.current;
@@ -502,13 +527,21 @@ export function useCompanion(): Companion {
           };
           addLocal([msg]);
         }
-        if (!msg || briefingStop.current) return;
+        if (briefingStop.current) return;
+        if (!msg) {
+          // Nothing to read: say why instead of leaving the bar and going quiet.
+          throw new Error(
+            stateRef.current.kind === "online"
+              ? "the PC answered, but today's briefing never came through — try again in a moment"
+              : "the PC is off and this phone doesn't have a briefing plan yet (it comes from the PC) — open Soundwave on the PC once, then ask again",
+          );
+        }
         markHeard(day, msg);
         // This run IS the briefing: clear the "an alarm was turned off" flag so the
         // next time the app comes to the front it doesn't say it all again.
         if (opts.force) void consumePendingBriefing().catch(() => undefined);
         const synth = synthesizer();
-        if (!synth) return;
+        if (!synth) throw new Error("this device can't speak (no Soundwave voice here) — the briefing is written in the chat");
         setBriefing({ kind: "speaking", messageId: msg.id });
         setSpeaking(true);
         await speakLong(speakableBriefing(msg.text), synth, () => briefingStop.current);
@@ -518,13 +551,22 @@ export function useCompanion(): Companion {
         briefingBusy.current = false;
         setSpeaking(false);
         setBriefing({ kind: "idle" });
+        // Give the media volume back exactly as it was before we raised it.
+        if (volumeBefore >= 0) void restoreMediaVolume(volumeBefore);
       }
     },
     [settled, addLocal, markHeard, synthesizer],
   );
   const deliverBriefingRef = useRef<(opts?: { force?: boolean }) => Promise<void>>(async () => undefined);
   deliverBriefingRef.current = (opts) =>
-    deliverBriefing(opts).catch((err) => toast(`The morning briefing didn't work this time: ${(err as Error).message}`, "error", 6000));
+    deliverBriefing(opts).catch((err) => {
+      const message = (err as Error).message || "something went wrong";
+      // Keep it in the chat too: a toast is gone in seconds, and this is
+      // something the person should be able to read (and ask about) later.
+      const at = Date.now();
+      addLocal([{ id: phoneMessageId(at), sender: "assistant", text: `⚠️ The morning briefing didn't work this time: ${message}.`, time: timeLabel(at), at, tag: "SYS", answeredBy: "phone" }]);
+      toast(`The morning briefing didn't work this time: ${message}`, "error", 6000);
+    });
 
   // On open (after loading, once paired) — and when the plan first reaches the phone.
   // An alarm that was turned off means the briefing starts now, even outside

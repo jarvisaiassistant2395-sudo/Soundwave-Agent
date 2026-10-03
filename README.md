@@ -157,7 +157,7 @@ exactly as recorded, captions of what is said burned in. `lib/videoClips.ts` +
 Each clip is a normal export job — Watch, download or upload it from the chat.
 One video renders at a time, shorts included.
 
-**Alarms on the phone** (desktop 1.5.2 / phone 1.3.0): ask the agent for one
+**Alarms on the phone** (desktop 1.5.2 / phone 1.3.1): ask the agent for one
 ("set an alarm for 6:30", "wake me in 20 minutes") and it arms a real alarm on
 the paired Android phone — `set_phone_alarm` leaves a control message in the
 shared conversation, and the phone's native `Alarm` plugin puts it in Android's
@@ -166,13 +166,15 @@ re-armed after a reboot), so it rings with the PC off. Turning one off starts
 the morning briefing by itself after the seconds the user chose (phone app →
 Settings → **Alarm & the briefing**, 0–600, default 30; the agent can give a
 per-alarm delay too), which is also how the briefing starts when the phone is
-all the user has. Alarms live in the phone app (1.3.0+) — the PC learns the
+all the user has. Alarms live in the phone app (1.3.0+; the earbud routing above is 1.3.1) — the PC learns the
 app's version when the phone connects, and if it's older it says to update
 instead of claiming an alarm it can't set. The ring plays in the connected
 Bluetooth earbuds/headset (Soundwave picks the output itself — Android often
-sends alarm audio to the phone's speaker — and lifts the alarm volume for the
-ring), with a switch in Settings → "Alarm & the briefing" to keep it on the
-speaker; the screen says where it rings.
+sends alarm audio to the phone's speaker — asks Android for the audio route and
+then checks the sound really started: a phone that accepts the request and plays
+nothing gets the alarm on its own speaker instead, with the alarm screen saying
+where it really rang. The alarm volume is lifted for the ring, with a switch in
+Settings → "Alarm & the briefing" to keep it on the speaker.)
 
 **Memory** (desktop 1.4.0+): `%APPDATA%\Soundwave AI\data\agent-memory.json`
 — notes, Gemini's running summary of earlier conversations (written by the
