@@ -10,6 +10,7 @@ import { connectedPhone, pairedPhones } from "../companion/service.js";
 import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
 import { DEFAULT_CLIPS, MAX_CLIPS } from "./core/clips.js";
+import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS } from "./core/viral.js";
 import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } from "./core/watch.js";
 import { clipsBusy, startClipsJob } from "../videoClips.js";
 import { defaultEyes, type Eyes } from "../eyes.js";
@@ -41,6 +42,8 @@ export interface ToolContext {
   userId: string;
   voice: string;
   resolution: "720p" | "1080p";
+  /** Default narration length for shorts started from chat. */
+  seconds: number;
   /** The server runs on the person's own PC (desktop app): it may open things here. */
   desktop: boolean;
   platform: NodeJS.Platform;
@@ -70,7 +73,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     declaration: {
       name: "make_youtube_short",
       description:
-        "Start making a vertical YouTube Short (about 30–60 seconds): a script written for the topic, narrated in the agent's Soundwave voice with word-by-word subtitles, over a gameplay background from the Orbital NCG YouTube channel that hasn't been used before. It renders in the background for a few minutes and the finished video is posted in this chat automatically. Only one short renders at a time. Use it whenever the user asks you to make, generate or create a short, video, reel or TikTok.",
+        "Start making a vertical YouTube Short (60 seconds by default): a script written for the topic and checked against what holds viewers — hook, a turn in the middle, payoff and a looping ending — narrated in the agent's Soundwave voice with word-by-word subtitles, over a gameplay background from the Orbital NCG YouTube channel that hasn't been used before. It renders at 1080p 60fps in the background for a few minutes and the finished video is posted in this chat automatically. Only one short renders at a time. Use it whenever the user asks you to make, generate or create a short, video, reel or TikTok.",
       parameters: {
         type: "OBJECT",
         properties: {
@@ -82,6 +85,10 @@ export const AGENT_TOOLS: AgentTool[] = [
             type: "STRING",
             description: "Optional: anything specific the user wants in it — an angle, facts to include, tone or audience. Leave out if none.",
           },
+          seconds: {
+            type: "NUMBER",
+            description: "Optional narration length in seconds (30, 60 or 90). Use 60 unless the user asked for a specific length; a 60-second script is about 144 words.",
+          },
         },
         required: ["topic"],
       },
@@ -90,6 +97,8 @@ export const AGENT_TOOLS: AgentTool[] = [
     async run(args, ctx) {
       const topic = str(args.topic, 200) || "a mind-blowing fact";
       const details = str(args.details, 800);
+      const wanted = typeof args.seconds === "number" && Number.isFinite(args.seconds) ? Math.round(args.seconds) : ctx.seconds;
+      const seconds = Math.min(180, Math.max(15, wanted));
       if (ctx.effects.short) return { started: false, reason: "A short was already started for this message." };
 
       const clipping = clipsBusy();
@@ -131,6 +140,7 @@ export const AGENT_TOOLS: AgentTool[] = [
         const { jobId } = await startShortJob({
           topic,
           ...(details ? { scriptBrief: details } : {}),
+          seconds,
           voice: ctx.voice,
           resolution: ctx.resolution,
           userId: ctx.userId,

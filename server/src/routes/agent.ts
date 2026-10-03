@@ -7,6 +7,7 @@ import { resolveYtDlpPath } from "../lib/ytdlp.js";
 import { getStore } from "../lib/store.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../lib/orbitalBackground.js";
 import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, startShortJob } from "./agentShort.js";
+import { nicheCatalog } from "../lib/brain/core/viral.js";
 import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
 import { SttError, getSttStatus, transcribe } from "../lib/stt.js";
 import type { ChatReply } from "../lib/chatMessages.js";
@@ -162,9 +163,10 @@ const chatSchema = z
       .max(100)
       .optional()
       .default([]),
-    /** Voice / resolution for shorts started from chat (the Hub passes its current picks). */
+    /** Voice / resolution / length for shorts started from chat (the Hub passes its current picks). */
     voice: z.string().min(2).max(100).optional(),
     resolution: z.enum(["720p", "1080p"]).optional(),
+    seconds: z.number().int().min(15).max(180).optional(),
   })
   .refine((d) => Boolean((d.message && d.message.trim().length > 0) || (d.prompt && d.prompt.trim().length > 0)), {
     message: "Either message or prompt is required",
@@ -199,9 +201,10 @@ export function parseShortRequest(message: string): { topic: string } | null {
 export interface AgentChatInput {
   message: string;
   history?: Array<{ sender: "user" | "assistant" | "system"; text: string }>;
-  /** Voice / resolution for shorts started from chat. */
+  /** Voice / resolution / narration length for shorts started from chat. */
   voice?: string;
   resolution?: "720p" | "1080p";
+  seconds?: number;
   userId?: string;
   /** Aborted when nobody is waiting for the answer any more. */
   signal?: AbortSignal;
@@ -272,7 +275,8 @@ async function startShortFromChat(topic: string, input: AgentChatInput): Promise
     const { jobId } = await startShortJob({
       topic,
       voice: input.voice || "en-US-GuyNeural",
-      resolution: input.resolution || "720p",
+      resolution: input.resolution || "1080p",
+      seconds: input.seconds,
       userId: input.userId || "local-user",
     });
     return {
@@ -355,7 +359,7 @@ async function withoutBrain(input: AgentChatInput, brainProblem: string | null):
   return {
     success: true,
     reply:
-      'I need a Gemini API key before I can chat and answer questions. Add one in Settings → Brain — it\'s free from Google AI Studio and takes a minute. Until then I can still make shorts: say "make a short about …" or press Generate.',
+      'I need a Gemini API key before I can chat and answer questions. Add one in Settings → Brain — it\'s free from Google AI Studio and takes a minute. Until then I can still make shorts: say "make a short about …" or press Generate. With the key I write each script to the length you pick too — the built-in ones are 60 seconds.',
     needsBrain: true,
     tag: "SYS",
   };
@@ -374,6 +378,7 @@ router.post("/chat", optionalAuth, validate({ body: chatSchema }), async (req, r
       history: body.history,
       voice: body.voice,
       resolution: body.resolution,
+      seconds: body.seconds,
       userId: req.user?.id,
       signal: controller.signal,
     });
@@ -407,61 +412,11 @@ router.get("/status", async (_req, res) => {
   });
 });
 
-// GET /niches — retrieve all 7 niches and sample viral hooks
+// GET /niches — the researched niches, their hook shapes and sample scripts.
+// One source of truth: brain/core/viral.ts (the same recipes the script
+// writer is given, and the same samples the no-key fallback speaks).
 router.get("/niches", (_req, res) => {
-  const niches = [
-    {
-      id: "psychology",
-      name: "Psychology & Dark Mind Tricks",
-      description: "Cognitive biases, social cues, the Chameleon Effect, persuasion.",
-      hooks: ["Did you know that the Chameleon Effect...", "Only 1% know this psychology trick..."],
-      sampleScripts: VIRAL_SCRIPTS.psychology,
-    },
-    {
-      id: "facts",
-      name: "Mind-Bending Facts",
-      description: "Science, nature, ocean secrets, history quirks that sound fake but are real.",
-      hooks: ["Did you know sharks are older than trees?", "Honey never spoils."],
-      sampleScripts: VIRAL_SCRIPTS.facts,
-    },
-    {
-      id: "history",
-      name: "Untold History & Secrets",
-      description: "Forgotten wars, weird historical traditions, bizarre timelines.",
-      hooks: ["The shortest war lasted 38 minutes...", "Samurai and cowboys existed at the same time."],
-      sampleScripts: VIRAL_SCRIPTS.history,
-    },
-    {
-      id: "finance",
-      name: "Money & Wealth Psychology",
-      description: "Investing rules, money habits, saving traps, wealth creation secrets.",
-      hooks: ["Everything you knew about saving money is wrong.", "Only 1% know the $100 rule..."],
-      sampleScripts: VIRAL_SCRIPTS.finance,
-    },
-    {
-      id: "ai",
-      name: "AI & Future Tech",
-      description: "Cutting-edge artificial intelligence, automation shortcuts, future forecasts.",
-      hooks: ["This free AI tool is better than most paid alternatives...", "One AI prompt that gives you viral hooks..."],
-      sampleScripts: VIRAL_SCRIPTS.ai,
-    },
-    {
-      id: "motivation",
-      name: "Deep Mindset & Discipline",
-      description: "Action-driven stoicism, habit loops, mental endurance, consistency.",
-      hooks: ["Stop trying to be motivated.", "I did one hard thing every morning for 7 days."],
-      sampleScripts: VIRAL_SCRIPTS.motivation,
-    },
-    {
-      id: "horror",
-      name: "Cosmic & Unexplained Horror",
-      description: "Skinwalker encounters, eerie mysteries, spine-chilling creepypastas.",
-      hooks: ["She lived alone. Every night at exactly 3:13 AM...", "The last message said 'Don't look behind you.'"],
-      sampleScripts: VIRAL_SCRIPTS.horror,
-    },
-  ];
-
-  res.json({ niches });
+  res.json({ niches: nicheCatalog() });
 });
 
 // POST /generate-script

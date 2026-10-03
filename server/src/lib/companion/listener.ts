@@ -362,7 +362,8 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
     const voice = normalizeVoiceId(args.voice || getConversation().voice);
     let reply: ChatReply;
     try {
-      reply = await agentChat({ message, history, voice, resolution: args.resolution === "1080p" ? "1080p" : "720p", userId: "local-user", via: "phone" });
+      // Same default as the app: publish quality unless 720p was asked for.
+      reply = await agentChat({ message, history, voice, resolution: args.resolution === "720p" ? "720p" : "1080p", userId: "local-user", via: "phone" });
     } catch (err) {
       console.error("[companion] agent failed:", err);
       reply = { success: false, reply: `I couldn't process "${message}" just now: ${(err as Error).message}`, tag: "SYS" };

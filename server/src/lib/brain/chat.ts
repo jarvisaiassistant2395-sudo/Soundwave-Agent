@@ -22,14 +22,20 @@ import { FALLBACK_MODEL, brainHealth, markSearchUnavailable, noteBrainError, not
 import { toolsFor, type AgentTool, type ToolContext, type ToolEffects } from "./tools.js";
 import { agentInstruction, plainReply, type MemoryForPrompt } from "./prompt.js";
 import { memoryForPrompt } from "../memory.js";
+import { DEFAULT_SECONDS } from "./core/viral.js";
 
 export { buildRequest, contentsFor, HISTORY_MESSAGES, searchRefused, TURN_BUDGET_MS };
+
+/** Default narration length for a short started from chat. */
+const DEFAULT_SCRIPT_SECONDS = DEFAULT_SECONDS;
 
 export interface BrainChatInput {
   message: string;
   history?: HistoryMessage[];
   voice?: string;
   resolution?: "720p" | "1080p";
+  /** Target narration length for any short this message starts (default 60). */
+  seconds?: number;
   userId?: string;
   signal?: AbortSignal;
   /** Sent from the phone app (Gemini is told; its tools still act on the PC). */
@@ -60,7 +66,8 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
   const ctx: ToolContext = {
     userId: input.userId || "local-user",
     voice: input.voice || "en-US-GuyNeural",
-    resolution: input.resolution || "720p",
+    resolution: input.resolution || "1080p",
+    seconds: input.seconds && input.seconds > 0 ? Math.round(input.seconds) : DEFAULT_SCRIPT_SECONDS, // eslint-disable-line @typescript-eslint/no-use-before-define
     desktop: config.desktopApp,
     platform: process.platform,
     via: input.via,

@@ -158,17 +158,9 @@ export function agentInstruction(opts: InstructionOptions): string {
 }
 
 /** Instructions for writing a short's narration (lib/brain/script.ts). */
-export const SHORT_SCRIPT_INSTRUCTION = [
-  "You write the narration for a vertical YouTube Short. A neural voice reads it word for word over gameplay footage, with big word-by-word subtitles.",
-  "",
-  "Rules:",
-  "- 90 to 140 words, in English, as natural spoken sentences.",
-  "- The first sentence is a strong hook that makes people keep watching. End on a punchy line: a twist, a question, or a loop back to the start.",
-  "- Accurate: only real, well-established facts. No made-up numbers, studies or quotes.",
-  "- No title, no labels (like \"Hook:\" or \"Narrator:\"), no stage directions, no emoji, no hashtags, no Markdown, no lists.",
-  "",
-  "Return only the narration.",
-].join("\n");
+// The short-script brief lives in core/viral.ts (buildScriptInstruction): it
+// carries the researched beat structure, the niche's recipe and the hook
+// shapes, and it is paired with the script doctor that checks the result.
 
 // ── Cleaning what comes back ────────────────────────────────────────────────
 
@@ -199,8 +191,10 @@ export function cleanScript(text: string): string {
   t = t.replace(/•[ \t]*/g, "");
   t = t.replace(/\s+/g, " ").trim();
   t = t.replace(/^["“”']+|["“”']+$/g, "").trim();
-  if (t.length > 1200) {
-    const cut = t.slice(0, 1200);
+  // A 90-second narration is ~1300 characters; only absurd lengths get cut,
+  // and then at a sentence boundary so the voice never stops mid-thought.
+  if (t.length > 2600) {
+    const cut = t.slice(0, 2600);
     const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
     t = end > 400 ? cut.slice(0, end + 1) : cut;
   }

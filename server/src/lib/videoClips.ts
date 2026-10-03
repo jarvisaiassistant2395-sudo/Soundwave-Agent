@@ -338,7 +338,9 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
     try {
       await store.updateJob(job.id, { settings: { topic: title, resolution: dims, range: clockRange(range), source: source.url, step: "Cutting the moment…" } as never });
       await job.report(50, "Cutting the moment…");
-      await runFfmpeg(["-y", "-ss", pick.start.toFixed(3), "-t", length.toFixed(3), "-i", filePath, "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", videoOnly]);
+      // The cut is an intermediate: keep it visually lossless (crf 18) so the
+      // final composite isn't re-compressing an already soft picture.
+      await runFfmpeg(["-y", "-ss", pick.start.toFixed(3), "-t", length.toFixed(3), "-i", filePath, "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", videoOnly]);
       await job.report(58, "Taking its sound…");
       await runFfmpeg(["-y", "-ss", pick.start.toFixed(3), "-t", length.toFixed(3), "-i", filePath, "-vn", "-c:a", "aac", "-b:a", "160k", audioOnly]);
 
@@ -359,8 +361,11 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
       const settings: ExportSettings = {
         resolution: dims,
         format: "mp4",
-        quality: "low",
-        fps: 30,
+        // Clips start life as someone else's compressed footage, so the high
+        // tier would only inflate the file — "medium" (crf 23) is the honest
+        // ceiling, at 1080p 60fps instead of the old 720p 30fps.
+        quality: "medium",
+        fps: 60,
         watermark: false,
         audioVolume: 1,
         fadeIn: 0,
@@ -432,7 +437,9 @@ export async function startClipsJob(opts: ClipsOptions): Promise<ClipsStarted> {
   if (active) throw new Error(`I'm still working on “${active.source}” — one video at a time.`);
   const count = Math.max(1, Math.min(MAX_CLIPS, Math.round(opts.count ?? DEFAULT_CLIPS)));
   const source = await checkSource(opts.video);
-  const resolution = opts.resolution === "1080p" ? "1080p" : "720p";
+  // 1080p is the default (720p only when the caller explicitly asks for a
+  // faster draft): clips are published, not previewed.
+  const resolution = opts.resolution === "720p" ? "720p" : "1080p";
   const userId = opts.userId || "agent-local";
 
   const store = await getStore();

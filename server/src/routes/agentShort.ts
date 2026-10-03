@@ -29,91 +29,28 @@ import { youtubeService } from "../lib/youtube.js";
 import { emitJob } from "./export.js";
 import { activeBrain } from "../lib/brain/settings.js";
 import { writeShortScript } from "../lib/brain/script.js";
+import { wordCount } from "../lib/brain/prompt.js";
+import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, WORDS_PER_SECOND } from "../lib/brain/core/viral.js";
 
-// ── Script templates for Soundwave Agent — VIRAL 2026 RESEARCH-BASED
-export const VIRAL_SCRIPTS: Record<string, string[]> = {
-  psychology: [
-    "Did you know that the Chameleon Effect makes people trust you more when you subtly mimic their posture? Most people never notice this, but once you see it, you can't unsee it. Try it in your next conversation.",
-    "Only 1% know this psychology trick: if you mirror someone's last three words, they will keep talking and feel deeply heard. It feels illegal but it's just how the brain works.",
-    "You're doing this wrong in every argument: saying 'you always' or 'you never'. The moment you say it, their brain stops listening. Say 'I feel' instead and watch what happens.",
-    "Three psychological tricks that feel illegal to know: One — asking a small favor makes people like you more, Benjamin Franklin Effect. Two — people remember how you made them feel, not what you said. Three — silence after a question makes them reveal more.",
-    "Your brain has a negativity bias: it remembers one insult longer than ten compliments. That's why one comment can ruin your day. But you can rewire it by writing three good things every night.",
-  ],
-  facts: [
-    "Did you know sharks are older than trees? Sharks 400 million years, trees 350 million. I was today years old when I found this out.",
-    "Honey never spoils. Archaeologists found 3000-year-old honey in Egyptian tombs and it was still edible. Nature's perfect preservative.",
-    "Cleopatra lived closer to the moon landing than to the building of the pyramids. Pyramids 2560 BC, Cleopatra 30 BC, moon 1969. Time is wild.",
-    "Oxford University is older than the Aztec Empire. Oxford founded 1096, Aztecs started 1428. A university outlived an empire.",
-    "Octopuses have three hearts and blue blood — and nine brains, one in each arm. And that's just one of five things that sound fake but are real.",
-    "Wombat poop is cube-shaped. Not a joke. Their intestines have ridges that form cubes so it doesn't roll off rocks.",
-    "Scotland's national animal is a unicorn. Not a lion, not an eagle — a unicorn. And they put it on their royal coat of arms.",
-  ],
-  history: [
-    "The shortest war lasted 38 minutes — Britain vs Zanzibar in 1896. 38 minutes and it was over.",
-    "Ancient Romans used urine as mouthwash. Ammonia cleans teeth, so they bought Portuguese urine because it was considered strongest.",
-    "The first computer programmer was a woman in the 1840s — Ada Lovelace wrote the first algorithm for Charles Babbage's machine.",
-    "Samurai and cowboys existed at the same time. Last samurai 1867, first cowboys 1860s. Two worlds that never met.",
-    "Nintendo was founded in 1889 as a playing card company. 100 years before Mario, they sold cards.",
-  ],
-  motivation: [
-    "Stop trying to be motivated. Motivation is weather, discipline is climate. Weather changes daily, climate stays. Build climate: one small win every morning.",
-    "I did one hard thing every morning for 7 days. Here's what happened: day 1 sucked, day 3 my brain resisted, day 7 I craved it. The trick is you quit at 40% when you're actually at 40% of your limit.",
-    "You're doing motivation wrong. You wait to feel ready. Ready never comes. The most successful people started exactly where you are — uncertain, afraid, but moving anyway.",
-    "Three things I do before every failure: expect it to be easy, wait for perfect, quit early. Stop doing them and failure becomes data, not identity.",
-  ],
-  horror: [
-    "She lived alone. Every night at exactly 3:13 AM, footsteps in the attic. She told herself it was the house settling. Until she found wet footprints leading from the attic to her bedroom.",
-    "The last message said 'Don't look behind you.' He laughed and turned around. Nothing. He texted 'Very funny.' Reply came instantly: 'I wasn't joking. I can see you.'",
-    "They said the trail was closed for a reason. He didn't listen. Halfway through, birds stopped singing. Trees leaned inward. Then he saw them — dozens of carved symbols on every trunk, all pointing at him.",
-  ],
-  finance: [
-    "Everything you knew about saving money is wrong. Saving alone keeps you poor because inflation eats it. $100 in 2000 is $60 now. Investing is not optional.",
-    "Only 1% know the $100 rule: if it costs less than $100, ask 'Will I use this 100 times?' If yes, buy it. If no, skip. It feels illegal but saves thousands.",
-    "Three money mistakes keeping you poor: One — you budget but don't track. Two — you save but don't invest. Three — you wait for more money instead of managing what you have.",
-  ],
-  ai: [
-    "This free AI tool is better than most paid alternatives and takes 10 seconds: it turns your messy notes into a viral script with hook, context, payoff. Show outcome first, then tool.",
-    "I asked 100 people about their biggest time waste, AI answers shocked me: it's not social media, it's re-doing the same task because you didn't write it down once.",
-    "One AI prompt that gives you viral hooks: 'Write 10 hooks using curiosity gap for your niche'. I tried it and got 3 million views from one.",
-  ],
-};
+// ── Scripts for Soundwave Agent ─────────────────────────────────────────────
+// The bank of ready-to-speak narrations lives in brain/core/viral.ts, next to
+// the researched beat structure, the niches and the script doctor. They are
+// what renders when there is no Gemini key (or Gemini is unreachable) — so they
+// are held to the same bar as the written ones: the tests lint every sample.
+import { SAMPLE_SCRIPTS, detectNiche, pickTemplate } from "../lib/brain/core/viral.js";
+
+export const VIRAL_SCRIPTS: Record<string, string[]> = SAMPLE_SCRIPTS;
 
 export function generateScript(topic: string): string {
-  const t = topic.toLowerCase().trim();
-  let category = "motivation";
-  if (t.includes("fact") || t.includes("science") || t.includes("space")) category = "facts";
-  else if (t.includes("history") || t.includes("ancient") || t.includes("war")) category = "history";
-  else if (t.includes("horror") || t.includes("scary") || t.includes("creepy") || t.includes("ghost") || t.includes("dark")) category = "horror";
-  else if (t.includes("money") || t.includes("finance") || t.includes("invest") || t.includes("saving") || t.includes("wealth")) category = "finance";
-  else if (t.includes("ai") || t.includes("tool") || t.includes("tech") || t.includes("productivity")) category = "ai";
-  else if (t.includes("motivat") || t.includes("inspir") || t.includes("success") || t.includes("mindset") || t.includes("discipline")) category = "motivation";
-  else if (t.includes("psych") || t.includes("brain") || t.includes("behavior")) category = "psychology";
-  else {
-    const rot = ["motivation", "psychology", "facts", "history", "finance", "ai", "horror"];
-    category = rot[Math.floor(Math.random() * rot.length)]!;
-  }
-  const templates = VIRAL_SCRIPTS[category] ?? VIRAL_SCRIPTS.motivation!;
-  const idx = Math.floor(Math.random() * templates.length);
-  const base = templates[idx]!;
-
-  // NEVER include the niche title or "Did you know this about [topic]?"
-  // If the user entered a custom sentence with >=5 words that doesn't just name the niche, use it directly as the hook
-  const isNicheTitle = [
-    "psychology", "facts", "mind-bending facts", "mind bending facts",
-    "history", "untold history", "finance", "money", "money & wealth",
-    "ai", "ai & future tech", "motivation", "deep mindset", "horror",
-    "unexplained horror", "random", "viral", "short", "video",
-  ].some((n) => t === n || t.includes(`about ${n}`));
-
-  if (!isNicheTitle && topic.length > 20 && topic.split(" ").length >= 5) {
-    const cleanTopic = topic.replace(/^(create a short|generate a short|make a short|did you know|fact|hook):\s*/i, "").trim();
-    if (cleanTopic.length > 15) {
-      return `${cleanTopic}. ${base}`;
-    }
-  }
-
-  // Jump straight into the viral hook with zero niche title prefix
-  return base;
+  // The bank holds complete, doctor-checked narrations, so the topic picks the
+  // niche and then the sample that talks about the same things. It is never
+  // spliced into a sample — that breaks the loop the ending is built on. With
+  // a Gemini key the script is written for the topic instead.
+  const cleaned = topic
+    .replace(/^(create a short|generate a short|make a short|make me a short|did you know|fact|hook):\s*/i, "")
+    .replace(/^about\s+/i, "")
+    .trim();
+  return pickTemplate(detectNiche(cleaned).id, cleaned);
 }
 
 export function cuesFromTimings(
@@ -185,6 +122,10 @@ export interface BuildShortOptions {
   script?: string;
   /** What the person asked for beyond the topic (an angle, facts, tone) — for the script writer. */
   scriptBrief?: string;
+  /** Target narration length in seconds (30 / 60 / 90 in the app). */
+  seconds?: number;
+  /** The niche the script brief is written for; detected from the topic when absent. */
+  niche?: string;
   voice?: string;
   resolution?: "720p" | "1080p";
   userId?: string;
@@ -231,7 +172,11 @@ type BuildStage = "script" | "voice" | "background" | "render" | "publish";
 export async function buildShortVideo(params: BuildShortOptions): Promise<BuildShortResult> {
   const store = await getStore();
   const userId = params.userId || "agent-local";
-  const resolution = params.resolution || "720p";
+  // 1080p by default: the sharp version is what the person expects to publish,
+  // and the render is a few minutes on a normal PC (720p stays available for a
+  // quick draft).
+  const resolution = params.resolution || "1080p";
+  const seconds = params.seconds && params.seconds > 0 ? Math.round(params.seconds) : DEFAULT_SCRIPT_SECONDS;
   const voice = params.voice || "en-US-ChristopherNeural";
 
   const dims = dimensionsFor(resolution, "9:16");
@@ -271,16 +216,25 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
 
   try {
     // 1. Script (10% -> 22%): written by Gemini when a key is set (Settings →
-    //    Brain), otherwise — or if Gemini fails — the built-in template.
+    //    Brain), then checked by the script doctor and rewritten if it found
+    //    real misses. Otherwise — or if Gemini fails — the built-in script.
     let script = params.script?.trim() || "";
     let scriptSource: "provided" | "gemini" | "template" = "provided";
+    let scriptMeta: Record<string, unknown> = {};
     if (!script && activeBrain()) {
-      await reportProgress(10, "Writing the script with Gemini...");
+      await reportProgress(10, `Writing a ${seconds}-second script with Gemini...`);
       try {
-        const written = await writeShortScript(params.topic, params.scriptBrief);
+        const written = await writeShortScript(params.topic, params.scriptBrief, { seconds, nicheId: params.niche });
         if (written) {
           script = written.script;
           scriptSource = "gemini";
+          scriptMeta = {
+            scriptNiche: written.niche,
+            scriptSeconds: written.seconds,
+            scriptWords: written.words,
+            scriptPasses: written.passes,
+            scriptIssues: written.issues,
+          };
         }
       } catch (err) {
         console.warn(`[agentShort] Gemini couldn't write the script (${(err as Error).message}); using the template`);
@@ -290,9 +244,12 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       await reportProgress(12, "Crafting viral script & opening hook...");
       script = generateScript(params.topic);
       scriptSource = "template";
+      // The built-in bank is written to the 60-second bar, so the record says
+      // what the narration really is instead of what was asked for.
+      scriptMeta = { ...scriptMeta, scriptSeconds: Math.round(wordCount(script) / WORDS_PER_SECOND) };
     }
-    jobSettings = { ...jobSettings, script, scriptSource };
-    await reportProgress(22, "Script ready. Preparing neural narrator...");
+    jobSettings = { ...jobSettings, script, scriptSource, ...scriptMeta };
+    await reportProgress(22, `Script ready (${wordCount(script)} words ≈ ${Math.round(wordCount(script) / WORDS_PER_SECOND)}s). Preparing neural narrator...`);
 
     // 2. Voiceover Synthesis (28% -> 40%)
     stage = "voice";
@@ -343,14 +300,16 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
     await progressChain;
     const background = toBackgroundInfo(orbital);
     jobSettings = { ...jobSettings, background };
-    await reportProgress(58, `Background ready: "${background.title}" (Orbital NCG, ${describeOrbitalSection(background.section)}). Initializing 60fps compositor...`);
+    await reportProgress(58, `Background ready: "${background.title}" (Orbital NCG, ${describeOrbitalSection(background.section)}). Initializing the ${dims.width}×${dims.height} 60fps compositor (${dims.height >= 1920 ? "high quality — this step takes a few minutes" : "fast render"})...`);
     const videoPath = orbital.imported.filePath;
 
     // 5. Export Settings
     const exportSettings: ExportSettings = {
       resolution: dims,
       format: "mp4",
-      quality: "low",
+      // 1080p gets the slow, high-quality encode (the person said a longer
+      // render is fine if the picture is better); 720p keeps the faster one.
+      quality: dims.height >= 1920 ? "high" : "medium",
       fps: 60,
       watermark: false,
       audioVolume: 1.0,
@@ -382,7 +341,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       onProgress: async (ffmpegPct) => {
         // Map FFmpeg 0..100% to overall 58..96%
         const overall = Math.min(96, Math.max(58, Math.round(58 + (ffmpegPct * 0.38))));
-        const stepDesc = `Rendering 60fps vertical short (${Math.round(ffmpegPct)}%)...`;
+        const stepDesc = `Rendering ${dims.width}×${dims.height} at 60fps (${Math.round(ffmpegPct)}%)...`;
         await reportProgress(overall, stepDesc);
       },
     });
@@ -498,7 +457,13 @@ const BACKGROUND_POLICY = `Unused Orbital NCG video (${ORBITAL_CHANNEL_URL}) imp
 const generateShortSchema = z.object({
   topic: z.string().min(2).max(500).default("motivation"),
   voice: z.string().min(2).max(100).default("en-US-ChristopherNeural"),
-  resolution: z.enum(["720p", "1080p"]).default("720p"),
+  // 1080p is the default the app ships: sharp enough to publish, and the
+  // render quality that goes with it (see buildShortVideo).
+  resolution: z.enum(["720p", "1080p"]).default("1080p"),
+  /** Target narration length in seconds (30 / 60 / 90 in the app). */
+  seconds: z.number().int().min(15).max(180).default(60),
+  /** The niche picked in the generator (script recipes in brain/core/viral). */
+  niche: z.string().max(40).optional(),
   async: z.boolean().default(false),
   autoPublishYouTube: z.boolean().optional(),
   youtubePrivacy: z.enum(["public", "unlisted", "private"]).optional(),
@@ -516,13 +481,14 @@ export function getActiveShortJobs(): Array<{ jobId: string; topic: string; star
 export async function startShortJob(params: Omit<BuildShortOptions, "existingJobId" | "onProgress">): Promise<{ jobId: string }> {
   const store = await getStore();
   const userId = params.userId || "agent-local";
-  const dims = dimensionsFor(params.resolution || "720p", "9:16");
+  const dims = dimensionsFor(params.resolution || "1080p", "9:16");
+  const seconds = params.seconds && params.seconds > 0 ? Math.round(params.seconds) : DEFAULT_SCRIPT_SECONDS;
   const job = await store.createJob({
     projectId: null,
     userId,
     status: "PROCESSING",
     progress: 8,
-    settings: { resolution: dims, topic: params.topic, step: "Crafting viral script & hook..." } as any,
+    settings: { resolution: dims, topic: params.topic, seconds, step: "Researching the angle and writing the script..." } as any,
     outputUrl: null,
     errorMessage: null,
     startedAt: new Date().toISOString(),
@@ -551,8 +517,9 @@ router.post("/generate-short", optionalAuth, validate({ body: generateShortSchem
     aspect: "9:16",
     resolution: body.resolution,
     format: "mp4",
-    quality: "medium",
+    quality: body.resolution === "1080p" ? "high" : "medium",
     fps: 60,
+    seconds: body.seconds,
     fitToVoice: true,
     voice: body.voice,
     subtitleStyle: "TikTok #8B5CF6 Montserrat 800 56px middle",
@@ -566,6 +533,8 @@ router.post("/generate-short", optionalAuth, validate({ body: generateShortSchem
       topic: body.topic,
       voice: body.voice,
       resolution: body.resolution,
+      seconds: body.seconds,
+      niche: body.niche,
       userId,
       autoPublishYouTube: body.autoPublishYouTube,
       youtubePrivacy: body.youtubePrivacy,

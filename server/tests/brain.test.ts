@@ -36,6 +36,7 @@ const gemini = await import("../src/lib/brain/gemini.js");
 const prompt = await import("../src/lib/brain/prompt.js");
 const pc = await import("../src/lib/brain/pc.js");
 const { writeShortScript } = await import("../src/lib/brain/script.js");
+const viral = await import("../src/lib/brain/core/viral.js");
 const { contentsFor, buildRequest } = await import("../src/lib/brain/chat.js");
 const { buildShortVideo } = await import("../src/routes/agentShort.js");
 
@@ -470,7 +471,11 @@ describe("Short scripts written by Gemini", () => {
     expect(out?.script).toMatch(/^Did you know a teaspoon of a neutron star/);
     expect(out?.script).not.toMatch(/\*|Hook:|🤯|\[|#space/);
     const body = generateCalls()[0]!.body;
-    expect(body.systemInstruction.parts[0].text).toBe(prompt.SHORT_SCRIPT_INSTRUCTION);
+    // The brief is the researched one (core/viral.ts): niche recipe, hook shapes, the bar.
+    expect(body.systemInstruction.parts[0].text).toBe(
+      viral.buildScriptInstruction({ seconds: viral.DEFAULT_SECONDS, niche: viral.detectNiche("neutron stars"), brief: "keep it fun" }),
+    );
+    expect(body.systemInstruction.parts[0].text).toContain("HOOK");
     expect(body.contents).toEqual([{ role: "user", parts: [{ text: "Topic: neutron stars\nWhat the viewer asked for: keep it fun" }] }]);
     expect(body.tools).toBeUndefined();
   });

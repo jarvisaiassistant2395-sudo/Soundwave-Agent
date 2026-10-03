@@ -28,6 +28,8 @@ import {
   Brain,
   Link2,
   Sunrise,
+  Search,
+  HeartPulse,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { Button } from "../components/ui/Button";
@@ -73,17 +75,21 @@ interface NicheInfo {
   id: string;
   name: string;
   desc: string;
-  iconName: "sparkles" | "compass" | "clock" | "trending" | "cpu" | "flame" | "eye";
+  iconName: "sparkles" | "compass" | "clock" | "trending" | "cpu" | "flame" | "eye" | "search" | "heart";
 }
 
+// Researched niches (server/src/lib/brain/core/viral.ts is the same list for
+// the script writer and the API): the ones that hold a scrolling audience.
 const NICHES: NicheInfo[] = [
-  { id: "psychology", name: "Psychology", desc: "Mind tricks & human behavior", iconName: "sparkles" },
-  { id: "facts", name: "Mind-Bending Facts", desc: "Science & nature oddities", iconName: "compass" },
-  { id: "history", name: "Untold History", desc: "Bizarre timelines & lost events", iconName: "clock" },
-  { id: "finance", name: "Money & Wealth", desc: "Rules of money & investing traps", iconName: "trending" },
-  { id: "ai", name: "AI & Future Tech", desc: "Automation tools & secrets", iconName: "cpu" },
-  { id: "motivation", name: "Deep Mindset", desc: "Discipline, consistency & grit", iconName: "flame" },
-  { id: "horror", name: "Unexplained Horror", desc: "Eerie true stories & anomalies", iconName: "eye" },
+  { id: "psychology", name: "Psychology & Mind", desc: "Why people act the way they do", iconName: "sparkles" },
+  { id: "facts", name: "Mind-Bending Facts", desc: "Science and scale that sounds fake", iconName: "compass" },
+  { id: "history", name: "Untold History", desc: "Forgotten events, impossible timelines", iconName: "clock" },
+  { id: "finance", name: "Money & Wealth", desc: "Rules of money, traps, quiet math", iconName: "trending" },
+  { id: "ai", name: "AI & Future Tech", desc: "What the tools actually change", iconName: "cpu" },
+  { id: "motivation", name: "Discipline & Mindset", desc: "Habits that survive a bad day", iconName: "flame" },
+  { id: "horror", name: "Unexplained Horror", desc: "True eerie events told straight", iconName: "eye" },
+  { id: "crime", name: "True Crime & Cold Cases", desc: "Cases solved by one detail", iconName: "search" },
+  { id: "health", name: "Body & Mind Hacks", desc: "Evidence-based fixes for energy", iconName: "heart" },
 ];
 
 function getNicheIcon(iconName: string) {
@@ -94,7 +100,9 @@ function getNicheIcon(iconName: string) {
     case "trending": return <TrendingUp className="h-4 w-4 text-purple-400" />;
     case "cpu": return <Cpu className="h-4 w-4 text-cyan-300" />;
     case "flame": return <Flame className="h-4 w-4 text-rose-400" />;
+    case "search": return <Search className="h-4 w-4 text-orange-400" />;
     case "eye": return <Eye className="h-4 w-4 text-indigo-400" />;
+    case "heart": return <HeartPulse className="h-4 w-4 text-emerald-400" />;
     default: return <Sparkles className="h-4 w-4 text-cyan-400" />;
   }
 }
@@ -126,6 +134,9 @@ export interface OrbitalStatus {
 }
 
 const ORBITAL_CHANNEL_URL = "https://www.youtube.com/@OrbitalNCG";
+/** The render quality and narration length the person picked last (remembered). */
+const QUALITY_KEY = "soundwave_short_quality";
+const LENGTH_KEY = "soundwave_short_seconds";
 
 /** The center column (orb + dock) never scrolls: the orb shrinks to fit the window. */
 const ORB_MAX = 300;
@@ -220,7 +231,23 @@ export function AgentHub() {
     saveAgentVoice(v);
   };
 
-  const [resolution, setResolution] = useState<"720p" | "1080p">("720p");
+  // Quality is remembered between sessions, and it starts at the sharp,
+  // publishable render: 1080p at 60fps. 720p is the fast draft.
+  const [resolution, setResolution] = useState<"720p" | "1080p">(() =>
+    localStorage.getItem(QUALITY_KEY) === "720p" ? "720p" : "1080p",
+  );
+  const [seconds, setSeconds] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(LENGTH_KEY));
+    return [30, 60, 90].includes(saved) ? saved : 60;
+  });
+  const pickResolution = (value: "720p" | "1080p") => {
+    setResolution(value);
+    localStorage.setItem(QUALITY_KEY, value);
+  };
+  const pickSeconds = (value: number) => {
+    setSeconds(value);
+    localStorage.setItem(LENGTH_KEY, String(value));
+  };
   const [isGenerating, setIsGenerating] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
   const [currentStep, setCurrentStep] = useState("Ready");
@@ -587,7 +614,7 @@ export function AgentHub() {
     setAssistantState("THINKING");
 
     try {
-      const data = await sendChat({ message: query, history, voice: selectedVoiceRef.current, resolution });
+      const data = await sendChat({ message: query, history, voice: selectedVoiceRef.current, resolution, seconds });
       // "generate a yt short …" → the server started a background job
       // (unused Orbital NCG video → YouTube link importer → render); follow it.
       const aiMsg = replyToMessage(data, query);
@@ -1285,6 +1312,10 @@ export function AgentHub() {
         topic,
         voice: selectedVoice,
         resolution,
+        seconds,
+        // The picker's own id when a niche is selected, so the script brief is
+        // written for that niche even with a custom topic typed in.
+        ...(customTopic.trim() ? {} : { niche: selectedNiche }),
         async: true,
         autoPublishYouTube: ytAutoPublish,
         youtubePrivacy: ytPrivacy,
@@ -2161,17 +2192,37 @@ export function AgentHub() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-gray-300 font-semibold">Resolution</label>
+                <label className="text-gray-300 font-semibold">Quality</label>
                 <select
                   value={resolution}
-                  onChange={(e) => setResolution(e.target.value as any)}
+                  onChange={(e) => pickResolution(e.target.value as "720p" | "1080p")}
                   className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
-                  <option value="720p">720p (Ultra Fast Render)</option>
-                  <option value="1080p">1080p (High Definition)</option>
+                  <option value="1080p">1080p · 60fps — publish quality</option>
+                  <option value="720p">720p · 60fps — fast draft</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-300 font-semibold">Length</label>
+                <select
+                  value={seconds}
+                  onChange={(e) => pickSeconds(Number(e.target.value))}
+                  className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                >
+                  <option value={30}>30 seconds — quick hit</option>
+                  <option value={60}>60 seconds — recommended</option>
+                  <option value={90}>90 seconds — deep dive</option>
                 </select>
               </div>
             </div>
+
+            <p className="text-[10px] text-gray-500 leading-normal">
+              The script is written to hold: a hook in the first line, a turn in the middle, the payoff and a
+              looping ending — {Math.round(seconds * 2.4)} words for {seconds} seconds. 1080p 60fps takes a few
+              minutes longer to render than 720p. Without a Gemini key (Settings → Brain) I use my built-in
+              60-second scripts.
+            </p>
 
             {/* Background Footage Source: Orbital NCG via the YouTube link importer */}
             <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-2">

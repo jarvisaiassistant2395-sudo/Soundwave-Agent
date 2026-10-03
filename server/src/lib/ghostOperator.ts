@@ -84,7 +84,7 @@ export function defaultGhostContext(overrides: Partial<GhostContext> = {}): Ghos
     desktop: config.desktopApp,
     platform: process.platform,
     voice: "en-US-GuyNeural",
-    resolution: "720p",
+    resolution: "1080p",
     ...overrides,
   };
 }

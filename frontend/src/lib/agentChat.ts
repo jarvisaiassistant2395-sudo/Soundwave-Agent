@@ -164,13 +164,15 @@ export async function sendChat(
     history: Array<{ sender: ChatMessage["sender"]; text: string }>;
     voice: string;
     resolution?: "720p" | "1080p";
+    /** Target narration length for any short this message starts. */
+    seconds?: number;
   },
   signal?: AbortSignal,
 ): Promise<ChatReply> {
   const res = await fetch("/api/v1/agent/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: body.message, prompt: body.message, history: body.history, voice: body.voice, resolution: body.resolution }),
+    body: JSON.stringify({ message: body.message, prompt: body.message, history: body.history, voice: body.voice, resolution: body.resolution, seconds: body.seconds }),
     signal,
   });
   if (!res.ok) {
