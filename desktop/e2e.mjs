@@ -291,13 +291,37 @@ try {
   else annotate("warning", "Desktop E2E", `daily briefing: written and shown, but it wasn't marked heard here (window focus in CI?) — heard: ${heardOn}`);
 
   // ── 3d. Morning Setup, the Memory tab and Connect YouTube (1.4.0) ─────────
+  // If the chip doesn't get a briefing written, say *what* happened instead of
+  // dying on a bare 60 s timeout: the old version waited in silence, so a
+  // failure here read as "page.waitForFunction: Timeout 60000ms exceeded".
   const writersBefore = fakeGemini.seen.filter((r) => /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).length;
+  const writersNow = () => fakeGemini.seen.filter((r) => /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).length;
+  const lastChat = () =>
+    main
+      .evaluate(() => {
+        const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
+        return list.slice(-3).map((m) => `${m.sender}: ${String(m.text ?? "").replace(/\s+/g, " ").slice(0, 140)}`).join(" | ") || "(the chat is empty)";
+      })
+      .catch(() => "(couldn't read the chat)");
+  const lastCalls = () =>
+    fakeGemini.seen
+      .filter((r) => r.url?.endsWith(":generateContent"))
+      .slice(-3)
+      .map((r) => (r.body?.systemInstruction?.parts?.[0]?.text ?? r.body?.contents?.at(-1)?.parts?.[0]?.text ?? "?").replace(/\s+/g, " ").slice(0, 90))
+      .join(" ∥ ") || "(no Gemini calls at all)";
   await main.click('[data-testid="morning-chip"]');
   for (let i = 0; i < 120; i++) {
-    if (fakeGemini.seen.filter((r) => /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).length > writersBefore) break;
+    if (writersNow() > writersBefore) break;
     await new Promise((r) => setTimeout(r, 500));
   }
-  await main.waitForFunction((t) => document.body.innerText.includes(t), FAKE_MORNING, { timeout: 60_000 });
+  if (writersNow() <= writersBefore) {
+    await fail(`Morning Setup: the chip was pressed but Gemini was never asked to write the briefing. Last chat: ${await lastChat()}. Last Gemini calls: ${await lastCalls()}`);
+  }
+  try {
+    await main.waitForFunction((t) => document.body.innerText.includes(t), FAKE_MORNING, { timeout: 60_000 });
+  } catch (err) {
+    await fail(`Morning Setup: the briefing was written but never showed in the chat (${err.message}). Last chat: ${await lastChat()}`);
+  }
   const briefing = fakeGemini.seen.filter((r) => r.url?.endsWith(":generateContent") && /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).at(-1);
   const facts = briefing?.body?.contents?.[0]?.parts?.[0]?.text ?? "";
   if (!/Weather: In Kruševac it's 14°C/.test(facts)) await fail(`Morning Setup: the briefing wasn't written from the weather facts: ${facts.slice(0, 300)}`);
