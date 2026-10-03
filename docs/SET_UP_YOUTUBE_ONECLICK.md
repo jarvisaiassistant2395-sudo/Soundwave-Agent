@@ -103,23 +103,46 @@ live in one project happily.
 
 ## Part 5 — put the JSON in the two places
 
-### A. This PC — so you can test right now
+### A. This PC — so you can test right now (and on any machine you like)
 
-15. In the Soundwave-Agent folder, create the folder `desktop/config` (if it
-    doesn't exist) and save the downloaded file there, **renamed exactly to**:
+Pick **one** of these. The first is the friendly one — it works for an installed
+app, needs no admin rights, and survives app updates.
 
-    ```
-    Soundwave-Agent/desktop/config/youtube-client.json
-    ```
+**Option 1 — your data folder (recommended).** Save the file, **renamed exactly
+to** `youtube-client.json`, in:
 
-    (Its contents stay as downloaded; only the filename changes.)
-16. Rebuild the app tree: `cd desktop && node assemble.mjs` — it prints
-    `[assemble] one-click YouTube client (config/youtube-client.json) …`.
-    Start the app and the panel shows the one-press card.
-    - The file is git-ignored, so it can never be committed by accident.
-    - Quick check without launching: `node desktop/smoke.mjs` prints
-      *"YouTube: the shipped Google client makes Connect YouTube a single
-      press"*.
+```
+%APPDATA%\Soundwave AI\youtube-client.json
+```
+
+Paste `%APPDATA%\Soundwave AI` into the Explorer address bar to get there — it
+is the same folder the app keeps your settings and data in. Your own copy wins
+over whatever a build shipped, and a broken copy there never hides a working
+shipped one (the app just ignores it).
+
+**Option 2 — source checkout.** Save it as:
+
+```
+Soundwave-Agent/desktop/config/youtube-client.json
+```
+
+then rebuild the app tree: `cd desktop && node assemble.mjs` — it prints
+`[assemble] one-click YouTube client (config/youtube-client.json) …`. The file
+is git-ignored, so it can never be committed by accident.
+
+15. Restart the app — quit it from the tray (right-click the tray icon →
+    Quit) and start it again — and open **gear → YouTube & Shorts**. The
+    one-press card appears.
+16. Quick check without launching: `node desktop/smoke.mjs` prints
+    *"YouTube: the shipped Google client makes Connect YouTube a single
+    press"*.
+
+> **The app you installed before this change** (any build made before the data
+> folder was read) only ever sees the client it was *packaged with*. For that
+> copy you can paste the file into its install folder —
+> `...\Programs\Soundwave AI\resources\app\app\config\youtube-client.json`
+> (create the `config` folder) — and restart it. Works, but every app update
+> wipes it, so treat it as a temporary trick and move on to a fresh build.
 
 ### B. GitHub — so every installer you ship has it
 
@@ -166,7 +189,7 @@ live in one project happily.
 | Sign-in worked, uploads fail about a week later (`invalid_grant`) | Testing status expires refresh tokens after 7 days | Publish app (Part 3), or press Connect again |
 | Uploads succeed but stay **Private** forever | New project hasn't passed YouTube's API audit | Download the MP4 and post in YouTube Studio, and request the audit at support.google.com/youtube/contact/yt_api_form |
 | `quotaExceeded` after ~6 uploads in a day | Default 10,000 units/day; one upload costs 1,600 | Request a quota increase on the same audit form (or spread uploads across days) |
-| Panel still shows the 3-click path | App didn't find the JSON, or CI secrets absent | Step 15/16 (local) or step 17 (GitHub) |
+| Panel still shows the 3-click path | App didn't find the JSON, or CI secrets absent | Check `%APPDATA%\Soundwave AI\youtube-client.json` and `desktop/config/youtube-client.json` (then `node desktop/assemble.mjs`), or step 17 (GitHub) |
 
 ---
 
@@ -174,7 +197,8 @@ live in one project happily.
 
 - **Client type that works:** Desktop app.
 - **Project:** reuse the website's — same consent screen, test users, API state.
-- **Local file:** `desktop/config/youtube-client.json` (git-ignored).
+- **Local file (your machine):** `%APPDATA%\Soundwave AI\youtube-client.json`
+  — or `desktop/config/youtube-client.json` (git-ignored) for source builds.
 - **GitHub secrets:** `SOUNDWAVE_YOUTUBE_CLIENT_ID`, `SOUNDWAVE_YOUTUBE_CLIENT_SECRET`.
 - **Nothing to configure:** no redirect URIs, no JavaScript origins, no keys in
   code, no token copying.

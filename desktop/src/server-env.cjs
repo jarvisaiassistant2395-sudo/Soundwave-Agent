@@ -85,23 +85,33 @@ function prepareYtDlp({ binDir, userDataDir }) {
 }
 
 /**
- * Soundwave's own Google OAuth client, when this build ships one. It lives at
- * appRoot/config/youtube-client.json — written by CI from a repository secret,
- * never committed (see .gitignore) — and makes "Connect YouTube" a single
- * button: the customer signs in and is done, no Google Cloud project, no client
- * ID to paste. Applies to the packaged app and to the smoke test alike, since
- * both bootstrap through here.
+ * Soundwave's own Google OAuth client, when this machine/build has one. It makes
+ * "Connect YouTube" a single button: the person signs in and is done, no Google
+ * Cloud project, no client ID to paste.
+ *
+ * Two places, first one wins:
+ *   <userDataDir>/youtube-client.json   the person's own copy — the same folder
+ *                                       as their settings and data, no admin
+ *                                       rights, and it survives app updates
+ *   <appRoot>/config/youtube-client.json what the build shipped (CI writes it
+ *                                       from a repository secret; gitignored)
+ * A file that exists but doesn't parse falls through to the next place, so a
+ * bad local copy can never break a working shipped one.
  */
-function loadYouTubeClient(appRoot) {
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(appRoot, "config", "youtube-client.json"), "utf8"));
-    const node = raw.installed ?? raw.web ?? raw.desktop ?? raw;
-    const clientId = String(node.client_id ?? node.clientId ?? "").trim();
-    const clientSecret = String(node.client_secret ?? node.clientSecret ?? "").trim();
-    return clientId && clientSecret ? { clientId, clientSecret } : null;
-  } catch {
-    return null; // no file (or not usable): builds without it show the own-client path
+function loadYouTubeClient(appRoot, userDataDir = null) {
+  const places = [userDataDir && path.join(userDataDir, "youtube-client.json"), path.join(appRoot, "config", "youtube-client.json")].filter(Boolean);
+  for (const file of places) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+      const node = raw.installed ?? raw.web ?? raw.desktop ?? raw;
+      const clientId = String(node.client_id ?? node.clientId ?? "").trim();
+      const clientSecret = String(node.client_secret ?? node.clientSecret ?? "").trim();
+      if (clientId && clientSecret) return { clientId, clientSecret };
+    } catch {
+      /* not here (or not usable) — try the next place */
+    }
   }
+  return null; // nowhere: the app shows the honest own-client path
 }
 
 /**
@@ -178,7 +188,7 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
 
   // One-click "Connect YouTube": the shipped Google client, if any. Anything
   // already in the environment (a developer, CI, a power user) wins over it.
-  const youtubeClient = loadYouTubeClient(appRoot);
+  const youtubeClient = loadYouTubeClient(appRoot, userDataDir);
   if (youtubeClient) {
     if (!process.env.SOUNDWAVE_YOUTUBE_CLIENT_ID) env.SOUNDWAVE_YOUTUBE_CLIENT_ID = youtubeClient.clientId;
     if (!process.env.SOUNDWAVE_YOUTUBE_CLIENT_SECRET) env.SOUNDWAVE_YOUTUBE_CLIENT_SECRET = youtubeClient.clientSecret;

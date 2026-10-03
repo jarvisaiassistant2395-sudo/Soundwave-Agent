@@ -126,7 +126,8 @@ repository secrets `SOUNDWAVE_YOUTUBE_CLIENT_ID` / `SOUNDWAVE_YOUTUBE_CLIENT_SEC
 the release workflow writes `desktop/config/youtube-client.json` (gitignored),
 `assemble.mjs` stages it as `app/config/youtube-client.json`, and
 `desktop/src/server-env.cjs` turns it into `SOUNDWAVE_YOUTUBE_CLIENT_*` for the
-bundled server (a variable already in the environment wins — handy for testing
+bundled server (it also reads `<userDataDir>/youtube-client.json` first — a
+local copy for testing wins over the shipped one and survives app updates) (a variable already in the environment wins — handy for testing
 against another client). `server/src/lib/youtube.ts` prefers the person's own
 client when they pasted one, else the built-in one, and `connectionState()`
 reports `needsReconnect` when a saved token was minted by a different client

@@ -167,6 +167,9 @@ PKCE and saves the refresh token). Two repository secrets make it so for every
 installer: create one **Desktop app** OAuth client for the shop, save it as
 `SOUNDWAVE_YOUTUBE_CLIENT_ID` / `SOUNDWAVE_YOUTUBE_CLIENT_SECRET`, and the
 release workflow bakes it into `app/config/youtube-client.json` (gitignored;
+a packaged app also reads `<user data>/youtube-client.json` —
+`%APPDATA%\Soundwave AI\youtube-client.json` — so a local copy wins over the
+shipped one and survives updates;
 `desktop/src/server-env.cjs` reads it — an already-set environment variable
 wins, so a developer can point a build at a different client). Developer and
 self-hosted builds without it say so honestly and fall back to the person's

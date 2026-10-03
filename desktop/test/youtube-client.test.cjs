@@ -35,6 +35,25 @@ test("accepts what Google's own download looks like", () => {
   assert.equal(loadYouTubeClient(appRoot)?.clientSecret, "GOCSPX-downloaded");
 });
 
+test("the person's own copy in the data folder wins over the shipped one", () => {
+  const appRoot = tmp();
+  const userData = tmp();
+  write(appRoot, JSON.stringify({ client_id: "999-soundwave.apps.googleusercontent.com", client_secret: "GOCSPX-shipped" }));
+  fs.writeFileSync(path.join(userData, "youtube-client.json"), JSON.stringify({ client_id: "123-mine.apps.googleusercontent.com", client_secret: "GOCSPX-mine" }));
+  assert.deepEqual(loadYouTubeClient(appRoot, userData), {
+    clientId: "123-mine.apps.googleusercontent.com",
+    clientSecret: "GOCSPX-mine",
+  });
+});
+
+test("a broken copy in the data folder doesn't hide a working shipped one", () => {
+  const appRoot = tmp();
+  const userData = tmp();
+  write(appRoot, JSON.stringify({ client_id: "999-soundwave.apps.googleusercontent.com", client_secret: "GOCSPX-shipped" }));
+  fs.writeFileSync(path.join(userData, "youtube-client.json"), "{ this is not json");
+  assert.equal(loadYouTubeClient(appRoot, userData)?.clientSecret, "GOCSPX-shipped");
+});
+
 test("no file, empty file, half a client, or junk: null, never a throw", () => {
   const bare = tmp();
   assert.equal(loadYouTubeClient(bare), null);
