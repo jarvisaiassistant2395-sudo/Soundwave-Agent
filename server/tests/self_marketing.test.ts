@@ -6,7 +6,7 @@
 // (helpers/fakeGoogle.ts); the recorder, the render and the file on disk are real.
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -38,6 +38,18 @@ const VOICE = path.join(WORK, "voice.mp3");
 const hostRef = globalThis as { __soundwaveDesktopHost?: unknown };
 
 let fake: Awaited<ReturnType<typeof startFakeGoogle>>;
+// Real ffmpeg renders the demo above; a machine without it (the Windows CI
+// runner fetches ffmpeg only for the desktop steps) skips instead of failing.
+const hasFfmpeg = (() => {
+  try {
+    execFileSync(resolveFfmpegPath(), ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+if (!hasFfmpeg) console.warn("[selfMarketing] ffmpeg isn't on this machine — the end-to-end tests are skipped");
+
 const runFfmpeg = (args: string[]) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(resolveFfmpegPath(), args);
@@ -46,6 +58,7 @@ const runFfmpeg = (args: string[]) =>
   });
 
 beforeAll(async () => {
+  if (!hasFfmpeg) return;
   const store = new JsonStore();
   await store.init();
   setStoreForTests(store);
@@ -84,7 +97,7 @@ function connect(name: string, token: string) {
   return channels.registerChannel({ refreshToken: token, channelTitle: name, channelId: `UC${name.replace(/\W/g, "")}`, clientSource: "own", connectedClientId: "cid.apps.googleusercontent.com" });
 }
 
-describe("a demo the agent makes of itself", () => {
+describe.skipIf(!hasFfmpeg)("a demo the agent makes of itself", () => {
   it("writes the promo brief, films its own window, renders, and posts to the channel", async () => {
     settings.saveBrainSettings({ apiKey: "AIzaSySelfMarketing-test-012345wxyz" });
     const channel = connect("Soundwave Demos", "1//demos");

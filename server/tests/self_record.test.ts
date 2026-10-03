@@ -6,7 +6,7 @@
 // narration's length instead of looping mid-sentence.
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const { config } = await import("../src/config.js");
@@ -20,7 +20,21 @@ const hostRef = globalThis as { __soundwaveDesktopHost?: unknown };
 const setHost = (host: unknown) => (hostRef.__soundwaveDesktopHost = host);
 const clearHost = () => delete hostRef.__soundwaveDesktopHost;
 
+// The chain below is real ffmpeg (frames in, MP4 out). A machine without it —
+// the Windows CI runner fetches ffmpeg only for the desktop steps — skips those
+// tests instead of failing the suite; the honest-answer tests still run.
+const hasFfmpeg = (() => {
+  try {
+    execFileSync(resolveFfmpegPath(), ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+if (!hasFfmpeg) console.warn("[selfRecord] ffmpeg isn't on this machine — the recording/render tests are skipped");
+
 beforeAll(async () => {
+  if (!hasFfmpeg) return;
   fs.mkdirSync(WORK, { recursive: true });
   // A 320×240 frame with real detail (a flat colour would compress under the
   // 1 KB floor the recorder uses to tell a blank window from a real one).
@@ -52,7 +66,7 @@ describe("can this machine film itself?", () => {
     expect(await recordWindow({ maxSeconds: 0.5, minSeconds: 0, fps: 4 })).toBeNull();
   });
 
-  it("counts a frame that arrives as a base64 data URL (Electron's toDataURL)", async () => {
+  it.skipIf(!hasFfmpeg)("counts a frame that arrives as a base64 data URL (Electron's toDataURL)", async () => {
     const dataUrl = `data:image/png;base64,${fs.readFileSync(PNG).toString("base64")}`;
     setHost({ captureWindow: async () => dataUrl, showWindow: () => undefined });
     const recording = await recordWindow({ maxSeconds: 0.6, minSeconds: 0.4, fps: 4 });
@@ -64,7 +78,7 @@ describe("can this machine film itself?", () => {
   });
 });
 
-describe("real frames, real ffmpeg", () => {
+describe.skipIf(!hasFfmpeg)("real frames, real ffmpeg", () => {
   it("writes the frames out and brings the window up first", async () => {
     const calls: string[] = [];
     setHost({

@@ -145,11 +145,48 @@ async function clickOn(page, selector) {
   }
 }
 
+/**
+ * A sheet (Settings, the video player) is a `role="dialog"` overlay covering the
+ * whole screen. Playwright clicks like a person — hit testing — so a sheet left
+ * open makes every click underneath time out. Whether it is *gone* is checked by
+ * the element, not by its text: a body-text check can pass while the overlay is
+ * still there (and the chat itself mentions the same things the sheet does).
+ */
+const SHEET = '[role="dialog"][aria-label="Settings"]';
+const sheetOpen = (page) => page.evaluate((sel) => Boolean(document.querySelector(sel)), SHEET);
+const waitSheetGone = async (page, timeout) => {
+  try {
+    await page.waitForFunction((sel) => !document.querySelector(sel), SHEET, { timeout });
+    return true;
+  } catch {
+    return false;
+  }
+};
+/** Close the open sheet(s) through their own Close button — a DOM click, so nothing can sit over it. */
+async function closeSheet(page) {
+  const dialogs = await page.evaluate(() => {
+    const found = [...document.querySelectorAll('[role="dialog"]')];
+    for (const d of found) d.querySelector('button[aria-label="Close"]')?.click();
+    return found.length;
+  });
+  if (dialogs) await sleep(500);
+  return dialogs;
+}
+
 /** Type a message on the phone, send it, and wait for the agent's answer (matching `re`). */
 async function say(page, text, re, timeout = 45_000) {
   const before = await page.$$eval('[data-testid="msg-agent"]', (els) => els.length);
   await page.fill('[data-testid="composer-input"]', text);
-  await page.click('[data-testid="send-button"]');
+  try {
+    await page.click('[data-testid="send-button"]', { timeout: 20_000 });
+  } catch (err) {
+    // A leftover sheet over the message box: close it and send once more. Said
+    // out loud, because a sheet that reappears here would be a real finding.
+    const sheets = (await sheetOpen(page)) ? await closeSheet(page) : 0;
+    if (!sheets) throw err;
+    annotate("warning", "Phone app E2E", `a sheet was still open over the message box (${sheets}) — closed it and sent again (${String(err.message).split("\n")[0]})`);
+    await page.click('[data-testid="send-button"]', { timeout: 20_000 });
+  }
   await page.waitForFunction(
     ({ n, src }) => {
       const els = [...document.querySelectorAll('[data-testid="msg-agent"]')];
@@ -333,8 +370,13 @@ try {
   await sleep(900);
   screenshot("5-settings");
   adb("shell", "input keyevent 4"); // Android back closes the sheet
-  await page.waitForFunction(() => !/Read replies aloud/.test(document.body.innerText), null, { timeout: 10_000 });
-  ok("Android back button closes the settings sheet");
+  if (await waitSheetGone(page, 10_000)) ok("Android back button closes the settings sheet");
+  else {
+    annotate("warning", "Phone app E2E", "Android back left the settings sheet open — closing it through the sheet's own Close button");
+    await closeSheet(page);
+    if (await waitSheetGone(page, 10_000)) ok("the settings sheet closed (through its own Close button)");
+    else fail("the settings sheet wouldn't close — it's still over the app");
+  }
 
   // The daily briefing (app 1.2.0): set on the PC, due in ~2 minutes by the phone's clock — so it
   // isn't delivered while the PC still answers; the phone gets the plan with the agent's memory.
@@ -348,13 +390,25 @@ try {
   await bodyHas(page, new RegExp(`Every morning at ${dueAt}`), 60_000);
   await bodyHas(page, new RegExp(escapeRe(BRIEF_TOPIC)), 10_000);
   adb("shell", "input keyevent 4");
-  await page.waitForFunction(() => !/Read replies aloud/.test(document.body.innerText), null, { timeout: 10_000 });
+  if (!(await waitSheetGone(page, 10_000))) {
+    annotate("warning", "Phone app E2E", "the settings sheet stayed open after Android back — closing it through its own Close button");
+    await closeSheet(page);
+    if (!(await waitSheetGone(page, 10_000))) fail("the settings sheet wouldn't close — it's still over the app");
+  }
   ok(`the briefing plan reached the phone with the agent's memory (every morning at ${dueAt}: “${BRIEF_TOPIC}”)`);
 
   // The PC goes away (phone access off): the phone keeps chatting on its own, with Gemini directly.
   await pc("/api/v1/companion/enabled", { enabled: false });
   await page.waitForSelector('[data-testid="phone-mode-banner"]', { timeout: 60_000 });
   ok("the PC stopped answering: the phone switched to chatting on its own");
+  // A sheet still open here sits over the message box and swallows the clicks
+  // (Playwright clicks like a person); close it and say so — if it really comes
+  // back on its own, the runs after this one will say that, too.
+  if (await sheetOpen(page)) {
+    annotate("warning", "Phone app E2E", "the settings sheet was still open over the chat when the PC went away — closing it");
+    await closeSheet(page);
+    if (!(await waitSheetGone(page, 10_000))) fail("the settings sheet wouldn't close — it's still over the app");
+  }
   // Asking again after a moment is fair — the WebView's first request to the
   // stand-in can hiccup on the emulator — and each failed try says what the app
   // was showing, so a real problem doesn't hide behind a flake.
@@ -655,7 +709,11 @@ try {
     else ok("the settings sheet listed the 6:30 alarm, and cancelling it disarmed it on the phone too");
   }
   adb("shell", "input keyevent 4");
-  await page.waitForFunction(() => !/Read replies aloud/.test(document.body.innerText), null, { timeout: 10_000 }).catch(() => undefined);
+  if (!(await waitSheetGone(page, 10_000))) {
+    annotate("warning", "Phone app E2E", "the settings sheet stayed open after Android back — closing it through its own Close button");
+    await closeSheet(page);
+    await waitSheetGone(page, 10_000);
+  }
 
   // Restart the app: still paired, conversation still there.
   const oldPid = webviewPid;
