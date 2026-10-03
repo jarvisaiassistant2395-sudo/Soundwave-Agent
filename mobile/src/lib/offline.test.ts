@@ -117,7 +117,9 @@ describe("chatting on the phone while the PC is off", () => {
     const ops: MemoryOp[] = [];
     const reply = await offlineReply({ kit, memory: effectiveMemory(memory, []), history: [], message: "how do I link youtube? I'll do it this weekend", record: (op) => ops.push(op) });
     expect(reply.text).toMatch(/this weekend/);
-    expect(generateCalls()[1]!.body.contents.at(-1).parts[0].functionResponse.response.sections[0].text).toMatch(/Connect YouTube account/);
+    const section = generateCalls()[1]!.body.contents.at(-1).parts[0].functionResponse.response.sections[0].text as string;
+    expect(section).toMatch(/Connect YouTube/);
+    expect(section).toMatch(/one press/); // 1.5.5: the phone explains the one-press connect, not the old Google Cloud worksheet
     expect(ops).toEqual([{ op: "add", note: expect.objectContaining({ text: "The user wants to link YouTube this weekend.", from: "phone" }) }]);
     // The next turn sees the note before the PC has it.
     expect(effectiveMemory(memory, ops)!.notes.map((n) => n.text)).toEqual(["The user's channel is about space facts", "The user wants to link YouTube this weekend."]);
