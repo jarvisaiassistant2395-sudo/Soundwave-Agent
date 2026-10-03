@@ -76,7 +76,12 @@ The phone app itself is built by `.github/workflows/android-companion.yml`
 (artifact `soundwave-companion-apk`) and tested on an Android 15 emulator
 against the real server, set up like the desktop app (`DESKTOP_APP=1`) with a
 stand-in Gemini (`desktop/test/fake-gemini.mjs --port 4100`, which also
-stands in for Open-Meteo): without a key the agent tells the phone to add
+stands in for Open-Meteo) and a stand-in voice
+(`server/scripts/fake-edge-tts.ts --port 4200`, speaking Microsoft's own
+WebSocket framing with real MP3 — `EDGE_TTS_WSS_URL` points the PC at it, and
+the test writes the same URL in the app's own storage so the phone's native
+voice goes there too; the *live* voice is checked non-blocking by the desktop
+build): without a key the agent tells the phone to add
 one; after the key is saved through Settings → Brain's API, Gemini answers
 the phone and runs a PC tool for it. Then the PC turns phone access off: the
 app must switch to chatting on its own (it reaches the stand-ins at 10.0.2.2 —

@@ -12,6 +12,8 @@ import { _android as android } from "playwright-core";
 import { FAKE_HELLO, FAKE_KEY, FAKE_MORNING, FAKE_PHONE, FAKE_RESEARCH } from "../../desktop/test/fake-gemini.mjs";
 
 const PKG = "ai.soundwave.companion";
+/** The local stand-in for Microsoft's voice service, as the emulator reaches the runner. */
+const TTS_STANDIN = "ws://10.0.2.2:4200/consumer/speech/synthesize/readaloud/edge/v1";
 const PC = process.env.PC_URL || "http://127.0.0.1:4000";
 const GEMINI = process.env.FAKE_GEMINI_URL || "http://127.0.0.1:4100";
 const APK = process.env.COMPANION_APK;
@@ -300,6 +302,30 @@ try {
   if (!env.secure || !env.subtle) fail(`WebView isn't a secure context (${JSON.stringify(env)})`);
   else ok(`app page ${env.origin} is a secure context with Web Crypto`);
 
+  // The phone's own voice (Microsoft's neural voices, synthesized on the phone).
+  // The live service from a runner is a coin toss — the desktop build has the
+  // same check for the PC side, and it is non-blocking there too — so here it is
+  // best-effort and *said out loud*, and everything that has to be dependable
+  // below goes through the stand-in this workflow starts (a local WebSocket that
+  // answers in Microsoft's own framing with real MP3; fake-edge-tts.ts).
+  const liveVoice = await page.evaluate(async () => {
+    const call = window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-GuyNeural" });
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ slow: true }), 20_000));
+    try {
+      const r = await Promise.race([call, timeout]);
+      return "slow" in r ? { timedOut: true } : { ok: true, bytes: r.bytes };
+    } catch (e) {
+      return { error: String(e?.message ?? e) };
+    }
+  });
+  if (liveVoice.ok) annotate("notice", "Phone app E2E", `the phone reached Microsoft's live voice service itself (${liveVoice.bytes} bytes of MP3) — the checks below use the local stand-in`);
+  else annotate("warning", "Phone app E2E", `Microsoft's live voice service didn't answer from the emulator${liveVoice.timedOut ? " in 20 s" : ""}${liveVoice.error ? `: ${liveVoice.error}` : ""} — the phone's speech is checked against this run's stand-in instead`);
+
+  // From here on the phone's own voice goes to the stand-in (the app's own
+  // storage, read by phoneVoice.ts; the shipped app never sets it).
+  await page.evaluate((url) => localStorage.setItem("soundwave.test.ttsUrl", url), TTS_STANDIN);
+  ok(`the phone's own voice now goes through this run's stand-in (${TTS_STANDIN.split("?")[0]})`);
+
   // Phone → agent, before the PC has a Gemini key: the agent says where to add one.
   const noKey = await say(page, "hello from the Android emulator", /Gemini API key/);
   ok(`sent a message over the encrypted channel; no Gemini key on the PC yet, so the agent says: "${firstLine(noKey)}…"`);
@@ -468,16 +494,18 @@ try {
   else if (!userText(brief).includes(`1. “${BRIEF_TOPIC}” — researched with Google Search:\n${firstFinding}`))
     fail(`the phone's briefing wasn't written from the topic's research: ${userText(brief).slice(0, 400)}`);
   else ok(`with the PC off the phone researched “${BRIEF_TOPIC}” (Gemini 2.5 Flash + Google Search) and wrote the briefing from it`);
-  // The native voice on its own (Microsoft's service, straight from the phone).
-  const voice = await page.evaluate(async () => {
+  // The native voice on its own, through this run's stand-in (the live check at
+  // the top said whether Microsoft itself answered; this one has to work, or the
+  // plugin's protocol/decoding changed under us).
+  const voice = await page.evaluate(async (url) => {
     try {
-      const r = await window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-GuyNeural" });
+      const r = await window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-GuyNeural", url });
       return { ok: true, bytes: r.bytes };
     } catch (e) {
       return { ok: false, error: String(e?.message ?? e) };
     }
-  });
-  if (voice.ok && voice.bytes > 2000) ok(`the phone made Soundwave speech itself: Guy, ${voice.bytes} bytes of MP3 from Microsoft's voice service`);
+  }, TTS_STANDIN);
+  if (voice.ok && voice.bytes > 2000) ok(`the phone made Soundwave speech itself: Guy, ${voice.bytes} bytes of MP3 (through the stand-in, the same wire format as Microsoft's service)`);
   else fail(`the phone couldn't make Soundwave speech itself: ${voice.error ?? `${voice.bytes} bytes`}`);
 
   // Morning Setup with the PC off: the phone's own briefing (weather from the stand-in Open-Meteo).

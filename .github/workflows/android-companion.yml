@@ -204,6 +204,12 @@ jobs:
           GEMINI_API_BASE: http://127.0.0.1:4100
           OPEN_METEO_GEOCODING_URL: http://127.0.0.1:4100/geocode
           OPEN_METEO_FORECAST_URL: http://127.0.0.1:4100/forecast
+          # The voice is Microsoft's neural service — also reachable from a runner
+          # *sometimes*, which is a red build that says nothing about Soundwave.
+          # The stand-in below speaks the same wire protocol with real MP3, and the
+          # phone app is pointed at it too (the test writes its URL in the app's
+          # own storage). The live service is checked from the desktop build.
+          EDGE_TTS_WSS_URL: ws://127.0.0.1:4200/consumer/speech/synthesize/readaloud/edge/v1
           # The emulator reaches this machine at 10.0.2.2 — put it in the pairing code.
           COMPANION_HOSTS: 10.0.2.2
           BIND_HOST: 0.0.0.0
@@ -222,10 +228,25 @@ jobs:
           npm ci
           npm run build
           curl -sf -o /dev/null http://127.0.0.1:4100/_fake/requests || { echo "the fake Gemini didn't start"; cat "$RUNNER_TEMP/fake-gemini.log"; exit 1; }
+          # The voice stand-in (0.0.0.0: the PC reaches it at 127.0.0.1, the
+          # emulator at 10.0.2.2) — it logs every synthesis it answers.
+          nohup node_modules/.bin/tsx scripts/fake-edge-tts.ts --port 4200 > "$RUNNER_TEMP/fake-edge-tts.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:4200/_fake/health >/dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:4200/_fake/health || { echo "the voice stand-in didn't start"; cat "$RUNNER_TEMP/fake-edge-tts.log"; exit 1; }
           NODE_ENV=production nohup node dist/index.js > "$RUNNER_TEMP/server.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/api/health >/dev/null && break; sleep 1; done
           curl -sf -o "$RUNNER_TEMP/companion.json" http://127.0.0.1:4000/api/v1/companion
           cat "$RUNNER_TEMP/companion.json"; echo
+          # Prove the PC's voice really goes through the stand-in (and not out to
+          # Microsoft, where the token/time behaviour could fail the run).
+          curl -sf --max-time 45 -X POST http://127.0.0.1:4000/api/v1/agent/speak -H 'Content-Type: application/json' \
+            -d '{"text":"Soundwave voice check","voice":"en-US-GuyNeural"}' \
+            | head -c 120 > "$RUNNER_TEMP/speak.json"
+          echo "speak reply starts: $(head -c 60 "$RUNNER_TEMP/speak.json")…"
+          if [ "$(curl -s http://127.0.0.1:4200/_fake/health | sed -n 's/.*"served":\([0-9]*\).*/\1/p')" = "0" ]; then
+            echo "::error title=Voice stand-in::the PC's speech never reached the stand-in"; cat "$RUNNER_TEMP/fake-edge-tts.log"; exit 1
+          fi
+          echo "::notice title=Voice stand-in::the PC's speech is answered locally ($(cat "$RUNNER_TEMP/speak.json" | head -c 60)…)"
 
       - name: Install the test driver (Playwright for Android)
         run: npm install --no-save --no-package-lock --prefix mobile/e2e playwright-core@1.63.0
