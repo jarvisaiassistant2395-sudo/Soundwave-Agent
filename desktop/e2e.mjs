@@ -34,9 +34,16 @@ function annotate(level, title, message) {
 }
 
 let app = null;
+// Which part of the flow is running. The failure annotation carries it, so a
+// bare Playwright timeout says *where* it happened even when the run's log
+// (and the annotation history) can't be read from where you are.
+let stage = "startup";
+const at = (name) => {
+  stage = name;
+};
 async function fail(message) {
-  console.error(`[e2e] ✗ FAIL (${since()}): ${message}`);
-  annotate("error", "Desktop app end-to-end", message);
+  console.error(`[e2e] ✗ FAIL at “${stage}” (${since()}): ${message}`);
+  annotate("error", "Desktop app end-to-end", `At “${stage}”: ${message}`);
   try {
     for (const [i, page] of (app?.windows() ?? []).entries()) await page.screenshot({ path: path.join(shotsDir, `failure-${i}.png`) }).catch(() => {});
   } catch {
@@ -128,6 +135,7 @@ const voiceTurns = (page) =>
 
 try {
   // ── 1. Startup: Command Center, tray, shortcut, bridge ────────────────────
+  at("startup: window, tray, shortcut, bridge");
   const main = await app.firstWindow({ timeout: 180_000 });
   main.on("console", (m) => {
     if (m.type() === "error" || /\[voice\]/.test(m.text())) console.log(`    [main:${m.type()}] ${m.text()}`);
@@ -157,6 +165,7 @@ try {
   await main.screenshot({ path: path.join(shotsDir, "1-command-center.png") });
 
   // ── 2. The Command Center's mic: tap, talk, it sends when you pause ───────
+  at("Command Center microphone");
   await main.evaluate(() => localStorage.setItem("soundwave_voice_debug", "1"));
   await main.locator('button[aria-label="Talk to Soundwave"]').click();
   await main.waitForFunction(() => /listening/i.test(document.body.innerText), null, { timeout: 30_000 });
@@ -175,6 +184,7 @@ try {
   await main.screenshot({ path: path.join(shotsDir, "3-after-mic.png") });
 
   // ── 3. The voice bar: shortcut while the app is in the background ─────────
+  at("voice bar (app in the background)");
   await app.evaluate(() => globalThis.__soundwaveShell.mainWindow().hide());
   const before = (await voiceTurns(main)).length;
   await app.evaluate(() => globalThis.__soundwaveShell.voiceShortcut()); // exactly what Ctrl+Shift+Space does
@@ -207,6 +217,7 @@ try {
   annotate("notice", "Desktop E2E: voice bar", `Heard "${barHeard}". Voice bar now shows: ${barText.slice(0, 200)}`);
 
   // ── 3b. Settings → Phone: the pairing QR in the real window ──────────────
+  at("Settings → Phone");
   // (The voice bar test sent the main window to the background: hidden windows
   // don't paint, so bring it back before looking at it.)
   await app.evaluate(() => globalThis.__soundwaveShell.mainWindow().show());
@@ -233,6 +244,7 @@ try {
   ok("Settings → Phone: turning it off closes the phone listener");
 
   // ── 3c. Settings → Brain: paste a Gemini key, test it, chat with Gemini ───
+  at("Settings → Brain");
   await main.goto(`${appBase}/settings/brain`);
   await main.waitForSelector('[data-testid="brain-key-input"]', { timeout: 30_000 });
   await main.fill('[data-testid="brain-key-input"]', FAKE_KEY);
@@ -260,6 +272,7 @@ try {
   annotate("notice", "Desktop E2E: agent brain", `Settings → Brain saved the key (${hint}) and its test passed; the Command Center shows "${pill}" and the chat was answered by Gemini (fake, on loopback).`);
 
   // ── 3c+. The daily briefing (1.5.0): due → written (topics researched) → spoken when the Command Center opens ──
+  at("daily briefing");
   // Nothing to open on the CI machine; the weather comes from the stand-in.
   const due = new Date(Date.now() - 2 * 60_000);
   const dueAt = `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
@@ -291,6 +304,7 @@ try {
   else annotate("warning", "Desktop E2E", `daily briefing: written and shown, but it wasn't marked heard here (window focus in CI?) — heard: ${heardOn}`);
 
   // ── 3d. Morning Setup, the Memory tab and Connect YouTube (1.4.0) ─────────
+  at("Morning Setup / Memory / YouTube tab");
   // If the chip doesn't get a briefing written, say *what* happened instead of
   // dying on a bare 60 s timeout: the old version waited in silence, so a
   // failure here read as "page.waitForFunction: Timeout 60000ms exceeded".
@@ -352,6 +366,7 @@ try {
   );
 
   // ── 3e. Ghost Operator macros really run: a clipboard round trip through ──
+  at("Ghost Operator macro");
   // Electron, and an honest skip for what Soundwave can't do yet.
   const macroName = "E2E clipboard round trip";
   const clipText = `Soundwave E2E ${Date.now()}`;
@@ -394,7 +409,11 @@ try {
     await fail(`Ghost Operator: “${macroName}” isn't in the panel (it lists: ${shown})`);
   }
   await runRow.click();
-  await main.waitForFunction((t) => document.body.innerText.includes(t), `Ghost Operator — ${macroName}`, { timeout: 60_000 });
+  try {
+    await main.waitForFunction((t) => document.body.innerText.includes(t), `Ghost Operator — ${macroName}`, { timeout: 60_000 });
+  } catch (err) {
+    await fail(`Ghost Operator: the macro ran but its report never appeared in the chat (${err.message})`);
+  }
   const report = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
   if (!report.includes(clipText)) await fail(`Ghost Operator: the read-back step didn't show the copied text: ${report.slice(-400)}`);
   if (!/⏭ Mute the sound/.test(report) || !/volume/.test(report)) await fail(`Ghost Operator: the step it can't do wasn't skipped with its reason: ${report.slice(-400)}`);
@@ -410,13 +429,27 @@ try {
   await main.evaluate((id) => fetch(`/api/v1/ghost/macros/${id}`, { method: "DELETE" }), macroId);
 
   // ── 3f. Shorts cut out of a video (1.5.3): really listened to, really rendered ──
+  at("clips out of a video");
   // The agent downloads or reads the file, listens with whisper.cpp, picks the
   // moment and renders a vertical clip with captions — watch it in the chat.
   await main.goto(`${appBase}/agent`);
   await main.waitForSelector('input[placeholder="Type a message..."]', { timeout: 30_000 });
   await main.fill('input[placeholder="Type a message..."]', `cut 1 clip out of this video: ${clipSource}`);
   await main.press('input[placeholder="Type a message..."]', "Enter");
-  await main.waitForFunction(() => /Cutting 1 short out of/.test(document.body.innerText), null, { timeout: 60_000 });
+  // The clips pipeline starts in the background; if its first line never shows,
+  // say what the chat actually contains instead of a bare 60 s timeout.
+  const chatNow = () =>
+    main
+      .evaluate(() => {
+        const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
+        return list.slice(-4).map((m) => `${m.sender}: ${String(m.text ?? "").replace(/\s+/g, " ").slice(0, 120)}`).join(" | ") || "(the chat is empty)";
+      })
+      .catch(() => "(couldn't read the chat)");
+  try {
+    await main.waitForFunction(() => /Cutting 1 short out of/.test(document.body.innerText), null, { timeout: 60_000 });
+  } catch (err) {
+    await fail(`the clips request never started cutting (${err.message}). Last chat: ${await chatNow()}`);
+  }
   ok("the agent took the video and started cutting a short out of it");
   try {
     await main.waitForFunction(() => /Clip 1 of 1/.test(document.body.innerText), null, { timeout: 240_000, polling: 1000 });
@@ -459,6 +492,7 @@ try {
   await main.screenshot({ path: path.join(shotsDir, "12-clip-from-video.png"), timeout: 15_000 }).catch(() => {});
 
   // ── 4. Tray behaviour + notifications bridge ──────────────────────────────
+  at("tray behaviour and notifications");
   await app.evaluate(() => {
     const w = globalThis.__soundwaveShell.mainWindow();
     w.show();
