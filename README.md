@@ -85,6 +85,9 @@ it never claims something it didn't do:
 | Tool | What it really does |
 | --- | --- |
 | `make_youtube_short` | starts a short (unused Orbital NCG background, Gemini-written script) |
+| `read_video` | reads a YouTube video's transcript (uploader subtitles, else auto captions) |
+| `read_web_page` | fetches a page and returns its readable text (reader service as fallback) |
+| `search_youtube` | searches YouTube — titles, channels, lengths, view counts |
 | `get_short_progress`, `list_my_videos`, `show_video` | reads the real jobs; `show_video` puts the player in the chat |
 | `get_pc_status` | live CPU load, memory, disk, uptime of this PC |
 | `open_website` | opens an http(s) page in the default browser |
@@ -124,6 +127,24 @@ per check at most, so a channel posting five videos doesn't swamp the PC; ask
 `lib/channelWatch.ts` + `brain/core/watch.ts` (pure rules: channel references,
 new-upload planning, status text). It lives on the PC: a video posted while it
 was off is picked up when it starts.
+
+**The agent's eyes** (desktop 1.5.6): it can *read* what it is pointed at, with
+no setup, no logins and no API keys. `read_video` takes a YouTube link and comes
+back with the transcript (the uploader's subtitles, or YouTube's automatic
+captions, and it says which) plus title, channel and length — so "summarize this
+video" and "pull the five best hooks out of it" have something real to work
+from. `read_web_page` fetches a page and returns its readable text (scripts,
+navigation and styling stripped) for "summarize this article" or "give me ten
+short ideas from this"; pages that can't be read directly go through a free
+reader service (`JINA_READER_URL`, r.jina.ai by default), and pages behind a
+login or paywall are refused rather than guessed at. `search_youtube` searches
+YouTube (no API key) and answers with titles, channels, lengths and view counts
+for niche research. All three run on the PC through the bundled yt-dlp and plain
+HTTP; the pure parsing (rolling auto-captions, HTML → text, caps) lives in
+`brain/core/transcript.ts` with 22 tests in `server/tests/eyes.test.ts`,
+including a real HTTP round trip through a stand-in reader. They deliberately
+don't touch Twitter/Instagram/TikTok/Reddit: those need a logged-in session, and
+the app doesn't ask for cookies or passwords.
 
 **Shorts from a long video** (desktop 1.5.3): ask for it with a YouTube link or
 a video file already on the PC — "cut the best bits out of this", "3 clips from

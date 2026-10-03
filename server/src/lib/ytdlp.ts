@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { config, resolveFfmpegPath } from "../config.js";
 import { ytDlpJsRuntime } from "./jsRuntime.js";
@@ -34,6 +35,8 @@ export type YtErrorCode =
   | "YT_UNSUPPORTED"
   | "YT_NOT_INSTALLED"
   | "YT_TIMEOUT"
+  /** The video has no captions in a language we can read (see fetchTranscript). */
+  | "YT_NO_CAPTIONS"
   | "YT_FAILED";
 
 export class YtDlpError extends Error {
@@ -681,4 +684,182 @@ export async function downloadVideo(
   }
   onProgress?.(100);
   return { filePath, fileKey: name, ext: name.slice(uuid.length + 1), size };
+}
+
+// ── Reading a video instead of downloading it (the agent's "eyes") ──────────
+
+export interface YtTranscript {
+  title: string;
+  channel: string;
+  duration: number;
+  /** Raw WebVTT — parsing lives in brain/core/transcript.ts (pure, tested). */
+  vtt: string;
+  /** YouTube's own "CC" subtitles, or the automatic ones. */
+  kind: "manual" | "auto";
+  lang: string;
+  url: string;
+}
+
+/** Serialize cache lookups so two chats asking about the same video share one fetch. */
+const transcriptCache = new Map<string, { at: number; value: YtTranscript }>();
+const TRANSCRIPT_TTL_MS = 5 * 60_000;
+
+export function _resetTranscriptCacheForTests(): void {
+  transcriptCache.clear();
+}
+
+/**
+ * A video's captions (no video downloaded): manual subtitles when the uploader
+ * made them, else YouTube's automatic captions. Throws a plain-language error
+ * when the video has neither — the agent says so instead of guessing at content.
+ */
+export async function fetchTranscript(url: string, opts: { timeoutMs?: number; force?: boolean } = {}): Promise<YtTranscript> {
+  const cached = transcriptCache.get(url);
+  if (!opts.force && cached && Date.now() - cached.at < TRANSCRIPT_TTL_MS) return cached.value;
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sw-captions-"));
+  const cleanup = () => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  };
+  try {
+    // Two subtitle languages at once, and the info JSON in the same pass (it
+    // says whether what we got was the uploader's own subtitles or automatic
+    // captions — people deserve to know which they're trusting).
+    try {
+      await runWithClientFallback(
+        url,
+        (base) => [
+          ...base,
+          "--skip-download",
+          "--write-subs",
+          "--write-auto-subs",
+          "--write-info-json",
+          "--sub-langs",
+          "en.*,en,en-orig",
+          "--sub-format",
+          "vtt",
+          "-P",
+          dir,
+          "-o",
+          "%(id)s.%(ext)s",
+          url,
+        ],
+        opts.timeoutMs ?? Math.min(config.ytDlpTimeoutMs, 90_000),
+        undefined,
+        // A retry must not read the previous attempt's partial files.
+        () => {
+          for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { force: true });
+        },
+      );
+    } catch (err) {
+      // "There are no subtitles for the requested languages" is a fact about
+      // the video, not a failure of the app — say it the way a person would.
+      const detail = `${(err as Error).message} ${(err as YtDlpError).detail ?? ""}`.toLowerCase();
+      if (/no subtitles|subtitles.*not available|requested languages/.test(detail)) {
+        throw new YtDlpError(
+          "This video has no captions I can read (no English subtitles), so I can't read its words — I can still cut shorts out of it (that listens to the audio with the speech engine).",
+          "YT_NO_CAPTIONS",
+          (err as YtDlpError).detail,
+        );
+      }
+      throw err;
+    }
+
+    const files = fs.readdirSync(dir);
+    const infoFile = files.find((f) => f.endsWith(".info.json"));
+    let info = infoFile ? (JSON.parse(fs.readFileSync(path.join(dir, infoFile), "utf8")) as Record<string, unknown>) : {};
+    const captions = files.filter((f) => f.endsWith(".vtt"));
+    if (!captions.length) {
+      const languages = Object.keys((info.subtitles as Record<string, unknown>) ?? {});
+      const automatic = Object.keys((info.automatic_captions as Record<string, unknown>) ?? {});
+      throw new YtDlpError(
+        languages.length || automatic.length
+          ? "This video's captions aren't in English, so I can't read its words. I can still cut shorts out of it — that listens to the audio."
+          : "This video has no captions, so I can't read it — but I can cut shorts out of it (that listens to the audio with the speech engine).",
+        "YT_NO_CAPTIONS",
+      );
+    }
+    // Prefer a file named exactly "en", then en-orig, then anything.
+    const pick =
+      captions.find((f) => /\.en\.vtt$/.test(f)) ?? captions.find((f) => /en/i.test(f)) ?? captions[0]!;
+    const lang = /\.([A-Za-z0-9-]+)\.vtt$/.exec(pick)?.[1] ?? "en";
+    const manual = Object.keys(((info.subtitles as Record<string, unknown>) ?? {}) as Record<string, unknown>).some((l) => l === lang || l.startsWith("en"));
+    if (typeof info.title !== "string" || !info.title.trim()) {
+      try {
+        const meta = await fetchMetadata(url, Math.min(config.ytDlpTimeoutMs, 45_000));
+        info = { ...info, title: meta.title, channel: meta.channel, duration: meta.duration };
+      } catch {
+        /* the captions still read fine without a title */
+      }
+    }
+    const value: YtTranscript = {
+      title: (typeof info.title === "string" && info.title.trim() ? info.title.trim() : "the video").slice(0, 200),
+      channel: typeof info.channel === "string" ? info.channel : typeof info.uploader === "string" ? info.uploader : "",
+      duration: typeof info.duration === "number" && Number.isFinite(info.duration) ? info.duration : 0,
+      vtt: fs.readFileSync(path.join(dir, pick), "utf8"),
+      kind: manual ? "manual" : "auto",
+      lang,
+      url: typeof info.webpage_url === "string" ? info.webpage_url : url,
+    };
+    transcriptCache.set(url, { at: Date.now(), value });
+    if (transcriptCache.size > 20) transcriptCache.delete(transcriptCache.keys().next().value as string);
+    return value;
+  } finally {
+    cleanup();
+  }
+}
+
+export interface YtSearchResult {
+  id: string;
+  title: string;
+  url: string;
+  channel: string;
+  duration: number | null;
+  views: number | null;
+  uploadedAt: string | null;
+}
+
+/**
+ * Search YouTube (no API key, no login): the agent's answer to "find videos
+ * about X". Flat entries carry title, channel, length and view count.
+ */
+export async function searchVideos(query: string, opts: { limit?: number; timeoutMs?: number } = {}): Promise<YtSearchResult[]> {
+  const terms = (query ?? "").trim().slice(0, 200);
+  if (!terms) throw new YtDlpError("Tell me what to search for.", "YT_FAILED");
+  const limit = Math.max(1, Math.min(15, Math.round(opts.limit ?? 8)));
+  const target = `ytsearch${limit}:${terms}`;
+  const { stdout } = await runWithClientFallback(
+    target,
+    (base) => [...base, "--flat-playlist", "--dump-single-json", target],
+    opts.timeoutMs ?? Math.min(config.ytDlpTimeoutMs, 60_000),
+  );
+
+  let data: unknown;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    throw new YtDlpError("YouTube's search didn't come back in a shape I can read.", "YT_FAILED");
+  }
+  const entries = Array.isArray((data as { entries?: unknown[] })?.entries) ? ((data as { entries: unknown[] }).entries as Array<Record<string, unknown>>) : [];
+  const results: YtSearchResult[] = [];
+  for (const e of entries) {
+    const id = typeof e?.id === "string" ? e.id : "";
+    if (!YT_VIDEO_ID.test(id)) continue;
+    const duration = typeof e.duration === "number" && Number.isFinite(e.duration) ? e.duration : null;
+    results.push({
+      id,
+      title: (typeof e.title === "string" && e.title.trim() ? e.title.trim() : id).slice(0, 200),
+      url: `https://www.youtube.com/watch?v=${id}`,
+      channel: (typeof e.channel === "string" ? e.channel : typeof e.uploader === "string" ? e.uploader : "").slice(0, 120),
+      duration,
+      views: typeof e.view_count === "number" && Number.isFinite(e.view_count) ? e.view_count : null,
+      uploadedAt: typeof e.upload_date === "string" ? e.upload_date : null,
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
 }

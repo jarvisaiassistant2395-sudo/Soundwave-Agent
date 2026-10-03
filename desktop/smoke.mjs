@@ -264,7 +264,11 @@ try {
   at("agent chat with tools");
   const asked = fakeGemini.seen.filter((r) => r.url.endsWith(":generateContent")).at(-1);
   const toolNames = asked?.body?.tools?.find((t) => t.functionDeclarations)?.functionDeclarations.map((d) => d.name) ?? [];
-  assert(asked?.key === FAKE_KEY && toolNames.includes("make_youtube_short") && toolNames.includes("open_website"), `Gemini gets the key in its header and the agent's tools (${toolNames.join(", ")})`);
+  const eyes = ["read_video", "read_web_page", "search_youtube"].filter((n) => toolNames.includes(n));
+  assert(
+    asked?.key === FAKE_KEY && toolNames.includes("make_youtube_short") && toolNames.includes("open_website") && eyes.length === 3,
+    `Gemini gets the key in its header and the agent's tools (${toolNames.join(", ")})`,
+  );
   if (process.platform === "win32") assert(toolNames.includes("open_app"), "on Windows the agent can open Start menu apps");
   const pcAsk = await send("POST", `${appUrl}/api/v1/agent/chat`, { message: "how is my PC doing?" });
   const pcResult = fakeGemini.seen.filter((r) => r.url.endsWith(":generateContent")).at(-1)?.body?.contents?.at(-1)?.parts?.[0]?.functionResponse;

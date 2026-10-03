@@ -384,6 +384,52 @@ try {
     `Memory tab: a note added in the app is in the agent's memory; the YouTube tab offers Connect YouTube (${ytMode.oneClick ? "one press — Soundwave's own Google app is baked in" : "with the person's own Google client, 3 short steps"})`,
   );
 
+  // ── 3d+. The agent's eyes, against the real internet: read a real video and
+  // a real page through the app's own server. Informational by design — YouTube
+  // bot-checks and CI networks make both flaky, and a flaky gate teaches people
+  // to ignore red. What matters is that the answer is reported every run.
+  at("agent eyes (real video + real page)");
+  await main.goto(`${appBase}/agent`);
+  await main.waitForSelector('input[placeholder="Type a message..."]', { timeout: 30_000 });
+  const watchUrl = "https://www.youtube.com/watch?v=iG9CE55wbtY"; // a TED talk with human-made English subtitles
+  await main.fill('input[placeholder="Type a message..."]', `read this video and tell me what it says: ${watchUrl}`);
+  await main.press('input[placeholder="Type a message..."]', "Enter");
+  const eyesSeen = async () =>
+    main
+      .evaluate(() => {
+        const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
+        return list.slice(-3).map((m) => `${m.sender}: ${String(m.text ?? "")}`).join(" | ");
+      })
+      .catch(() => "");
+  let videoRead = "";
+  for (let i = 0; i < 40 && !videoRead; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const seen = await eyesSeen();
+    if (/READ_VEOK/.test(seen)) videoRead = seen;
+    else if (/couldn't read that video/i.test(seen)) {
+      annotate("warning", "Desktop E2E: agent eyes", `Reading a real YouTube video didn't work this run (YouTube bot check or network): ${seen.slice(-300)}`);
+      break;
+    }
+  }
+  if (videoRead) {
+    const title = /READ_VEOK (.+?) \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
+    const kind = /READ_VEOK .+? \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
+    ok(`the agent read a real YouTube video (${kind} captions): “${title}”`);
+  }
+  await main.fill('input[placeholder="Type a message..."]', "read this page and tell me what it says: https://example.com/");
+  await main.press('input[placeholder="Type a message..."]', "Enter");
+  let pageRead = "";
+  for (let i = 0; i < 30 && !pageRead; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const seen = await eyesSeen();
+    if (/READ_PAGE_OK/.test(seen)) pageRead = seen;
+    else if (/couldn't read that page/i.test(seen)) {
+      annotate("warning", "Desktop E2E: agent eyes", `Reading a real web page didn't work this run: ${seen.slice(-300)}`);
+      break;
+    }
+  }
+  if (pageRead) ok("the agent read a real web page (example.com) through its own fetch");
+
   // ── 3e. Ghost Operator macros really run: a clipboard round trip through ──
   at("Ghost Operator macro");
   // Electron, and an honest skip for what Soundwave can't do yet.

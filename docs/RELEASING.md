@@ -118,6 +118,24 @@ changes — `server/tests/memory_guide.test.ts` checks its key facts.
 Shop setup (once): `docs/SET_UP_YOUTUBE_ONECLICK.md` is the click-by-click
 guide for creating the one Desktop-app OAuth client the builds ship.
 
+1.5.6 gives the agent eyes: `read_video` (a YouTube link → transcript, title,
+channel, length; uploader subtitles or YouTube's automatic captions, and it says
+which), `read_web_page` (a link → readable text; direct fetch first, the free
+reader service `JINA_READER_URL` as fallback, login walls refused) and
+`search_youtube` (titles/channels/lengths/view counts, no API key). Pure rules
+in `brain/core/transcript.ts` — WebVTT → text with YouTube's rolling
+auto-captions collapsed without ever dropping spoken words, HTML → text,
+`capText` — and the fetching in `lib/eyes.ts` (SSRF guard: public http(s) only).
+yt-dlp gains `fetchTranscript` (5-minute cache, `--write-subs --write-auto-subs
+--write-info-json`, friendly "no captions" error, metadata fallback) and
+`searchVideos`. Tools are desktop-only and injectable (`ctx.eyes`) so tests never
+touch the network; `server/tests/eyes.test.ts` holds 22 (parsers, URL guard,
+tools, and a real HTTP round trip through a stand-in reader). The E2E reads a
+real TED talk and example.com each run and reports the result as an annotation
+(informational — YouTube bot-checks make a real read a bad hard gate), and the
+smoke test requires the three tools in the crafted tool list. Guide section
+"reading" covers all of it, including the honest limits.
+
 1.5.5 makes connecting YouTube comfortable: release builds ship Soundwave's
 own Google OAuth client, so Settings → **YouTube & Shorts** → **Connect
 YouTube** is one press and a Google sign-in — the customer never opens Google

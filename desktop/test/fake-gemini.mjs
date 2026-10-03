@@ -56,6 +56,19 @@ function answer(body) {
       if (r.started === false) return text(`I couldn't do that one: ${r.reason ?? "no video was given"}.`);
       return text(`Cutting ${r.clips ?? 3} short${r.clips === 1 ? "" : "s"} out of “${r.video ?? "the video"}” — they'll show up here as they're ready.`);
     }
+    if (result.name === "read_video") {
+      if (r.ok === false) return text(`I couldn't read that video: ${r.reason ?? "no reason given"}`);
+      return text(`READ_VEOK ${r.title} (${r.captions}) ${String(r.transcript ?? "").slice(0, 120)}`);
+    }
+    if (result.name === "read_web_page") {
+      if (r.ok === false) return text(`I couldn't read that page: ${r.reason ?? "no reason given"}`);
+      return text(`READ_PAGE_OK ${r.title || r.url} ${String(r.text ?? "").slice(0, 120)}`);
+    }
+    if (result.name === "search_youtube") {
+      if (r.ok === false) return text(`The YouTube search failed: ${r.reason ?? "no reason given"}`);
+      const first = (r.results ?? [])[0] ?? {};
+      return text(`SEARCH_OK ${(r.results ?? []).length} results, first: ${first.title} by ${first.channel} (${first.length})`);
+    }
     if (result.name === "set_phone_alarm") {
       if (r.set === false) return text(`I couldn't set that alarm: ${r.reason ?? "no time was given"}.`);
       return text(`Alarm set for ${r.ringsAt}${r.label ? ` — “${r.label}”` : ""}. When you turn it off, your briefing starts ${r.briefingAfterSeconds} seconds later.`);
@@ -74,6 +87,16 @@ function answer(body) {
       ? { in_seconds: inSeconds, label: "CI alarm", briefing_after_seconds: 5 }
       : { time: clock ? `${clock[1].padStart(2, "0")}:${clock[2]}` : "06:30", label: "CI alarm" };
     return call("set_phone_alarm", args, "alarm-1");
+  }
+  // Reading a video's words (only when the PC really offers it). The URL comes
+  // straight out of the message, so the E2E can hand over a real YouTube link.
+  if (declares("read_video") && /youtu\.?be|youtube\.com/i.test(said) && /\b(read|summari[sz]e|what does|transcript|says)\b/i.test(said)) {
+    const url = /(https?:\/\/[^\s"']+)/.exec(said)?.[1] ?? "";
+    return call("read_video", { url }, "read-1");
+  }
+  if (declares("search_youtube") && /\bsearch\b/i.test(said) && /youtube/i.test(said)) {
+    const query = /(?:for|about)\s+(.+)$/i.exec(said)?.[1]?.trim() ?? said.trim();
+    return call("search_youtube", { query }, "search-1");
   }
   // Cutting shorts out of a long video (only when the PC really offers it).
   if (declares("make_shorts_from_video") && /\b(cut|clip|clips|shorts? out of|best bits)\b/i.test(said)) {

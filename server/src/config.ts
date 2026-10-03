@@ -112,6 +112,9 @@ export const config = {
   youtubeApiBase: str("YOUTUBE_API_BASE", "https://www.googleapis.com").replace(/\/+$/, ""),
   googleOAuthAuthUrl: str("GOOGLE_OAUTH_AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
   googleOAuthTokenUrl: str("GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
+  // Reader fallback for pages that can't be read directly (JS-only, blocked).
+  // Free, no key; point JINA_READER_URL at a stand-in in tests.
+  jinaReaderUrl: str("JINA_READER_URL", "https://r.jina.ai"),
 } as const;
 
 // Everything optional at runtime is intentionally absent here so lean (free)

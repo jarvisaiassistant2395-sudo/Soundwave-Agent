@@ -12,6 +12,8 @@ import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
 import { DEFAULT_CLIPS, MAX_CLIPS } from "./core/clips.js";
 import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } from "./core/watch.js";
 import { clipsBusy, startClipsJob } from "../videoClips.js";
+import { defaultEyes, type Eyes } from "../eyes.js";
+import { clock } from "./core/transcript.js";
 import { addWatch, kickChannelWatch, listWatches, removeWatch, watchStatuses } from "../channelWatch.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
 import { config } from "../../config.js";
@@ -47,6 +49,8 @@ export interface ToolContext {
   /** The agent's notes (remember / forget). */
   memory?: MemoryStore;
   effects: ToolEffects;
+  /** How the agent reads videos/pages/searches; tests inject a stand-in. */
+  eyes?: Eyes;
 }
 
 export interface AgentTool {
@@ -464,6 +468,105 @@ AGENT_TOOLS.push(
       }
       ctx.effects.log.push(`Stopped watching ${removed.join(", ")}`);
       return { stopped: true, channels: removed, note: `Stopped watching ${removed.join(", ")}.` };
+    },
+  },
+  {
+    declaration: {
+      name: "read_video",
+      description:
+        "Read a YouTube video's words: give a video link and get back its transcript (the uploader's subtitles, or YouTube's automatic captions) with the title, channel and length. Use it whenever someone asks what a video says, wants it summarized, wants the good parts or quotes pulled out, or asks a question answered inside a video — instead of just opening the link in the browser.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          url: { type: "STRING", description: "The YouTube video link (youtube.com/watch, youtu.be, /shorts)." },
+        },
+        required: ["url"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    async run(args, ctx) {
+      const url = str(args.url, 800);
+      if (!url) return { ok: false, reason: "Which video? Give me its YouTube link." };
+      try {
+        const read = await (ctx.eyes ?? defaultEyes).readVideo(url);
+        return {
+          ...read,
+          note: read.truncated
+            ? "Only the first part fits here — ask for another part if you need more."
+            : read.captions === "auto"
+              ? "These are YouTube's automatic captions, so expect small mis-hearings of names and numbers."
+              : "These are the uploader's own subtitles.",
+        };
+      } catch (err) {
+        return { ok: false, reason: (err as Error).message || "I couldn't read that video." };
+      }
+    },
+  },
+  {
+    declaration: {
+      name: "read_web_page",
+      description:
+        "Read a web page's actual text: give a link and get the article back as readable text (title and body, navigation and scripts stripped). Use it to summarize an article, pull ideas or facts out of it, or answer a question about its content — instead of opening the browser and leaving the person to read it themselves. It can't read pages behind a login or a paywall.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          url: { type: "STRING", description: "The full http(s) address of the page." },
+        },
+        required: ["url"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    async run(args, ctx) {
+      const url = str(args.url, 2000);
+      if (!url) return { ok: false, reason: "Which page? Give me its full address." };
+      try {
+        const read = await (ctx.eyes ?? defaultEyes).readPage(url);
+        return {
+          ...read,
+          note: read.truncated ? "The page was longer than fits — ask for the part you need." : "Full page text.",
+        };
+      } catch (err) {
+        return { ok: false, reason: (err as Error).message || "I couldn't read that page." };
+      }
+    },
+  },
+  {
+    declaration: {
+      name: "search_youtube",
+      description:
+        "Search YouTube for videos on a topic (no API key needed) and get titles, channels, lengths and view counts. Use it for niche research — what's already out there, what's getting views, which creators cover a subject — and to find a video someone described but didn't link.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          query: { type: "STRING", description: 'What to search for, e.g. "space facts shorts" or "stoicism for men".' },
+          limit: { type: "NUMBER", description: "How many results (1–15, default 8)." },
+        },
+        required: ["query"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    async run(args, ctx) {
+      const query = str(args.query, 200);
+      if (!query) return { ok: false, reason: "What should I search YouTube for?" };
+      try {
+        const wanted = Number(args.limit);
+        const results = await (ctx.eyes ?? defaultEyes).search(query, Number.isFinite(wanted) ? wanted : undefined);
+        if (!results.length) return { ok: false, reason: `YouTube gave me nothing for “${query}”.` };
+        ctx.effects.log.push(`Searched YouTube for “${query}”`);
+        return {
+          ok: true,
+          query,
+          results: results.map((r) => ({
+            title: r.title,
+            channel: r.channel,
+            length: r.duration != null ? clock(r.duration) : "unknown",
+            views: r.views,
+            url: r.url,
+          })),
+        };
+      } catch (err) {
+        return { ok: false, reason: (err as Error).message || "The YouTube search didn't work." };
+      }
     },
   },
   {

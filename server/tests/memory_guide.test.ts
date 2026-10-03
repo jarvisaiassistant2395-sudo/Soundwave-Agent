@@ -231,6 +231,9 @@ describe("the Soundwave guide", () => {
     expect(textOf("morning-setup")).toMatch(/Gemini 2\.5 Flash searches Google \(free with a free Gemini key/);
     expect(textOf("morning-setup")).toMatch(/With the PC off: the phone does everything itself/);
     expect(textOf("memory")).toMatch(/gear → Memory tab/);
+    expect(textOf("reading")).toMatch(/read_video|reads the uploader's subtitles/);
+    expect(textOf("reading")).toMatch(/r\.jina\.ai/);
+    expect(textOf("reading")).toMatch(/can't read Twitter, Instagram, TikTok, Reddit/);
     expect(textOf("command-center")).toMatch(/🌅 Morning Setup/);
     expect(guide.GUIDE_SECTIONS.map((s) => s.text).join("\n")).not.toMatch(/Deep Focus|Pomodoro/);
     expect(guide.searchGuide("my phone can't connect to the pc").map((s) => s.id)).toContain("phone");

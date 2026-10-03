@@ -106,6 +106,17 @@ It runs on the PC while Soundwave AI is running — if the PC was off when the v
 One video renders at a time, clips and normal shorts together — that's why a queue can wait a few minutes. Up to 10 channels can be watched at once. The clips are the creator's own footage: keep them for yourself or use them where you have the right to (a repost of someone else's video needs their permission).`,
   },
   {
+    id: "reading",
+    title: "Reading videos, pages and YouTube search (the agent's eyes)",
+    summary: "give the agent a video link and it reads what was said; a page link and it reads the article; or ask it to search YouTube for a topic — no setup, no logins",
+    text: `The agent can read things, not just open them:
+- A video: paste a YouTube link and ask "what does this video say?", "summarize it", "pull the five best hooks out of it", "what did they claim about pricing?". It reads the uploader's subtitles, or YouTube's automatic captions when there are none — it says which, because automatic ones mishear names and numbers. A video with no captions at all can't be read; the agent says so and offers to cut Shorts out of it instead (that listens to the audio).
+- A page: paste a link and ask "read this and give me ten short ideas", "summarize this article", "what does this page say about X?". The agent fetches the text itself (scripts, menus and ads stripped). Pages that only exist in JavaScript, or that sit behind a login or a paywall, can't be read — when a page hands back nothing usable, Soundwave asks a free reader service (r.jina.ai) to fetch it, which means that page's address goes to that service. Pages behind a login are never read.
+- YouTube search: "what's already out there about stoicism shorts?", "find videos about black holes". It answers with titles, channels, lengths and view counts — useful for picking a niche or finding a video someone described but didn't link. No API key, no login, no cost.
+
+All three run on your PC (they need Soundwave AI running) and need no setup or accounts. They can't read Twitter, Instagram, TikTok, Reddit or private groups: those need a logged-in session, and Soundwave doesn't ask for your passwords or cookies.`,
+  },
+  {
     id: "backgrounds",
     title: "Orbital NCG backgrounds",
     summary: "where the gameplay backgrounds come from, the never-reuse rule, history, reset, import problems",

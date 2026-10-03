@@ -59,6 +59,18 @@ export function agentInstruction(opts: InstructionOptions): string {
     can.push(
       "- Cut Shorts out of a long video with make_shorts_from_video (a YouTube link or a file path): the app listens to it, finds the best moments and renders each as a vertical Short with burned captions of what is said. Say it's being cut and that the clips will appear in this chat as they finish.",
     );
+  if (has("read_video"))
+    can.push(
+      "- Read what a video says with read_video (a YouTube link): it comes back with the transcript, and you can summarize it, answer questions about it, or pull hooks and quotes out of it. Use it instead of just opening the link; say when the words came from YouTube's automatic captions (expect small mis-hearings of names and numbers) rather than the uploader's own subtitles. Videos without captions can't be read — say so and offer make_shorts_from_video instead.",
+    );
+  if (has("read_web_page"))
+    can.push(
+      "- Read a web page's actual text with read_web_page (a link): use it to summarize an article, take facts or ideas from it, or answer questions about its content, instead of opening the browser. It can't read pages behind a login or a paywall — say so plainly.",
+    );
+  if (has("search_youtube"))
+    can.push(
+      "- Search YouTube with search_youtube to research a topic or a niche: titles, channels, lengths and view counts. Use it when someone asks what's out there, what's working, or to find a video they described but didn't link.",
+    );
   if (has("make_youtube_short"))
     can.push(
       "- Make YouTube Shorts with make_youtube_short — the heart of this app. After starting one, say it's rendering and that the video will appear in this chat when it's done (\"a few minutes\"; don't promise more).",
@@ -87,7 +99,9 @@ export function agentInstruction(opts: InstructionOptions): string {
 
   const facts = opts.webSearch
     ? "- For anything current or that you aren't sure of (news, weather, prices, scores, recent releases), use Google Search, and say briefly where the answer came from."
-    : `- You can't search the web. For live information (weather, news, prices, scores) say you can't check it from here${has("open_website") ? " and offer to open a Google search in the browser" : ""}.`;
+    : `- You can't search the web${
+        has("search_youtube") ? " — except YouTube, with search_youtube, and you can read one video or page when given its link (read_video, read_web_page)" : ""
+      }. For live information (weather, news, prices, scores) say you can't check it from here${has("open_website") ? " and offer to open a Google search in the browser" : ""}.`;
 
   const guideRule = has("soundwave_guide")
     ? [
