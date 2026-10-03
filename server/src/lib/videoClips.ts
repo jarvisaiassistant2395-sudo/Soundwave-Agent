@@ -393,11 +393,17 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
       const outputUrl = `/api/v1/export/jobs/${job.id}/download`;
       await store.updateJob(job.id, { status: "COMPLETED", progress: 100, outputUrl, completedAt: new Date().toISOString() });
       emitJob(job.id, { status: "COMPLETED", progress: 100, url: outputUrl });
+      // The clip is a normal export job with a real file, so the message says
+      // where it is: the desktop chat plays it in line (the phone's Watch
+      // button reads the job id). Without the URL the clip could only be read
+      // about, never watched.
       say(`✂️ Clip ${i + 1} of ${finalPicks.length} — “${title}” (${clockRange(range)} of “${source.name}”)${pick.reason ? `\n${pick.reason}` : ""}`, {
         jobId: job.id,
         jobState: "done",
         topic: title,
         tag: "AUDIO",
+        videoUrl: outputUrl,
+        downloadUrl: outputUrl,
         actionOutput: `From ${source.url}\n${cues.length ? `Captions: ${cues.length} lines from what is said` : "No captions (no speech heard in this moment)"}`,
       });
     } catch (err) {

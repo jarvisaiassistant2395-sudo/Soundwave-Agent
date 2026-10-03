@@ -529,13 +529,27 @@ try {
   });
   if (!/CI clip/.test(clipLine)) annotate("warning", "Desktop E2E", `the clip was made from the loudest-window fallback instead of the picker's answer: “${clipLine}”`);
   else ok(`the agent's picker picked the moment: “${clipLine.slice(0, 120)}”`);
-  // Watch it the way a person does: the player's source is the rendered file.
-  const watch = main.locator('[data-testid="watch-button"]').last();
-  await watch.click();
-  await main.waitForSelector("video", { timeout: 60_000 });
+  // Watch it the way a person does: the chat plays the rendered file in the
+  // message (the phone has a "Watch" button for this; the desktop shows the
+  // player). Its source must be the clip's own export job.
+  try {
+    await main.waitForFunction(
+      () =>
+        [...document.querySelectorAll("video")].some((v) => {
+          const s = v.getAttribute("src") ?? v.querySelector("source")?.getAttribute("src") ?? "";
+          return /\/api\/v1\/export\/jobs\/[^/]+\/download/.test(s);
+        }),
+      null,
+      { timeout: 60_000, polling: 500 },
+    );
+  } catch {
+    const shown = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+    await fail(`the finished clip never showed a player in the chat: ${shown.slice(-400)}`);
+  }
   const clipSrc = await main.evaluate(() => {
-    const v = [...document.querySelectorAll("video")].at(-1);
-    return v?.getAttribute("src") ?? v?.querySelector("source")?.getAttribute("src") ?? "";
+    const srcOf = (el) => el.getAttribute("src") ?? el.querySelector("source")?.getAttribute("src") ?? "";
+    const v = [...document.querySelectorAll("video")].filter((el) => /\/api\/v1\/export\/jobs\/[^/]+\/download/.test(srcOf(el))).at(-1);
+    return v ? srcOf(v) : "";
   });
   const clipId = /\/api\/v1\/export\/jobs\/([^/]+)\/download/.exec(clipSrc)?.[1] ?? "";
   if (!clipId) await fail(`the clip's player doesn't point at a rendered file (${clipSrc.slice(0, 200)})`);
