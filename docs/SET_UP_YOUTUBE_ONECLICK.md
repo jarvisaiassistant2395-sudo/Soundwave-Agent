@@ -157,6 +157,21 @@ is git-ignored, so it can never be committed by accident.
     build."* Until the secrets exist, builds simply show the honest fallback
     (paste your own client, 3 clicks) — nothing breaks.
 
+> ⚠️ **Do Part 3 step 7 before you give a build to anyone — including yourself.**
+> The client is baked in, but Google still asks *the consent screen* who may
+> sign in. While it says **Testing**, only the Gmail addresses on the
+> **Test users** list can connect; everybody else — you with a different
+> account, every customer — lands on Google's page that reads
+> **"Error 403: access_denied"** with an *Access blocked* heading.
+> Two ways out on **https://console.cloud.google.com/auth/audience**:
+> - **Right now (you):** *Test users* → **Add users** → the Gmail that owns the
+>   channel → **Save**. Connect again — it works in seconds.
+> - **For customers:** **Publish app** → **Confirm**. Then *any* Google account
+>   can connect (they'll see *"Google hasn't verified this app"* → **Advanced**
+>   → **Continue** until Google finishes the verification review — start that
+>   review early if you're launching, and note the 100-user cap stays until
+>   it's approved). Publishing also stops sign-ins from expiring every 7 days.
+
 > Prefer the command line? `gh secret set SOUNDWAVE_YOUTUBE_CLIENT_ID` and
 > `gh secret set SOUNDWAVE_YOUTUBE_CLIENT_SECRET` prompt you to paste each
 > value, so it never appears in a shell history or a log.
@@ -177,6 +192,10 @@ is git-ignored, so it can never be committed by accident.
     the channel → if Google shows *"Google hasn't verified this app"*, click
     **Continue** → **Allow** both permissions → the tab says *"YouTube is
     connected"* → the badge in Soundwave shows your channel name.
+    - If the browser instead shows a Google page headed **Access blocked** or
+      **Error 403: access_denied**, nothing is wrong with the app: that Google
+      account isn't allowed to sign in yet. Do Part 3 step 7 (add it as a test
+      user, or Publish app) and press **Connect YouTube** again.
 
 ---
 
@@ -185,7 +204,7 @@ is git-ignored, so it can never be committed by accident.
 | What you see | What it means | Fix |
 | --- | --- | --- |
 | `redirect_uri_mismatch` | The client isn't a *Desktop app* — usually the website's Web client | Part 4: create a **Desktop app** client and use *its* JSON |
-| "Access blocked / has not completed verification" | App is in Testing and this account isn't a test user | Part 3 step 7: add that Gmail as a test user (or Publish app) |
+| Google's page headed **"Access blocked"** / **`Error 403: access_denied`** | App is in Testing and this Google account isn't on the test-users list (or the audience is *Internal*) | Part 3 step 7: add that Gmail under *Audience → Test users*, or **Publish app** — the page is Google's, so the app never even sees the attempt |
 | Sign-in worked, uploads fail about a week later (`invalid_grant`) | Testing status expires refresh tokens after 7 days | Publish app (Part 3), or press Connect again |
 | Uploads succeed but stay **Private** forever | New project hasn't passed YouTube's API audit | Download the MP4 and post in YouTube Studio, and request the audit at support.google.com/youtube/contact/yt_api_form |
 | `quotaExceeded` after ~6 uploads in a day | Default 10,000 units/day; one upload costs 1,600 | Request a quota increase on the same audit form (or spread uploads across days) |
