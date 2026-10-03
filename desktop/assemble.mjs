@@ -90,15 +90,19 @@ fs.cpSync(path.join(repoRoot, "scripts", "assets"), path.join(stage, "scripts", 
 // staged trees are rewritten and then checked against code-protection.json.
 // The Electron shell's own sources (desktop/src/**) are copied by
 // electron-builder itself, so they're protected later — scripts/afterPack.cjs.
-console.log("[assemble] protecting the staged server + frontend …");
+console.log("[assemble] protecting the staged server (the tree that holds the brain) …");
 const drift = verifySources();
 if (drift.length) {
   console.error("[assemble] code-protection.json no longer matches the source:");
   for (const problem of drift) console.error(`  - ${problem}`);
   process.exit(1);
 }
+// Only the server: it is the tree that holds the agent's instruction, the
+// short-script shape and the guide. The UI bundle and the Electron shell are
+// minified/glue code with none of that (checked: not one marker is in them) and
+// the packaged-app E2E drives the UI — rewriting it bought nothing and cost a
+// run, so it ships byte-for-byte as built. code-protection.json says the same.
 obfuscateTree(JavaScriptObfuscator, path.join(stage, "server", "dist"), { preset: "code" });
-obfuscateTree(JavaScriptObfuscator, path.join(stage, "frontend", "dist"), { preset: "bundle" });
 const readable = verifyShipped(stage);
 if (readable.length) {
   console.error("[assemble] the staged app still reads — refusing to pack it:");

@@ -1,25 +1,32 @@
 {
   "why": [
-    "The app ships as real files on the customer's PC (electron-builder `asar: false`:",
-    "the bundled server chdirs there and spawns ffmpeg/yt-dlp/whisper against those paths).",
-    "Nothing stops a person who installs Soundwave from opening",
-    "`resources/app/server/dist/**` and reading the agent's instruction, the short-script",
-    "shape, the guide and every route as plain source. This file is the shared policy that",
-    "makes those files stop reading like source: names, string literals and structure are",
-    "rewritten on the way into the installer (`desktop/assemble.mjs` +",
-    "`desktop/scripts/afterPack.cjs`) and into the APK (`mobile/scripts/protect-dist.mjs`).",
+    "Two trees ship the product's knowledge and are rewritten before they leave the",
+    "build machine: the bundled server (the agent's instruction, the short-script",
+    "shape, the guide, the plans — `desktop/app/server/dist/**`) and the phone app's",
+    "page inside the APK (which compiles the shared agent core straight from",
+    "server/src). `markers` are phrases that MUST exist in the source file they name",
+    "and MUST NOT exist anywhere in a shipped tree; both build paths and every run of",
+    "`desktop/protect.mjs` fail when either side drifts, and the Android workflow greps",
+    "the signed APK itself.",
     "",
-    "`markers` are phrases that MUST exist in the source file they name and MUST NOT exist",
-    "anywhere in a shipped tree. The build fails when either side drifts — that is what makes",
-    "this check impossible to forget rather than a promise.",
+    "Two trees are deliberately NOT rewritten, and the first attempt to protect them",
+    "is why: the desktop UI bundle and the Electron shell (main.js/preload.cjs glue).",
+    "Neither contains a single marker — no instruction, no script shape, no guide;",
+    "they are minified UI code and plumbing. Obfuscating them bought nothing and cost",
+    "a run: the packaged-app end-to-end test timed out at the Command Center's mic",
+    "(a step whose failure gives no diagnostics — the app runs, the log is empty), and",
+    "the build that shipped them read exactly like the one before. The rule this",
+    "leaves behind: rewrite a tree only when it holds something worth hiding *and*",
+    "CI drives it end to end.",
     "",
-    "It is not, and cannot be, \"impossible to steal\": anyone with the installer on their own",
-    "machine can run the code, dump decoded strings from memory, or reimplement what they see.",
-    "This pass removes the cheap wins (a readable copy, source maps, TypeScript types) and",
-    "makes copying an expensive project instead of a right-click. docs/PROTECTING_THE_CODE.md.",
+    "It is not, and cannot be, \"impossible to steal\": anyone with the installer on",
+    "their own machine can run the code, dump decoded strings from memory, or",
+    "reimplement what they see. This pass removes the cheap wins (a readable copy of",
+    "everything the app knows, source maps, TypeScript types) and moves the rest into",
+    "the trees that are covered by tests. docs/PROTECTING_THE_CODE.md.",
     "",
-    "Option presets below are passed to javascript-obfuscator verbatim — keep them to real",
-    "option names only (the engine rejects anything it does not know)."
+    "Option presets below are passed to javascript-obfuscator verbatim — keep them to",
+    "real option names only (the engine rejects anything it does not know)."
   ],
   "presets": {
     "code": {
@@ -32,7 +39,10 @@
       "renameProperties": false,
       "stringArray": true,
       "stringArrayThreshold": 1,
-      "stringArrayEncoding": ["rc4", "base64"],
+      "stringArrayEncoding": [
+        "rc4",
+        "base64"
+      ],
       "stringArrayRotate": true,
       "stringArrayShuffle": true,
       "numbersToExpressions": false,
@@ -55,7 +65,9 @@
       "renameProperties": false,
       "stringArray": true,
       "stringArrayThreshold": 1,
-      "stringArrayEncoding": ["base64"],
+      "stringArrayEncoding": [
+        "base64"
+      ],
       "stringArrayRotate": true,
       "stringArrayShuffle": true,
       "numbersToExpressions": false,
@@ -94,11 +106,6 @@
       "label": "the guide's alarms section",
       "file": "server/src/lib/brain/core/guide.ts",
       "phrase": "The agent can set an alarm on your Android phone."
-    },
-    {
-      "label": "the shell's tray wording",
-      "file": "desktop/src/main.js",
-      "phrase": "It keeps working in the tray. Right-click the tray icon to quit."
     }
   ]
 }

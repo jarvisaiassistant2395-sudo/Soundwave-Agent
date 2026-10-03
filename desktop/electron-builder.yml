@@ -10,13 +10,12 @@ directories:
   output: release
 
 # Everything ships as real files (no asar): the bundled server chdirs here and
-# spawns ffmpeg/yt-dlp/whisper against these paths. That also means anyone who
-# installs the app can read resources/app — which is why the staged server and
-# frontend are protected in assemble.mjs, and this hook protects the shell's own
-# sources (desktop/src/**, copied by `files:` after assemble runs) and fails the
-# build if anything readable survived. docs/PROTECTING_THE_CODE.md.
+# spawns ffmpeg/yt-dlp/whisper against these paths. The tree that holds the
+# agent's brain (resources/app/server/dist) is rewritten by assemble.mjs on the
+# way in; the Electron shell and the UI bundle ship as built — no marker of the
+# brain is in either, and the packaged-app E2E drives both.
+# docs/PROTECTING_THE_CODE.md.
 asar: false
-afterPack: scripts/afterPack.cjs
 
 # yt-dlp uses the app binary itself as its JavaScript runtime for YouTube
 # (ELECTRON_RUN_AS_NODE — see server/src/lib/jsRuntime.ts), so never disable

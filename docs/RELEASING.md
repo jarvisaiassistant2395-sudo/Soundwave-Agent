@@ -310,19 +310,24 @@ Before selling, upload the final exe to https://www.virustotal.com once and
 check for false positives — unsigned new files sometimes get heuristic flags
 that vanish after signing.
 
-1.5.7 protects the code that ships. The installer hands the customer the whole
-server, frontend and Electron shell as real files (`asar: false`, because the
-bundled server runs from those paths), and the APK hands over the phone page —
-which compiles the shared agent core. From this version `desktop/assemble.mjs`
-and `desktop/scripts/afterPack.cjs` rewrite every one of those files with
-javascript-obfuscator (names → hex, every string literal → an encoded array,
-comments dropped; the options live in `code-protection.json`), the phone
-workflow runs `mobile/scripts/protect-dist.mjs` on the app page before
-`cap sync`, and each of those steps **fails the build** if a phrase from
-`code-protection.json` is still readable — or if a `.map`/`.ts` file appears in a
-shipped tree. The Android workflow also greps the signed APK for the agent's
-instruction. What this does and doesn't buy, and how to add a marker or debug an
-obfuscated crash: [PROTECTING_THE_CODE.md](PROTECTING_THE_CODE.md).
+1.5.7 protects the part of the code that is worth copying. The installer hands
+the customer the whole server as real files (`asar: false`, because the bundled
+server runs from those paths) and the APK hands over the phone page, which
+compiles the shared agent core — the instruction, the short-script shape, the
+guide, the plans. `desktop/assemble.mjs` rewrites the staged server and
+`mobile/scripts/protect-dist.mjs` rewrites the app page (with
+javascript-obfuscator: names → hex, every string literal → an encoded array,
+comments dropped; the options live in `code-protection.json`), and both steps
+**fail the build** if a phrase from that file is still readable, or if a
+`.map`/`.ts` file appears in a shipped tree. The Android workflow also greps the
+signed APK for the agent's instruction. The UI bundle and the Electron shell hold
+none of that (checked, not assumed) and ship as built — the first attempt
+obfuscated them too and the packaged-app E2E then timed out at the Command
+Center's mic with nothing to read in the failure, so the rule is: protect a tree
+only when it holds the brain *and* CI drives it end to end. That run also bought
+the E2E its page-log/on-screen diagnostics. What this does and doesn't buy, and
+how to add a marker or debug an obfuscated crash:
+[PROTECTING_THE_CODE.md](PROTECTING_THE_CODE.md).
 
 ## Versioning
 

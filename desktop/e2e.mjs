@@ -49,13 +49,39 @@ const rememberAppLog = (chunk) => {
   }
 };
 const appLogTail = (lines = 12) => appLog.slice(-lines).join(" ⋮ ").slice(-900);
+// What the page itself said (console errors, uncaught exceptions). The run's log
+// is often unreachable, and "the UI never showed listening" says nothing about
+// why — this is the difference between a timeout and a real error message.
+const pageLog = [];
+const rememberPageLog = (line) => {
+  pageLog.push(String(line).replace(/\s+/g, " ").trim());
+  if (pageLog.length > 30) pageLog.shift();
+};
+const pageLogTail = (lines = 6) => pageLog.slice(-lines).join(" ⋮ ").slice(-600);
+let mainPage = null;
 const at = (name) => {
   stage = name;
 };
 async function fail(message) {
   console.error(`[e2e] ✗ FAIL at “${stage}” (${since()}): ${message}`);
   const tail = appLogTail();
-  annotate("error", "Desktop app end-to-end", `At “${stage}”: ${message}${tail ? ` | App log (last lines): ${tail}` : ""}`);
+  const page = pageLogTail();
+  let visible = "";
+  try {
+    visible = String(await mainPage?.evaluate(() => document.body?.innerText ?? "") ?? "")
+      .replace(/\s+/g, " ")
+      .slice(0, 300);
+  } catch {
+    /* the window is gone */
+  }
+  annotate(
+    "error",
+    "Desktop app end-to-end",
+    `At “${stage}”: ${message}` +
+      (tail ? ` | App log (last lines): ${tail}` : "") +
+      (page ? ` | Page log (last lines): ${page}` : "") +
+      (visible ? ` | On screen: “${visible}”` : ""),
+  );
   try {
     for (const [i, page] of (app?.windows() ?? []).entries()) await page.screenshot({ path: path.join(shotsDir, `failure-${i}.png`) }).catch(() => {});
   } catch {
@@ -156,9 +182,12 @@ try {
   // ── 1. Startup: Command Center, tray, shortcut, bridge ────────────────────
   at("startup: window, tray, shortcut, bridge");
   const main = await app.firstWindow({ timeout: 180_000 });
+  mainPage = main;
   main.on("console", (m) => {
     if (m.type() === "error" || /\[voice\]/.test(m.text())) console.log(`    [main:${m.type()}] ${m.text()}`);
+    if (m.type() === "error" || /\[voice\]|microphone|getUserMedia|worklet/i.test(m.text())) rememberPageLog(`[${m.type()}] ${m.text()}`);
   });
+  main.on("pageerror", (err) => rememberPageLog(`pageerror: ${err.message}`));
   await main.waitForURL(/\/agent/, { timeout: 120_000 });
   await main.locator('button[aria-label="Talk to Soundwave"]').waitFor({ timeout: 60_000 });
   ok(`main window shows the Command Center (${main.url()})`);

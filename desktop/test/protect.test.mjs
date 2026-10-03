@@ -50,7 +50,7 @@ test("hides the phrases that matter, deletes maps and types, and still runs", as
 
   const esm = fs.readFileSync(path.join(dir, "brain.mjs"), "utf8");
   assert.ok(!esm.includes(MARKER), "the instruction is not in the shipped file any more");
-  assert.ok(!fs.readFileSync(path.join(dir, "shell.cjs"), "utf8").includes("Right-click the tray icon"), "the shell's wording is gone too");
+  assert.ok(!fs.readFileSync(path.join(dir, "shell.cjs"), "utf8").includes("Right-click the tray icon"), "a tree handed to the protector is rewritten whole — which tree that is is the policy's call, not this function's");
 
   // Still the same program: import the ESM one, require the CJS one.
   const imported = await import(pathToFileURL(path.join(dir, "brain.mjs")).href);
@@ -67,7 +67,7 @@ test("hides the phrases that matter, deletes maps and types, and still runs", as
 test("the build check finds what the protector would have missed", async () => {
   const dir = fixture();
   const problems = verify(dir);
-  assert.equal(problems.length, 4, `3 readable files + 2 stray types, got: ${problems.join(" | ")}`);
+  assert.equal(problems.length, 3, `1 readable phrase (2 trees hold none) + 2 stray types, got: ${problems.join(" | ")}`);
   assert.ok(problems.some((p) => /brain\.mjs still contains/.test(p)));
   assert.ok(problems.some((p) => /old\.ts ships/.test(p)));
   fs.rmSync(dir, { recursive: true, force: true });
@@ -78,6 +78,14 @@ test("refuses to protect a tree with no code in it, instead of reporting success
   fs.writeFileSync(path.join(dir, "index.html"), "<html></html>");
   assert.throws(() => obfuscateTree(JavaScriptObfuscator, dir), /no JavaScript under/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the policy guards only the trees that ship the brain", () => {
+  const files = POLICY.markers.map((m) => m.file);
+  assert.ok(
+    files.every((f) => f.startsWith("server/") || f.startsWith("mobile/")),
+    `markers must live in the brain-bearing trees (server, mobile) — got ${files.join(", ")}. The UI bundle and the Electron shell hold none of it and ship as built.`,
+  );
 });
 
 test("every phrase the build checks for still exists in the source it names", () => {
