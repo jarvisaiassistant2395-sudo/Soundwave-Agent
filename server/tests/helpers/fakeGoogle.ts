@@ -32,6 +32,8 @@ export interface FakeGoogle {
   token: Array<(req: Seen) => Reply>;
   weather: { place: Record<string, unknown> | null; tempC: number; code: number };
   youtube: { title: string; subscribers: string; views: string; videos: string; ok: boolean };
+  /** Every video upload: which token started it, the title, and the bytes sent. */
+  uploads: Array<{ initAuth?: string; title?: string; bytes: number }>;
   generateCalls(): Seen[];
   reset(): void;
   close(): Promise<void>;
@@ -47,6 +49,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     token: [],
     weather: { place: { name: "Kruševac", latitude: 43.58, longitude: 21.33, country: "Serbia", country_code: "RS" }, tempC: 14.2, code: 2 },
     youtube: { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true },
+    uploads: [] as Array<{ initAuth?: string; title?: string; bytes: number }>,
     generateCalls: () => fake.seen.filter((s) => s.path.includes(":generateContent")),
     reset() {
       fake.seen.length = 0;
@@ -55,6 +58,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       fake.token.length = 0;
       fake.weather = { place: { name: "Kruševac", latitude: 43.58, longitude: 21.33, country: "Serbia", country_code: "RS" }, tempC: 14.2, code: 2 };
       fake.youtube = { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true };
+      fake.uploads.length = 0;
     },
   };
 
@@ -106,6 +110,18 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
           ],
         },
       };
+    }
+    // Resumable upload, the way YouTube does it: an init call that hands back a
+    // session URL, then the file PUT to that URL.
+    if (seen.method === "POST" && p === "/upload/youtube/v3/videos") {
+      const meta = (seen.body ?? {}) as { snippet?: { title?: string } };
+      fake.uploads.push({ initAuth: seen.headers.authorization, title: meta.snippet?.title, bytes: 0 });
+      return { body: {}, headers: { location: `${fake.url}/upload-session/${fake.uploads.length}` } };
+    }
+    if (seen.method === "PUT" && p.startsWith("/upload-session/")) {
+      const upload = fake.uploads.at(-1);
+      if (upload) upload.bytes = seen.raw.length;
+      return { body: { id: `vid-${fake.uploads.length}`, kind: "youtube#video" } };
     }
     if (p === "/youtube/v3/playlistItems") return { body: { items: [{ contentDetails: { videoId: "vid1" } }] } };
     if (p === "/youtube/v3/videos") {

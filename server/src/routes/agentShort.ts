@@ -26,9 +26,11 @@ import {
   type OrbitalSection,
 } from "../lib/orbitalBackground.js";
 import { youtubeService } from "../lib/youtube.js";
+import { accessTokenFor, channelFor, noteChannelError, noteChannelUpload } from "../lib/youtubeChannels.js";
+import { captureAvailable, framesToVideo, recordWindow, type Recording } from "../lib/selfRecord.js";
 import { emitJob } from "./export.js";
 import { activeBrain } from "../lib/brain/settings.js";
-import { writeShortScript } from "../lib/brain/script.js";
+import { writePromoScript, writeShortScript } from "../lib/brain/script.js";
 import { wordCount } from "../lib/brain/prompt.js";
 import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, WORDS_PER_SECOND } from "../lib/brain/core/viral.js";
 
@@ -104,18 +106,28 @@ export async function synthesizeNarration(
 }
 
 // ── End-to-End Short Video Builder ─────────────────────────────────────────
-/** Where the short's background footage came from (always Orbital NCG). */
-export interface ShortBackgroundInfo {
-  source: "orbital_ncg";
-  importer: "youtube_link_importer";
-  channelName: string;
-  channelUrl: string;
-  videoId: string;
-  url: string;
-  title: string;
-  /** Imported window of the Orbital video (null = whole video). */
-  section: OrbitalSection | null;
-}
+/** Where the short's background footage came from: Orbital NCG, or the app itself. */
+export type ShortBackgroundInfo =
+  | {
+      source: "orbital_ncg";
+      importer: "youtube_link_importer";
+      channelName: string;
+      channelUrl: string;
+      videoId: string;
+      url: string;
+      title: string;
+      /** Imported window of the Orbital video (null = whole video). */
+      section: OrbitalSection | null;
+    }
+  | {
+      /** The agent's own window, filmed while it worked on this very video. */
+      source: "self_recording";
+      title: string;
+      frames: number;
+      captureSeconds: number;
+      width: number;
+      height: number;
+    };
 
 export interface BuildShortOptions {
   topic: string;
@@ -128,6 +140,22 @@ export interface BuildShortOptions {
   niche?: string;
   voice?: string;
   resolution?: "720p" | "1080p";
+  /** 9:16 for Shorts (default); 16:9 for the agent's own demo/explainer videos. */
+  aspect?: "9:16" | "16:9";
+  /**
+   * The video is about Soundwave itself: the script follows the claims list in
+   * brain/core/promo.ts instead of a niche recipe.
+   */
+  promo?: boolean;
+  /**
+   * Record the app's own window while this video is being made and use that
+   * footage as the background (the agent filming itself working). Only inside
+   * the desktop app — without a window to capture the job fails with the
+   * reason rather than using footage that isn't there.
+   */
+  selfRecord?: boolean;
+  /** Which connected YouTube channel this one goes to (id or name). */
+  youtubeChannelId?: string;
   userId?: string;
   existingJobId?: string;
   autoPublishYouTube?: boolean;
@@ -178,8 +206,14 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
   const resolution = params.resolution || "1080p";
   const seconds = params.seconds && params.seconds > 0 ? Math.round(params.seconds) : DEFAULT_SCRIPT_SECONDS;
   const voice = params.voice || "en-US-ChristopherNeural";
+  // Demos of the app are landscape (the window is), everything else is vertical.
+  const aspect: "9:16" | "16:9" = params.aspect === "16:9" ? "16:9" : "9:16";
+  const selfRecord = params.selfRecord === true;
+  // When the picture IS the app, the script must describe what is on screen —
+  // but a plain promo short (promo without a recording) sets this false.
+  const showsAppOnScreen = selfRecord;
 
-  const dims = dimensionsFor(resolution, "9:16");
+  const dims = dimensionsFor(resolution, aspect);
 
   // Retrieve existing job or create a new job record
   let job = params.existingJobId ? await store.getJob(params.existingJobId, userId) : null;
@@ -224,7 +258,9 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
     if (!script && activeBrain()) {
       await reportProgress(10, `Writing a ${seconds}-second script with Gemini...`);
       try {
-        const written = await writeShortScript(params.topic, params.scriptBrief, { seconds, nicheId: params.niche });
+        const written = params.promo
+          ? await writePromoScript(params.topic, { seconds, showsAppOnScreen })
+          : await writeShortScript(params.topic, params.scriptBrief, { seconds, nicheId: params.niche });
         if (written) {
           script = written.script;
           scriptSource = "gemini";
@@ -253,10 +289,36 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
     const trendChecked = typeof scriptMeta.scriptTrendsAt === "string" ? ", written to the latest Shorts trends" : "";
     await reportProgress(22, `Script ready (${wordCount(script)} words ≈ ${Math.round(wordCount(script) / WORDS_PER_SECOND)}s${trendChecked}). Preparing neural narrator...`);
 
-    // 2. Voiceover Synthesis (28% -> 40%)
+    // 2. Voiceover Synthesis (24% -> 40%). For a demo this is also the moment
+    //    the agent films itself: the window shows the real work happening, and
+    //    the footage is stretched to the narration afterwards.
     stage = "voice";
-    await reportProgress(28, "Synthesizing neural voiceover with natural pacing...");
+    let voiceReady = false;
+    let recordingProblem: string | null = null;
+    let recordingStarted: Promise<Recording | null> | null = null;
+    if (selfRecord) {
+      if (!captureAvailable()) {
+        recordingProblem = "I can only film myself inside the Soundwave desktop app — this server has no window to record.";
+      } else {
+        await reportProgress(24, `Filming my own window while I work on this (up to ${Math.max(6, seconds + 4)}s)...`);
+        // Runs alongside the voiceover: the window really is the agent working.
+        recordingStarted = recordWindow({
+          maxSeconds: Math.max(6, seconds + 4),
+          minSeconds: 3,
+          fps: 6,
+          stopWhen: () => voiceReady,
+          onFrame: (frames, elapsed) => {
+            void reportProgress(26, `Filming my own window (${frames} frames, ${elapsed.toFixed(0)}s)...`);
+          },
+        }).catch((err) => {
+          recordingProblem = (err as Error).message;
+          return null;
+        });
+      }
+    }
     const ttsResult = await synthesizeNarration(script, voice);
+    voiceReady = true;
+    const captured = recordingStarted ? await recordingStarted : null;
     const audioBuf = Buffer.from(ttsResult.audioBase64, "base64");
     const audioFileKey = `${crypto.randomUUID()}.audio`;
     const audioPath = path.join(config.uploadsDir, audioFileKey);
@@ -288,22 +350,51 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       shadowY: 2,
     };
 
-    // 4. Background (46% -> 58%): an Orbital NCG video the agent has never
-    //    used, pasted into the YouTube link importer.
+    // 4. Background (46% -> 58%). A demo uses the recording of the agent's own
+    //    window; everything else imports an Orbital NCG video it has never
+    //    used before. If the recording didn't produce frames, this says so
+    //    instead of quietly shipping a different video.
     stage = "background";
-    let progressChain: Promise<void> = Promise.resolve();
-    orbital = await importUnusedOrbitalVideo({
-      clipSeconds: backgroundClipSeconds(ttsResult.duration),
-      onStep: (message, fraction) => {
-        const pct = Math.round(46 + fraction * 12);
-        progressChain = progressChain.then(() => reportProgress(pct, message));
-      },
-    });
-    await progressChain;
-    const background = toBackgroundInfo(orbital);
+    let background: ShortBackgroundInfo;
+    let videoPath: string;
+    if (selfRecord) {
+      if (!captured) {
+        throw new Error(recordingProblem ?? "I couldn't record my own window for this video.");
+      }
+      const filmed = await framesToVideo({
+        dir: captured.dir,
+        frames: captured.frames,
+        seconds: ttsResult.duration,
+        outPath: path.join(config.uploadsDir, `self_${jobId}.mp4`),
+      });
+      background = {
+        source: "self_recording",
+        title: "Soundwave AI — its own window while this video was made",
+        frames: captured.frames,
+        captureSeconds: +captured.seconds.toFixed(1),
+        width: captured.width,
+        height: captured.height,
+      };
+      videoPath = filmed.outPath;
+    } else {
+      let progressChain: Promise<void> = Promise.resolve();
+      orbital = await importUnusedOrbitalVideo({
+        clipSeconds: backgroundClipSeconds(ttsResult.duration),
+        onStep: (message, fraction) => {
+          const pct = Math.round(46 + fraction * 12);
+          progressChain = progressChain.then(() => reportProgress(pct, message));
+        },
+      });
+      await progressChain;
+      background = toBackgroundInfo(orbital);
+      videoPath = orbital.imported.filePath;
+    }
     jobSettings = { ...jobSettings, background };
-    await reportProgress(58, `Background ready: "${background.title}" (Orbital NCG, ${describeOrbitalSection(background.section)}). Initializing the ${dims.width}×${dims.height} 60fps compositor (${dims.height >= 1920 ? "high quality — this step takes a few minutes" : "fast render"})...`);
-    const videoPath = orbital.imported.filePath;
+    const backgroundLine =
+      background.source === "self_recording"
+        ? `Filming done — ${background.frames} frames of my own window (${background.captureSeconds}s of real work, stretched to ${Math.round(ttsResult.duration)}s). Initializing the ${dims.width}×${dims.height} compositor...`
+        : `Background ready: "${background.title}" (Orbital NCG, ${describeOrbitalSection(background.section)}). Initializing the ${dims.width}×${dims.height} 60fps compositor (${dims.height >= 1920 ? "high quality — this step takes a few minutes" : "fast render"})...`;
+    await reportProgress(58, backgroundLine);
 
     // 5. Export Settings
     const exportSettings: ExportSettings = {
@@ -349,55 +440,86 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
     });
 
     // The short exists — this Orbital video is now used and never picked again.
-    markOrbitalVideoUsed(orbital.video, { jobId, topic: params.topic, section: orbital.imported.section });
-    orbitalMarkedUsed = true;
+    if (orbital) {
+      markOrbitalVideoUsed(orbital.video, { jobId, topic: params.topic, section: orbital.imported.section });
+      orbitalMarkedUsed = true;
+    }
 
     await reportProgress(97, "Finalizing short video package...");
     try {
       fs.copyFileSync(outPath, jobFilePath);
     } catch {}
 
-    // 7. Auto-Publish to YouTube Shorts (if configured & requested)
+    // 7. Auto-Publish (if configured & requested) — to the channel asked for,
+    //    or the default one. Each channel signs in with its own refresh token.
     stage = "publish";
-    let ytResult: { videoId: string; youtubeUrl: string } | undefined = undefined;
+    let ytResult: { videoId: string; youtubeUrl: string; channelName?: string } | undefined = undefined;
     const ytConfig = youtubeService.getConfig();
-    const shouldPublish = params.autoPublishYouTube ?? ytConfig.autoPublish;
+    const channel = channelFor(params.youtubeChannelId ?? null);
+    const legacyToken = Boolean(ytConfig.clientId && ytConfig.clientSecret && ytConfig.refreshToken);
+    const shouldPublish = params.autoPublishYouTube ?? (channel ? channel.autoPublish : ytConfig.autoPublish);
+    let publishError: string | null = null;
 
-    if (shouldPublish && ytConfig.clientId && ytConfig.clientSecret && ytConfig.refreshToken) {
+    if (shouldPublish && (channel || legacyToken)) {
       try {
-        await reportProgress(98, "Uploading short to YouTube Shorts...");
-        const rawTitle = script.split("\n")[0]?.replace(/^[#\s*]+/, "").slice(0, 75) || `Viral Motivation #${Math.floor(Math.random() * 1000)}`;
+        const target = channel ? `“${channel.name}”` : "YouTube Shorts";
+        await reportProgress(98, `Uploading to ${target}...`);
+        const rawTitle = script.split("\n")[0]?.replace(/^[#\s*]+/, "").slice(0, 75) || `Soundwave short #${Math.floor(Math.random() * 1000)}`;
         const pubTitle = rawTitle.endsWith(".") ? rawTitle.slice(0, -1) : rawTitle;
-        const privacy = params.youtubePrivacy || ytConfig.defaultPrivacy || "public";
-        const tags = params.youtubeTags || ytConfig.defaultTags || ["shorts", "minecraft", "parkour", "viral", "facts"];
+        const privacy = params.youtubePrivacy || channel?.privacy || ytConfig.defaultPrivacy || "public";
+        const tags = params.youtubeTags || ytConfig.defaultTags || ["shorts", "soundwave", "ai", "agent", "viral"];
+        const description =
+          background.source === "self_recording"
+            ? `${script}\n\nFootage: Soundwave AI recording its own window while it made this video.\nMade with Soundwave AI — it writes, narrates, renders and posts its own videos.`
+            : `${script}\n\nBackground gameplay: ${background.title} by ${ORBITAL_CHANNEL_NAME} (${background.url})\nMade with Soundwave AI — it writes, narrates, renders and posts its own videos.`;
 
-        const uploadRes = await youtubeService.uploadShort({
-          videoPath: outPath,
-          title: pubTitle,
-          description: `${script}\n\nBackground gameplay: ${background.title} by ${ORBITAL_CHANNEL_NAME} (${background.url})\nProduced with Soundwave AI Automated Shorts Pipeline.\n#shorts #minecraft #motivation #viral`,
-          privacy,
-          tags,
-        });
+        const uploadRes = channel
+          ? await youtubeService.uploadWithToken(await accessTokenFor(channel), {
+              videoPath: outPath,
+              title: pubTitle,
+              description,
+              privacy,
+              tags,
+              defaults: { defaultPrivacy: channel.privacy, defaultTags: tags },
+            })
+          : await youtubeService.uploadShort({ videoPath: outPath, title: pubTitle, description, privacy, tags });
 
         ytResult = {
           videoId: uploadRes.videoId,
           youtubeUrl: uploadRes.youtubeUrl,
+          ...(channel ? { channelName: channel.name } : {}),
         };
-        console.log(`[agentShort] Auto-published to YouTube Shorts: ${uploadRes.youtubeUrl}`);
+        if (channel) noteChannelUpload(channel.id, uploadRes.youtubeUrl);
+        console.log(`[agentShort] Published to ${channel ? channel.name : "YouTube Shorts"}: ${uploadRes.youtubeUrl}`);
       } catch (ytErr: any) {
+        // The video is still finished locally — say what went wrong, don't lose it.
+        publishError = ytErr.message;
+        if (channel) noteChannelError(channel.id, ytErr.message);
         console.error("[agentShort] YouTube auto-publish error (continuing):", ytErr.message);
       }
     }
 
     const finalUrl = `/api/v1/export/jobs/${jobId}/download`;
-    const finalStep = ytResult ? `Video Ready & Published to YouTube Shorts!` : "Video Ready!";
+    const finalStep = ytResult
+      ? `Video Ready & published to ${ytResult.channelName ?? "YouTube"}!`
+      : publishError
+        ? `Video Ready! (YouTube didn't take it: ${publishError.slice(0, 120)})`
+        : "Video Ready!";
     await store.updateJob(jobId, {
       status: "COMPLETED",
       progress: 100,
       outputUrl: finalUrl,
       completedAt: new Date().toISOString(),
       // Shown by Projects / Overview (the agent's shorts library).
-      settings: { ...jobSettings, step: finalStep, voice, duration: ttsResult.duration, youtubeUrl: ytResult?.youtubeUrl ?? null } as any,
+      settings: {
+        ...jobSettings,
+        step: finalStep,
+        voice,
+        duration: ttsResult.duration,
+        youtubeUrl: ytResult?.youtubeUrl ?? null,
+        youtubeChannel: ytResult?.channelName ?? null,
+        youtubeError: publishError,
+      } as any,
     });
 
     emitJob(jobId, {
@@ -466,6 +588,14 @@ const generateShortSchema = z.object({
   seconds: z.number().int().min(15).max(180).default(60),
   /** The niche picked in the generator (script recipes in brain/core/viral). */
   niche: z.string().max(40).optional(),
+  /** A video about Soundwave itself (claims list in brain/core/promo). */
+  promo: z.boolean().optional(),
+  /** Film the app's own window and use it as the background (desktop app only). */
+  selfRecord: z.boolean().optional(),
+  /** 16:9 for demos of the app; vertical Shorts otherwise. */
+  aspect: z.enum(["9:16", "16:9"]).optional(),
+  /** Which connected channel it goes to (id or name) — see /youtube/channels. */
+  youtubeChannelId: z.string().max(80).optional(),
   async: z.boolean().default(false),
   autoPublishYouTube: z.boolean().optional(),
   youtubePrivacy: z.enum(["public", "unlisted", "private"]).optional(),
@@ -483,14 +613,24 @@ export function getActiveShortJobs(): Array<{ jobId: string; topic: string; star
 export async function startShortJob(params: Omit<BuildShortOptions, "existingJobId" | "onProgress">): Promise<{ jobId: string }> {
   const store = await getStore();
   const userId = params.userId || "agent-local";
-  const dims = dimensionsFor(params.resolution || "1080p", "9:16");
+  const aspect: "9:16" | "16:9" = params.aspect === "16:9" ? "16:9" : "9:16";
+  const dims = dimensionsFor(params.resolution || "1080p", aspect);
   const seconds = params.seconds && params.seconds > 0 ? Math.round(params.seconds) : DEFAULT_SCRIPT_SECONDS;
   const job = await store.createJob({
     projectId: null,
     userId,
     status: "PROCESSING",
     progress: 8,
-    settings: { resolution: dims, topic: params.topic, seconds, step: "Researching the angle and writing the script..." } as any,
+    settings: {
+      resolution: dims,
+      aspect,
+      topic: params.topic,
+      seconds,
+      ...(params.promo ? { promo: true } : {}),
+      ...(params.selfRecord ? { selfRecord: true } : {}),
+      ...(params.youtubeChannelId ? { youtubeChannelId: params.youtubeChannelId } : {}),
+      step: "Researching the angle and writing the script...",
+    } as any,
     outputUrl: null,
     errorMessage: null,
     startedAt: new Date().toISOString(),
@@ -537,6 +677,10 @@ router.post("/generate-short", optionalAuth, validate({ body: generateShortSchem
       resolution: body.resolution,
       seconds: body.seconds,
       niche: body.niche,
+      promo: body.promo,
+      selfRecord: body.selfRecord,
+      aspect: body.aspect,
+      youtubeChannelId: body.youtubeChannelId,
       userId,
       autoPublishYouTube: body.autoPublishYouTube,
       youtubePrivacy: body.youtubePrivacy,

@@ -145,6 +145,48 @@ export interface OrbitalStatus {
   skipped: Array<{ id: string; url: string; title: string; reason: string; skippedAt: string }>;
 }
 
+/** One connected YouTube channel and what the agent is told to publish there. */
+export interface YtChannelView {
+  id: string;
+  name: string;
+  channelId: string | null;
+  default: boolean;
+  privacy: "public" | "unlisted" | "private";
+  autoPublish: boolean;
+  addedAt: number;
+  lastUploadAt: number | null;
+  lastVideoUrl: string | null;
+  plan: {
+    what: string;
+    /** short: a normal short about `what`. demo: the agent films its own window. */
+    kind: "short" | "demo";
+    auto: boolean;
+    everyDays: number;
+    time: string;
+    lastRunAt: number | null;
+    runs: number;
+    lastError: string | null;
+    due: boolean;
+  };
+}
+
+/** GET /api/v1/youtube/channels — who posts where, and why nothing runs right now. */
+export interface YtPlanStatus {
+  active: Array<{
+    channelId: string;
+    channelName: string;
+    what: string;
+    kind: "short" | "demo";
+    everyDays: number;
+    time: string;
+    due: boolean;
+    lastRunAt: string | null;
+    runs: number;
+    lastError: string | null;
+  }>;
+  blocked: string | null;
+}
+
 const ORBITAL_CHANNEL_URL = "https://www.youtube.com/@OrbitalNCG";
 /** The render quality and narration length the person picked last (remembered). */
 const QUALITY_KEY = "soundwave_short_quality";
@@ -305,6 +347,11 @@ export function AgentHub() {
   const [isSavingYt, setIsSavingYt] = useState(false);
   const [isUploadingToYt, setIsUploadingToYt] = useState(false);
   const [uploadedYoutubeUrl, setUploadedYoutubeUrl] = useState<string | null>(null);
+  // Several channels, each with its own instruction about what to publish there
+  // (the agent's own marketing) — the server keeps the sign-ins.
+  const [ytChannels, setYtChannels] = useState<YtChannelView[]>([]);
+  const [ytPlanStatus, setYtPlanStatus] = useState<YtPlanStatus | null>(null);
+  const [isRecordingDemo, setIsRecordingDemo] = useState(false);
 
   // Ghost Operator Macros State
   const [macrosList, setMacrosList] = useState<MacroWorkflow[]>([]);
@@ -389,6 +436,88 @@ export function AgentHub() {
     } catch {}
   };
 
+  /** The channels and their publishing plans (never the sign-ins — the server keeps those). */
+  const fetchChannels = async () => {
+    try {
+      const res = await fetch("/api/v1/youtube/channels");
+      if (res.ok) {
+        const data = (await res.json()) as { channels: YtChannelView[]; plan: YtPlanStatus };
+        setYtChannels(data.channels || []);
+        setYtPlanStatus(data.plan || null);
+      }
+    } catch {}
+  };
+
+  /** Save one channel: its instruction (what to publish, how often) or its name/privacy. */
+  const patchChannel = async (id: string, patch: Record<string, unknown>, ok?: string) => {
+    try {
+      const res = await fetch(`/api/v1/youtube/channels/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "The channel isn't connected any more.");
+      setYtChannels(data.channels || []);
+      setYtPlanStatus(data.plan || null);
+      if (ok) toast.success(ok, data?.plan?.blocked || "The agent publishes it while Soundwave runs.");
+    } catch (e) {
+      toast.error("Channel", (e as Error).message);
+    }
+  };
+
+  const setDefaultChannel = async (id: string, name: string) => {
+    try {
+      const res = await fetch(`/api/v1/youtube/channels/${encodeURIComponent(id)}/default`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "The channel isn't connected any more.");
+      setYtChannels(data.channels || []);
+      setYtPlanStatus(data.plan || null);
+      toast.success("Default channel", `New shorts go to “${name}” when you don't name one.`);
+    } catch (e) {
+      toast.error("Channel", (e as Error).message);
+    }
+  };
+
+  const removeChannel = async (id: string, name: string) => {
+    if (!window.confirm(`Forget “${name}” and its sign-in? Videos already posted stay on YouTube.`)) return;
+    try {
+      const res = await fetch(`/api/v1/youtube/channels/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "The channel isn't connected any more.");
+      setYtChannels(data.channels || []);
+      setYtPlanStatus(data.plan || null);
+      fetchYtStatus();
+      toast.success("Channel removed", `“${name}” is no longer connected.`);
+    } catch (e) {
+      toast.error("Channel", (e as Error).message);
+    }
+  };
+
+  /** \"Record a demo now\": the agent films its own window and posts the demo. */
+  const recordDemo = async (channelId?: string) => {
+    setIsRecordingDemo(true);
+    try {
+      const res = await fetch("/api/v1/youtube/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(channelId ? { channelId } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "I couldn't start recording.");
+      toast.success("Filming my own window", "Keep Soundwave open on screen — the demo appears in the chat and on the channel.");
+      if (data.jobId) void trackShortJob(data.jobId, "a demo of Soundwave");
+    } catch (e) {
+      toast.error("Can't film this window", (e as Error).message);
+    } finally {
+      setIsRecordingDemo(false);
+    }
+  };
+
+  /** The channel the Command Center card talks about (the default one). */
+  const marketingChannel = ytChannels.find((c) => c.default) ?? ytChannels[0] ?? null;
+  const marketingPlan = marketingChannel ? (ytPlanStatus?.active.find((a) => a.channelId === marketingChannel.id) ?? null) : null;
+
   // Save chat to localStorage (shared with the desktop voice bar)
   useEffect(() => {
     if (skipPersistRef.current) {
@@ -422,6 +551,7 @@ export function AgentHub() {
     // Initial Orbital background status, YouTube status & what's viral right now
     fetchOrbitalStatus();
     fetchYtStatus();
+    fetchChannels();
     fetchTrendStatus();
   }, []);
 
@@ -991,6 +1121,8 @@ export function AgentHub() {
         const st = await fetch("/api/v1/youtube/status").then((r) => r.json()).catch(() => null);
         if (st?.connected && st?.hasRefreshToken) {
           setYtStatus(st);
+          // A finished sign-in is a channel: it shows up in the list with its own plan.
+          void fetchChannels();
           toast.success("YouTube Connected", st.channelTitle ? `Linked to ${st.channelTitle}` : "Linked");
           return;
         }
@@ -1675,6 +1807,31 @@ export function AgentHub() {
               <span className="text-gray-400">Default Visibility:</span>
               <span className="font-bold uppercase text-white text-[11px]">{ytPrivacy}</span>
             </div>
+
+            {/* The agent's own marketing: which channel, what goes there, next one when. */}
+            {ytChannels.length > 0 && (
+              <div className="space-y-1 rounded border border-[#14233D] bg-[#070D18] px-2 py-1.5" data-testid="yt-marketing">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-gray-400">Marketing channel:</span>
+                  <span className="truncate font-bold text-gray-200">{marketingChannel?.name ?? ""}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-gray-400">Next video:</span>
+                  <span className="truncate text-cyan-300">
+                    {marketingPlan ? (marketingPlan.due ? "due now" : `in ${marketingPlan.everyDays} day(s): ${marketingPlan.what}`) : "not scheduled — set it in Setup"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => marketingChannel && void recordDemo(marketingChannel.id)}
+                  disabled={isRecordingDemo}
+                  className="flex w-full items-center justify-center gap-1.5 rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 text-red-200 py-1 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isRecordingDemo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Film className="h-3 w-3" />}
+                  {isRecordingDemo ? "Filming my own window…" : "Record a demo of myself now"}
+                </button>
+              </div>
+            )}
 
             <div className="pt-1 flex gap-1.5">
               {completedVideoUrl && !uploadedYoutubeUrl && (
@@ -3042,6 +3199,66 @@ export function AgentHub() {
                     </button>
                   </div>
                 </div>
+
+                {/* Channels: who posts where, and the agent's own marketing plan */}
+                <div className="p-3 rounded-lg border border-[#14233D] bg-[#070D18] space-y-2" data-testid="yt-channels">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Workflow className="h-4 w-4 text-cyan-400" />
+                      <span className="text-xs font-bold text-white">Channels &amp; what to publish on each</span>
+                    </div>
+                    <span className="text-[9px] text-gray-500">
+                      {ytPlanStatus?.active.length ? `${ytPlanStatus.active.length} on autopilot` : "nothing scheduled"}
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400">
+                    Tell the agent what to publish on each channel and how often — it writes, narrates, renders and posts it by itself while Soundwave is
+                    running. A <b className="text-gray-200">demo</b> records the app's own window working.
+                  </p>
+
+                  {ytChannels.length === 0 ? (
+                    <p className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1.5 text-[10px] text-gray-500">
+                      No channel connected yet. Press <b className="text-gray-300">Connect YouTube</b> above — every sign-in adds one channel, so you can
+                      connect a second account for a second channel. Soundwave can't create a YouTube channel for you; it posts to the ones you connect.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {ytChannels.map((ch) => (
+                        <ChannelRow
+                          key={ch.id}
+                          channel={ch}
+                          onSave={patchChannel}
+                          onDefault={setDefaultChannel}
+                          onRemove={removeChannel}
+                          onRecordDemo={recordDemo}
+                          recording={isRecordingDemo}
+                        />
+                      ))}
+                      <p className="text-[9px] text-gray-500">
+                        Another channel? Press <b className="text-gray-400">Connect YouTube</b> again and sign in with the account that owns it — each
+                        sign-in adds one channel here.
+                      </p>
+                    </div>
+                  )}
+
+                  {ytPlanStatus?.blocked && ytChannels.length > 0 && (
+                    <p className="text-[9px] text-gray-500">⏱ {ytPlanStatus.blocked}</p>
+                  )}
+
+                  {ytChannels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void recordDemo(ytChannels.find((c) => c.default)?.id ?? ytChannels[0]!.id)}
+                      disabled={isRecordingDemo}
+                      data-testid="yt-record-demo"
+                      className="flex w-full items-center justify-center gap-1.5 rounded bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-200 font-bold py-1.5 text-[11px] transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isRecordingDemo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Film className="h-3 w-3" />}
+                      {isRecordingDemo ? "Filming my own window…" : "Record a demo of myself now"}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -3223,6 +3440,181 @@ export function AgentHub() {
 }
 
 /** Which brain the agent thinks with — a click opens Settings → Brain. */
+/**
+ * One channel in Settings → YouTube & Shorts: its name, whether it's the
+ * default, and the instruction the agent follows for it — what to publish
+ * there, in which form, how often, and whether it runs by itself. Demos are
+ * the agent recording its own window working; shorts are normal shorts.
+ */
+function ChannelRow({
+  channel,
+  onSave,
+  onDefault,
+  onRemove,
+  onRecordDemo,
+  recording,
+}: {
+  channel: YtChannelView;
+  onSave: (id: string, patch: Record<string, unknown>, ok?: string) => void;
+  onDefault: (id: string, name: string) => void;
+  onRemove: (id: string, name: string) => void;
+  onRecordDemo: (channelId: string) => void;
+  recording: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [what, setWhat] = useState(channel.plan.what);
+  const [kind, setKind] = useState<"short" | "demo">(channel.plan.kind);
+  const [everyDays, setEveryDays] = useState(channel.plan.everyDays);
+  const [time, setTime] = useState(channel.plan.time);
+  const [auto, setAuto] = useState(channel.plan.auto);
+
+  useEffect(() => {
+    setWhat(channel.plan.what);
+    setKind(channel.plan.kind);
+    setEveryDays(channel.plan.everyDays);
+    setTime(channel.plan.time);
+    setAuto(channel.plan.auto);
+  }, [channel.plan.what, channel.plan.kind, channel.plan.everyDays, channel.plan.time, channel.plan.auto]);
+
+  const running = channel.plan.auto && channel.plan.what.trim().length > 0;
+  const summary = running
+    ? `${channel.plan.kind === "demo" ? "Records the app" : "Normal short"} · ${channel.plan.what} · every ${channel.plan.everyDays}d${channel.plan.time ? ` from ${channel.plan.time}` : ""}${channel.plan.due ? " · due now" : ""}`
+    : "Not on autopilot — nothing is scheduled for this channel";
+
+  return (
+    <div className="rounded-lg border border-[#172A4A] bg-[#0A1224] p-2 space-y-1.5" data-testid={`yt-channel-${channel.id}`}>
+      <div className="flex items-center justify-between gap-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 items-center gap-1.5 text-left cursor-pointer"
+          title="What should the agent publish on this channel?"
+        >
+          <Youtube className="h-3 w-3 shrink-0 text-red-500" />
+          <span className="truncate text-[11px] font-bold text-gray-100">{channel.name}</span>
+          {channel.default && (
+            <span className="shrink-0 rounded bg-cyan-500/15 px-1 py-0.5 text-[8px] font-bold text-cyan-300 border border-cyan-500/30">DEFAULT</span>
+          )}
+          <span className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold ${running ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" : "bg-gray-800 text-gray-500"}`}>
+            {running ? "AUTOPILOT" : "OFF"}
+          </span>
+        </button>
+        <span className="shrink-0 text-[9px] text-gray-500" title={channel.lastUploadAt ? new Date(channel.lastUploadAt).toLocaleString() : "Nothing posted from here yet"}>
+          {channel.plan.runs ? `${channel.plan.runs} made` : ""}
+        </span>
+      </div>
+
+      <p className="text-[10px] text-gray-400 leading-snug">{summary}</p>
+      {channel.plan.lastError && (
+        <p className="rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[9px] text-amber-200/90">
+          Last run didn't finish: {channel.plan.lastError}
+        </p>
+      )}
+
+      {open && (
+        <div className="space-y-1.5 border-t border-[#172A4A]/70 pt-1.5" data-testid={`yt-plan-${channel.id}`}>
+          <label className="block text-[9px] text-gray-400">
+            What to publish here
+            <input
+              value={what}
+              onChange={(e) => setWhat(e.target.value)}
+              maxLength={400}
+              placeholder='e.g. "demos of Soundwave making a short in one press" or "space facts"'
+              className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-cyan-500 focus:outline-none"
+            />
+          </label>
+          <div className="flex items-center gap-1.5">
+            <label className="flex-1 text-[9px] text-gray-400">
+              Kind
+              <select
+                value={kind}
+                onChange={(e) => setKind(e.target.value as "short" | "demo")}
+                className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
+              >
+                <option value="short">Normal short</option>
+                <option value="demo">Demo — films the app</option>
+              </select>
+            </label>
+            <label className="w-16 text-[9px] text-gray-400">
+              Every
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={everyDays}
+                onChange={(e) => setEveryDays(Math.min(30, Math.max(1, Number(e.target.value) || 3)))}
+                className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
+              />
+            </label>
+            <label className="w-24 text-[9px] text-gray-400">
+              Not before
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
+              />
+            </label>
+          </div>
+          {kind === "demo" && (
+            <p className="text-[9px] text-cyan-300/80">
+              A demo films Soundwave's own window while it works — the app has to be open on screen for the picture to be right.
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <button
+              type="button"
+              onClick={() => onSave(channel.id, { plan: { what, kind, everyDays, time, auto } }, `Saved for “${channel.name}”`)}
+              className="rounded bg-cyan-500 hover:bg-cyan-400 px-2 py-1 text-[10px] font-bold text-[#070B14] transition-all cursor-pointer"
+            >
+              Save plan
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !auto;
+                setAuto(next);
+                onSave(channel.id, { plan: { what, kind, everyDays, time, auto: next } }, next ? `Autopilot on for “${channel.name}”` : `Autopilot off for “${channel.name}”`);
+              }}
+              className={`rounded border px-2 py-1 text-[10px] font-bold transition-all cursor-pointer ${
+                auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-[#172A4A] bg-[#070D18] text-gray-300 hover:border-cyan-500/50"
+              }`}
+            >
+              {auto ? "Autopilot ON" : "Autopilot off"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onRecordDemo(channel.id)}
+              disabled={recording}
+              className="rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 px-2 py-1 text-[10px] font-bold text-red-200 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {recording ? "Filming…" : "Record a demo now"}
+            </button>
+            {!channel.default && (
+              <button
+                type="button"
+                onClick={() => onDefault(channel.id, channel.name)}
+                className="rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-300 hover:border-cyan-500/50 hover:text-cyan-200 transition-all cursor-pointer"
+                title="Where shorts go when you don't name a channel"
+              >
+                Make default
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onRemove(channel.id, channel.name)}
+              className="ml-auto rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-400 hover:border-red-500/40 hover:text-red-300 transition-all cursor-pointer"
+              title="Forget this channel and its sign-in"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BrainPill({ status }: { status: BrainStatus | null }) {
   if (!status) return null;
   const problem = status.configured ? status.lastError : null;

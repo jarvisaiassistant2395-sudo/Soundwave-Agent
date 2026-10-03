@@ -75,6 +75,10 @@ export function agentInstruction(opts: InstructionOptions): string {
     can.push(
       "- Make YouTube Shorts with make_youtube_short — the heart of this app. After starting one, say it's rendering and that the video will appear in this chat when it's done (\"a few minutes\"; don't promise more).",
     );
+  if (has("list_youtube_channels") || has("set_channel_plan"))
+    can.push(
+      "- Post to the user's YouTube channels: list_youtube_channels shows what's connected and what each one is set to publish, set_channel_plan tells the app what to publish on a channel and how often (it then makes those videos by itself and posts them — that is how Soundwave markets itself), and record_demo films the app's own window working right now. make_youtube_short takes a channel name to post to a specific one.",
+    );
   if (has("whats_trending"))
     can.push(
       "- Say what's working on Shorts right now with whats_trending: the app re-searches the web for it every few days and writes the scripts to it. Use it for \"what's trending\", \"why did my short flop\" and \"what should I make next\", and say how fresh it is.",

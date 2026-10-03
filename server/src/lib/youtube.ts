@@ -123,8 +123,11 @@ export class YouTubeService {
       delete merged.accessToken;
       delete merged.tokenExpiry;
       if (changed("refreshToken") || changed("clientId")) {
-        delete merged.channelTitle;
-        delete merged.channelId;
+        // The old channel name/id belong to the old sign-in — but a caller that
+        // is saving a fresh connection (title and id in the same call) means
+        // them, so only the ones it didn't provide are dropped.
+        if (updates.channelTitle === undefined) delete merged.channelTitle;
+        if (updates.channelId === undefined) delete merged.channelId;
       }
     }
     if (changed("refreshToken") && updates.clientSource === undefined) {
@@ -302,14 +305,33 @@ export class YouTubeService {
     tags?: string[];
     privacy?: "public" | "unlisted" | "private";
   }): Promise<{ videoId: string; youtubeUrl: string; title: string }> {
+    const token = await this.getValidAccessToken();
+    return this.uploadWithToken(token, params);
+  }
+
+  /**
+   * The same upload, with an access token someone else minted — one token per
+   * channel (lib/youtubeChannels.ts), one OAuth client for all of them.
+   */
+  public async uploadWithToken(
+    token: string,
+    params: {
+      videoPath: string;
+      title: string;
+      description?: string;
+      tags?: string[];
+      privacy?: "public" | "unlisted" | "private";
+      /** A channel's own defaults (title suffix, tags, privacy) override the global ones. */
+      defaults?: { titleSuffix?: string; defaultTags?: string[]; defaultPrivacy?: "public" | "unlisted" | "private" };
+    },
+  ): Promise<{ videoId: string; youtubeUrl: string; title: string }> {
     if (!fs.existsSync(params.videoPath)) {
       throw new Error(`Video file not found at ${params.videoPath}`);
     }
 
     const cfg = this.ensureConfig();
-    const token = await this.getValidAccessToken();
 
-    const titleSuffix = cfg.titleSuffix || " #shorts #viral";
+    const titleSuffix = params.defaults?.titleSuffix ?? cfg.titleSuffix ?? " #shorts #viral";
     let finalTitle = params.title.trim();
     if (!finalTitle.toLowerCase().includes("#shorts")) {
       finalTitle = `${finalTitle}${titleSuffix}`;
@@ -319,13 +341,13 @@ export class YouTubeService {
       finalTitle = finalTitle.slice(0, 97) + "...";
     }
 
-    const privacy = params.privacy || cfg.defaultPrivacy || "public";
-    const tags = Array.from(new Set([...(params.tags || []), ...(cfg.defaultTags || []), "shorts", "viral"]));
+    const privacy = params.privacy || params.defaults?.defaultPrivacy || cfg.defaultPrivacy || "public";
+    const tags = Array.from(new Set([...(params.tags || []), ...(params.defaults?.defaultTags ?? cfg.defaultTags ?? []), "shorts", "viral"]));
 
     const metadata = {
       snippet: {
         title: finalTitle,
-        description: `${params.description || params.title}\n\nGenerated with Soundwave AI\n#shorts #viral #minecraft #facts`,
+        description: `${params.description || params.title}\n\nMade with Soundwave AI — the agent that writes, narrates and posts its own videos.`,
         tags,
         categoryId: "24", // Entertainment
       },

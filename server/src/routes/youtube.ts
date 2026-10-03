@@ -8,6 +8,10 @@ import { extractOAuthClient, youtubeService, type YouTubeConfig } from "../lib/y
 import { config } from "../config.js";
 import { ConnectError, startYouTubeConnect, YOUTUBE_SCOPES } from "../lib/youtubeOAuth.js";
 import { notFromApp } from "../middleware/localApp.js";
+import { channelFor, channelViews, removeChannel, setDefaultChannel, updateChannel } from "../lib/youtubeChannels.js";
+import { planRequest, planStatus, startDemo } from "../lib/publishPlan.js";
+import { startShortJob } from "./agentShort.js";
+import { captureAvailable } from "../lib/selfRecord.js";
 
 const router = Router();
 
@@ -35,6 +39,99 @@ router.get("/status", (_req, res) => {
     hasClientSecret: !!cfg.clientSecret,
     hasRefreshToken: !!cfg.refreshToken,
   });
+});
+
+// ── Channels: several of them, each with its own sign-in and its own plan ───
+
+// GET /api/v1/youtube/channels — connected channels + which one is the default.
+router.get("/channels", (_req, res) => {
+  const views = channelViews();
+  res.json({
+    channels: views,
+    defaultId: views.find((c) => c.default)?.id ?? null,
+    /** Saving needs the desktop app (sign-ins live on this PC). */
+    canConnectAnother: Boolean(youtubeService.client()),
+    plan: planStatus(),
+  });
+});
+
+/** The channel view the app gets back after a change (never tokens). */
+function channelsPayload() {
+  const views = channelViews();
+  return { channels: views, defaultId: views.find((c) => c.default)?.id ?? null, plan: planStatus() };
+}
+
+// PATCH /api/v1/youtube/channels/:id — name it, set what to publish there, its plan.
+const channelPatchSchema = z.object({
+  name: z.string().max(80).optional(),
+  privacy: z.enum(["public", "unlisted", "private"]).optional(),
+  autoPublish: z.boolean().optional(),
+  plan: z
+    .object({
+      what: z.string().max(400).optional(),
+      kind: z.enum(["short", "demo"]).optional(),
+      auto: z.boolean().optional(),
+      everyDays: z.number().int().min(1).max(30).optional(),
+      time: z.string().max(5).optional(),
+    })
+    .optional(),
+});
+
+router.patch("/channels/:id", optionalAuth, validate({ body: channelPatchSchema }), (req, res) => {
+  const updated = updateChannel(req.params.id!, req.body as z.infer<typeof channelPatchSchema>);
+  if (!updated) return res.status(404).json({ error: { code: "NO_CHANNEL", message: "That channel isn't connected any more." } });
+  res.json({ ok: true, ...channelsPayload() });
+});
+
+// POST /api/v1/youtube/channels/:id/default — where shorts go when none is named.
+router.post("/channels/:id/default", optionalAuth, (req, res) => {
+  if (!setDefaultChannel(req.params.id!)) {
+    return res.status(404).json({ error: { code: "NO_CHANNEL", message: "That channel isn't connected any more." } });
+  }
+  res.json({ ok: true, ...channelsPayload() });
+});
+
+// DELETE /api/v1/youtube/channels/:id — forget this channel (its sign-in too).
+router.delete("/channels/:id", optionalAuth, (req, res) => {
+  if (!removeChannel(req.params.id!)) {
+    return res.status(404).json({ error: { code: "NO_CHANNEL", message: "That channel isn't connected any more." } });
+  }
+  res.json({ ok: true, ...channelsPayload() });
+});
+
+// POST /api/v1/youtube/channels/:id/publish-plan — run this channel's plan now.
+router.post("/channels/:id/publish-plan", optionalAuth, async (req, res, next) => {
+  try {
+    const channel = channelFor(req.params.id!);
+    if (!channel) return res.status(404).json({ error: { code: "NO_CHANNEL", message: "That channel isn't connected any more." } });
+    const request = planRequest(channel);
+    const { jobId } = await startShortJob({ ...request, userId: req.user?.id ?? "agent-local" });
+    res.json({ ok: true, jobId, aspect: request.aspect, selfRecord: request.selfRecord });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/youtube/demo — record a demo of the app now, and post it there.
+const demoSchema = z.object({
+  channelId: z.string().max(80).optional(),
+  what: z.string().max(400).optional(),
+});
+router.post("/demo", optionalAuth, validate({ body: demoSchema }), async (req, res, next) => {
+  try {
+    if (!captureAvailable()) {
+      return res.status(409).json({
+        error: {
+          code: "NO_WINDOW",
+          message: "I can only record myself inside the Soundwave desktop app — this server has no window to film. Press Generate for a normal short instead.",
+        },
+      });
+    }
+    const started = await startDemo({ ...(req.body as z.infer<typeof demoSchema>), userId: req.user?.id ?? "agent-local" });
+    res.json({ ok: true, ...started, message: "Recording my own window while I work — the demo will appear here and on the channel I post it to." });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /api/v1/youtube/config

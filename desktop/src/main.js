@@ -523,6 +523,32 @@ async function main() {
       notify(n);
       return true;
     },
+    /**
+     * Recording itself (server/src/lib/selfRecord.ts): PNG frames of the app's
+     * own window, taken while the agent works on a video about itself. A
+     * minimised window captures nothing usable, so bring it back on screen —
+     * without stealing focus from whatever the person is typing in.
+     */
+    captureWindow: async () => {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return null;
+      if (win.isMinimized()) win.restore();
+      if (!win.isVisible()) {
+        if (typeof win.showInactive === "function") win.showInactive();
+        else win.show();
+      }
+      const image = await win.webContents.capturePage();
+      return image.toPNG();
+    },
+    showWindow: () => {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      if (!win.isVisible()) {
+        if (typeof win.showInactive === "function") win.showInactive();
+        else win.show();
+      }
+    },
   };
 
   // Import the bundled server (ESM) — this starts listening on loopback.

@@ -15,6 +15,9 @@ import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } 
 import { clipsBusy, startClipsJob } from "../videoClips.js";
 import { defaultEyes, type Eyes } from "../eyes.js";
 import { trendsStatus } from "../trends.js";
+import { channelFor, defaultChannelId, listChannels, updateChannel } from "../youtubeChannels.js";
+import { planStatus, startDemo } from "../publishPlan.js";
+import { captureAvailable } from "../selfRecord.js";
 import { clock } from "./core/transcript.js";
 import { addWatch, kickChannelWatch, listWatches, removeWatch, watchStatuses } from "../channelWatch.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
@@ -90,6 +93,11 @@ export const AGENT_TOOLS: AgentTool[] = [
             type: "NUMBER",
             description: "Optional narration length in seconds (30, 60 or 90). Use 60 unless the user asked for a specific length; a 60-second script is about 144 words.",
           },
+          channel: {
+            type: "STRING",
+            description:
+              "Optional: which connected YouTube channel this short should be posted to (its name, e.g. \"Soundwave demos\"). Leave out to post to the default channel. call list_youtube_channels when you don't know them.",
+          },
         },
         required: ["topic"],
       },
@@ -124,6 +132,17 @@ export const AGENT_TOOLS: AgentTool[] = [
         };
       }
 
+      const target = channelFor(str(args.channel, 80) || null);
+      if (str(args.channel, 80) && !target) {
+        const known = listChannels().map((c) => c.name);
+        return {
+          started: false,
+          reason: known.length
+            ? `I don't have a channel called “${str(args.channel, 80)}”. Connected: ${known.join(", ")}.`
+            : "No YouTube channel is connected yet — connect one in Settings → YouTube & Shorts first.",
+        };
+      }
+
       const exhausted = (st: ReturnType<typeof getOrbitalStatus>) => Boolean(st.catalogSize) && st.available === 0 && st.inProgress === 0;
       let orbital = getOrbitalStatus();
       if (exhausted(orbital)) {
@@ -144,15 +163,19 @@ export const AGENT_TOOLS: AgentTool[] = [
           seconds,
           voice: ctx.voice,
           resolution: ctx.resolution,
+          ...(target ? { youtubeChannelId: target.id, autoPublishYouTube: true } : {}),
           userId: ctx.userId,
         });
         ctx.effects.short = { jobId, topic };
         ctx.effects.tag = "AUDIO";
-        ctx.effects.log.push(`Started a short about “${topic}” (job ${jobId})`);
+        ctx.effects.log.push(`Started a short about “${topic}”${target ? ` for “${target.name}”` : ""} (job ${jobId})`);
         return {
           started: true,
           topic,
-          note: "Rendering takes a few minutes. The finished video will be posted in this chat automatically — no need to check on it.",
+          ...(target ? { channel: target.name } : {}),
+          note: target
+            ? `Rendering takes a few minutes, then it posts itself to “${target.name}”. The finished video appears in this chat too.`
+            : "Rendering takes a few minutes. The finished video will be posted in this chat automatically — no need to check on it.",
         };
       } catch (err) {
         return { started: false, reason: (err as Error).message || "unknown error" };
@@ -577,6 +600,136 @@ AGENT_TOOLS.push(
         };
       } catch (err) {
         return { ok: false, reason: (err as Error).message || "The YouTube search didn't work." };
+      }
+    },
+  },
+  {
+    declaration: {
+      name: "list_youtube_channels",
+      description:
+        "The YouTube channels Soundwave can post to: each one's name, which is the default, and what it is set to publish there (its plan: what, how often, whether it runs by itself, when it last did). Use it whenever the user talks about channels, publishing, or wants to know where a video went.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    available: (ctx) => ctx.desktop,
+    async run() {
+      const channels = listChannels();
+      if (!channels.length) {
+        return {
+          connected: false,
+          reason: "No YouTube channel is connected yet — press “Connect YouTube” in Settings → YouTube & Shorts (one press, no Google Cloud).",
+        };
+      }
+      return {
+        connected: true,
+        defaultChannel: channels.find((c) => c.id === defaultChannelId())?.name ?? channels[0]!.name,
+        channels: channels.map((c) => ({
+          name: c.name,
+          isDefault: c.id === defaultChannelId(),
+          lastUpload: c.lastUploadAt ? new Date(c.lastUploadAt).toISOString() : null,
+          plan: c.plan.auto
+            ? {
+                what: c.plan.what,
+                kind: c.plan.kind === "demo" ? "records itself using the app" : "a normal short",
+                everyDays: c.plan.everyDays,
+                at: c.plan.time || "as soon as it's due",
+                runs: c.plan.runs,
+                lastRunAt: c.plan.lastRunAt ? new Date(c.plan.lastRunAt).toISOString() : null,
+                lastError: c.plan.lastError,
+              }
+            : null,
+        })),
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "set_channel_plan",
+      description:
+        "Set what Soundwave should publish on one of the connected YouTube channels, and how often — “put a demo of the app on the Soundwave channel every 3 days”, “space facts on the facts channel daily”. The app then makes that video by itself while it runs and posts it to that channel. That is how the agent does its own marketing. Use kind \"demo\" when the video should show the app itself (it records its own window working) and \"short\" for a normal short about the subject.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          channel: { type: "STRING", description: "The channel's name (from list_youtube_channels)." },
+          what: { type: "STRING", description: 'What to publish there, in the user\'s words — e.g. "demos of Soundwave making a short in one press" or "space facts".' },
+          kind: { type: "STRING", description: '"demo" (shows the app working) or "short" (a normal short). Default short.' },
+          every_days: { type: "NUMBER", description: "How often, in days (1–30). Default 3." },
+          time: { type: "STRING", description: 'Optional local "HH:MM" — don\'t publish before this time of day.' },
+          auto: { type: "BOOLEAN", description: "true to let it run by itself; false to stop the automatic runs. Default true." },
+        },
+        required: ["channel", "what"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args) {
+      const channel = channelFor(str(args.channel, 80));
+      if (!channel) {
+        const known = listChannels().map((c) => c.name);
+        return {
+          ok: false,
+          reason: known.length
+            ? `I don't have a channel called “${str(args.channel, 80)}”. Connected: ${known.join(", ")}.`
+            : "No channel is connected yet — connect one in Settings → YouTube & Shorts first.",
+        };
+      }
+      const what = str(args.what, 400);
+      if (!what) return { ok: false, reason: "What should I publish there?" };
+      const kind = str(args.kind, 10).toLowerCase() === "demo" ? "demo" : "short";
+      const days = typeof args.every_days === "number" && Number.isFinite(args.every_days) ? Math.round(args.every_days) : 3;
+      const time = /^\d{1,2}:\d{2}$/.test(str(args.time, 5)) ? str(args.time, 5).padStart(5, "0") : "";
+      const auto = args.auto !== false;
+      updateChannel(channel.id, { plan: { what, kind, everyDays: days, auto, time } });
+      const next = planStatus();
+      return {
+        ok: true,
+        channel: channel.name,
+        plan: { what, kind, everyDays: days, time: time || "as soon as it's due", auto },
+        note: `I'll make that video myself while Soundwave is running${auto ? ` — next one as soon as it's due` : " (automatic runs are off)"}.${kind === "demo" ? " A demo records my own window while I work — the app has to be open on screen for the footage to be right." : ""}`,
+        blocked: next.blocked,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "record_demo",
+      description:
+        "Record a demo of Soundwave itself right now: the agent films its own window while it works, writes a narration about what is happening, and (if a channel is connected) posts it there. Use it when the user says “show what you can do”, “make a demo”, or asks for something to post about the app.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          what: { type: "STRING", description: 'Optional: what the demo should show, e.g. "you making a short in one press".' },
+          channel: { type: "STRING", description: "Optional channel name to post it to (default: the default channel)." },
+        },
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      if (!captureAvailable()) {
+        return { started: false, reason: "I can only film myself inside the Soundwave desktop app — this server has no window to record." };
+      }
+      const active = getActiveShortJobs()[0];
+      if (active) {
+        return { started: false, reason: `A video is already rendering (“${active.topic}”) — one at a time. Ask me again after that.` };
+      }
+      const wanted = str(args.channel, 80);
+      const target = wanted ? channelFor(wanted) : channelFor(null);
+      if (wanted && !target) {
+        const known = listChannels().map((c) => c.name);
+        return { started: false, reason: `I don't have a channel called “${wanted}”. Connected: ${known.join(", ") || "none"}.` };
+      }
+      try {
+        const started = await startDemo({ channelId: target?.id, what: str(args.what, 400), userId: ctx.userId });
+        ctx.effects.short = { jobId: started.jobId, topic: "a demo of the agent working" };
+        ctx.effects.tag = "AUDIO";
+        ctx.effects.log.push(`Recording a demo${started.channelName ? ` for “${started.channelName}”` : ""}`);
+        return {
+          started: true,
+          channel: started.channelName,
+          note: `I'm filming my own window while I work — the recording happens while the voiceover is made. It shows up in this chat${started.channelName ? ` and posts itself to “${started.channelName}”` : ""} in a few minutes.`,
+        };
+      } catch (err) {
+        return { started: false, reason: (err as Error).message || "unknown error" };
       }
     },
   },

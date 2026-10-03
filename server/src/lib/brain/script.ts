@@ -19,6 +19,7 @@ import { GeminiError, generateContent, isGemini3, visibleText, type GenerateRequ
 import { activeBrain, FALLBACK_MODEL, noteBrainError } from "./settings.js";
 import { cleanScript, wordCount } from "./prompt.js";
 import { loadTrendDigest } from "../trends.js";
+import { buildPromoInstruction } from "./core/promo.js";
 import {
   DEFAULT_SECONDS,
   buildScriptInstruction,
@@ -138,6 +139,85 @@ export async function writeShortScript(
         passes,
         issues: best.lint.issues,
         ...(trendOpts.trendsAt ? { trendsAt: trendOpts.trendsAt } : {}),
+      };
+    } catch (err) {
+      const retryable = err instanceof GeminiError && (err.kind === "quota" || err.kind === "overloaded" || err.kind === "timeout");
+      if (retryable && model !== models.at(-1)) continue;
+      noteBrainError(err, model);
+      throw err;
+    }
+  }
+  return null;
+}
+
+/**
+ * The narration for a video about Soundwave itself (a demo of the app, or a
+ * short on the theme). Same doctor, same repair pass — different brief: the
+ * claims are limited to a list of features that really exist (core/promo.ts).
+ */
+export async function writePromoScript(
+  what: string,
+  opts: WriteShortScriptOptions & { showsAppOnScreen?: boolean } = {},
+): Promise<WrittenScript | null> {
+  const brain = activeBrain();
+  if (!brain) return null;
+  const seconds = opts.seconds && opts.seconds > 0 ? Math.round(opts.seconds) : DEFAULT_SECONDS;
+  const { target } = scriptWordTarget(seconds);
+  const models = [...new Set([brain.model, FALLBACK_MODEL])];
+  const instructionFor = (previous?: string, issues?: string[]) => {
+    const base = buildPromoInstruction({
+      seconds,
+      subject: opts.showsAppOnScreen === false ? "about" : "demo",
+      what,
+      showsAppOnScreen: opts.showsAppOnScreen !== false,
+    });
+    if (!previous || !issues?.length) return base;
+    return [
+      base.replace("Return only the narration — nothing else.", ""),
+      `A script doctor rejected this draft (do not reuse its wording):`,
+      `"""${previous.trim()}"""`,
+      ``,
+      `Problems to fix — every one of them, in the new draft:`,
+      ...issues.map((i) => `- ${i}`),
+      ``,
+      `Rewrite the whole narration from scratch so none of those problems remain, keeping the ${seconds}-second shape. Return only the narration.`,
+    ].join("\n");
+  };
+
+  for (const model of models) {
+    const write = (instruction: string) =>
+      generateContent({
+        apiKey: brain.apiKey,
+        model,
+        request: request(instruction, what || "Soundwave AI", undefined, model, opts.thinking ?? "low"),
+        signal: opts.signal,
+        timeoutMs: 45_000,
+      }).then((resp) => cleanScript(visibleText(resp.candidates?.[0]?.content?.parts)));
+
+    try {
+      const draft = await write(instructionFor());
+      if (wordCount(draft) < 25) continue;
+      let best = { script: draft, lint: lintScript(draft, { seconds }) };
+      let passes = 1;
+      if (!best.lint.ok) {
+        try {
+          const repaired = await write(instructionFor(draft, best.lint.issues));
+          if (wordCount(repaired) >= 25) {
+            passes = 2;
+            best = better(best, { script: repaired, lint: lintScript(repaired, { seconds }) }, target);
+          }
+        } catch (err) {
+          console.warn(`[script] the promo rewrite couldn't run (${(err as Error).message}); keeping the first draft`);
+        }
+      }
+      return {
+        script: best.script,
+        model,
+        niche: "promo",
+        seconds,
+        words: wordCount(best.script),
+        passes,
+        issues: best.lint.issues,
       };
     } catch (err) {
       const retryable = err instanceof GeminiError && (err.kind === "quota" || err.kind === "overloaded" || err.kind === "timeout");

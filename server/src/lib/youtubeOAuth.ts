@@ -12,6 +12,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { youtubeService } from "./youtube.js";
+import { registerChannel } from "./youtubeChannels.js";
 
 export const YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"];
 const TTL_MS = 15 * 60_000;
@@ -121,7 +122,18 @@ export async function finishYouTubeConnect(query: Record<string, unknown>): Prom
   if (body.access_token) youtubeService.saveConfig({ accessToken: body.access_token, tokenExpiry: Date.now() + (body.expires_in ?? 3600) * 1000 });
   const granted = (body.scope ?? "").split(/\s+/);
   const test = await youtubeService.testConnection();
-  if (test.ok) return { ok: true, channelTitle: test.channelTitle ?? null };
+  if (test.ok) {
+    // Every sign-in is a channel (lib/youtubeChannels.ts): the first one is the
+    // channel the app had before, the next ones are added next to it.
+    registerChannel({
+      refreshToken: body.refresh_token,
+      channelTitle: test.channelTitle ?? null,
+      channelId: test.channelId ?? null,
+      clientSource: client.source,
+      connectedClientId: client.clientId,
+    });
+    return { ok: true, channelTitle: test.channelTitle ?? null };
+  }
   const missingRead = !granted.includes(YOUTUBE_SCOPES[1]!);
   return {
     ok: true,
