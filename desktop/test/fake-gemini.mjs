@@ -78,7 +78,10 @@ function answer(body) {
   // Cutting shorts out of a long video (only when the PC really offers it).
   if (declares("make_shorts_from_video") && /\b(cut|clip|clips|shorts? out of|best bits)\b/i.test(said)) {
     const file = /((?:[A-Za-z]:[\\/]|\/)[^\s"']+\.(?:mp4|mov|mkv|webm|m4v))/i.exec(said)?.[1];
-    const count = Number(/(\d+)\s*(?:clips|shorts)/i.exec(said)?.[1] ?? "");
+    // "cut 1 clip out of this video" must mean ONE — the plural-only pattern
+    // silently fell back to the default of 3, so the reply said "Cutting 3
+    // shorts" while the E2E waited for "Cutting 1 short out of" forever.
+    const count = Number(/(\d+)\s*(?:clips?|shorts?|reels?)\b/i.exec(said)?.[1] ?? "");
     return call("make_shorts_from_video", { video: file ?? said.trim(), ...(Number.isFinite(count) && count > 0 ? { count } : {}) }, "clips-1");
   }
   if (/connection test/i.test(said)) return text("ready");

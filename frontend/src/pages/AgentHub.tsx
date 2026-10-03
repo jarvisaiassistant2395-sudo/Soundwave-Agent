@@ -600,11 +600,11 @@ export function AgentHub() {
       if (startedShortJob(data) && activeJobIdRef.current !== data.jobId) {
         void trackShortJob(data.jobId, data.topic || query);
       }
-    } catch {
+    } catch (err) {
       const fallbackMsg: ChatMessage = {
         id: newMessageId(),
         sender: "assistant",
-        text: `I couldn't process "${query}" just now — the local agent server didn't answer. Try again in a moment.`,
+        text: `I couldn't process "${query}" just now — the local agent server didn't answer (${(err as Error).message}). Try again in a moment.`,
         time: chatTime(),
         tag: "SYS",
       };

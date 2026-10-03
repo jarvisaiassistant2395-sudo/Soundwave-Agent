@@ -38,12 +38,24 @@ let app = null;
 // bare Playwright timeout says *where* it happened even when the run's log
 // (and the annotation history) can't be read from where you are.
 let stage = "startup";
+// The packaged app's own output (the server logs its errors here). The run's log
+// and artifacts can be unreachable, so failures carry the last lines with them.
+const appLog = [];
+const rememberAppLog = (chunk) => {
+  for (const line of String(chunk).split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    appLog.push(line.trim());
+    if (appLog.length > 40) appLog.shift();
+  }
+};
+const appLogTail = (lines = 12) => appLog.slice(-lines).join(" ⋮ ").slice(-900);
 const at = (name) => {
   stage = name;
 };
 async function fail(message) {
   console.error(`[e2e] ✗ FAIL at “${stage}” (${since()}): ${message}`);
-  annotate("error", "Desktop app end-to-end", `At “${stage}”: ${message}`);
+  const tail = appLogTail();
+  annotate("error", "Desktop app end-to-end", `At “${stage}”: ${message}${tail ? ` | App log (last lines): ${tail}` : ""}`);
   try {
     for (const [i, page] of (app?.windows() ?? []).entries()) await page.screenshot({ path: path.join(shotsDir, `failure-${i}.png`) }).catch(() => {});
   } catch {
@@ -123,7 +135,14 @@ try {
 } catch (err) {
   await fail(`the app didn't start under Playwright: ${err.message}`);
 }
-app.process().stdout?.on("data", (d) => process.stdout.write(`    [app] ${d}`));
+app.process().stdout?.on("data", (d) => {
+  rememberAppLog(d);
+  process.stdout.write(`    [app] ${d}`);
+});
+app.process().stderr?.on("data", (d) => {
+  rememberAppLog(d);
+  process.stderr.write(`    [app!] ${d}`);
+});
 app.process().stderr?.on("data", (d) => {
   const line = String(d);
   if (!/Debugger listening|DevTools listening|For help, see/.test(line)) process.stdout.write(`    [app:err] ${line}`);

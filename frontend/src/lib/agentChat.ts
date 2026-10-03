@@ -173,7 +173,18 @@ export async function sendChat(
     body: JSON.stringify({ message: body.message, prompt: body.message, history: body.history, voice: body.voice, resolution: body.resolution }),
     signal,
   });
-  if (!res.ok) throw new Error(`The agent couldn't answer (HTTP ${res.status}).`);
+  if (!res.ok) {
+    // The server's error body names the cause (and its request id) — worth
+    // keeping: a bare "HTTP 500" turns every problem into a mystery.
+    let detail = "";
+    try {
+      const body = (await res.json()) as { error?: { message?: string; requestId?: string } };
+      detail = [body?.error?.message, body?.error?.requestId ? `ref ${body.error.requestId}` : ""].filter(Boolean).join(", ");
+    } catch {
+      /* not JSON — the status will have to do */
+    }
+    throw new Error(`The agent couldn't answer (HTTP ${res.status}${detail ? `: ${detail}` : ""}).`);
+  }
   return (await res.json()) as ChatReply;
 }
 
