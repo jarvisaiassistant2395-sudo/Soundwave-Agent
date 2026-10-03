@@ -136,7 +136,7 @@ Then, if you want: tick "Auto-Publish Shorts to YouTube upon generation", choose
 Good to know:
 - Private lock: videos uploaded through the YouTube API from a new, unaudited project can stay Private until the project passes YouTube's API compliance audit (support.google.com/youtube/contact/yt_api_form). Until it does, to publish publicly, download the MP4 in Soundwave and upload it in YouTube Studio.
 - Weekly re-linking (your own client, still in "Testing"): Google ends those sign-ins after 7 days — press Connect YouTube again, or press "Publish app" in Google Auth platform → Audience.
-- Daily quota: every Google Cloud project gets 10,000 YouTube API units a day and one upload costs 1,600, so a default project can post about six shorts a day through the API (it resets at midnight Pacific time; reading your channel's numbers costs almost nothing). Posting more needs a quota increase, asked for in the same YouTube API audit form — same place that lifts the Private lock.
+- Limits: up to 100 uploads per day per project — plenty for shorts.
 
 If something goes wrong:
 - "Access blocked", "access_denied" or "hasn't completed the Google verification process": add your Gmail as a test user (step 2) or publish the app. If you pressed Cancel, just connect again.

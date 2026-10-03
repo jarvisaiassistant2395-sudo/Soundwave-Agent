@@ -115,6 +115,9 @@ written from facts (weather included), the Memory tab and the YouTube tab.
 Update the guide (`server/src/lib/brain/core/guide.ts`) whenever a screen
 changes — `server/tests/memory_guide.test.ts` checks its key facts.
 
+Shop setup (once): `docs/SET_UP_YOUTUBE_ONECLICK.md` is the click-by-click
+guide for creating the one Desktop-app OAuth client the builds ship.
+
 1.5.5 makes connecting YouTube comfortable: release builds ship Soundwave's
 own Google OAuth client, so Settings → **YouTube & Shorts** → **Connect
 YouTube** is one press and a Google sign-in — the customer never opens Google

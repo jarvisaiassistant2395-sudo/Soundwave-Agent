@@ -214,7 +214,7 @@ describe("the Soundwave guide", () => {
 
     const section = lastResponse(1).response.sections[0];
     expect(section.id).toBe("youtube-link");
-    for (const fact of ["YouTube Data API v3", "Google Auth platform", "Test users", "Desktop app", "Connect YouTube", "audit", "7 days", "10,000 YouTube API units", "six shorts a day", "redirect_uri_mismatch"]) {
+    for (const fact of ["YouTube Data API v3", "Google Auth platform", "Test users", "Desktop app", "Connect YouTube", "audit", "7 days", "100 uploads", "redirect_uri_mismatch"]) {
       expect(section.text).toContain(fact);
     }
   });
