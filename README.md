@@ -450,6 +450,15 @@ State-changing requests require the `X-CSRF-Token` header matching the
   can be removed on the PC at any time. The Settings API refuses other sites
   (Origin) and DNS rebinding (Host). Details: [mobile/README.md](mobile/README.md).
 
+- **Shipped code isn't readable.** The installer keeps the server, the UI and
+  the Electron shell as real files — so on the way in, every JavaScript file is
+  rewritten (names, string literals moved into an encoded array, comments gone)
+  before it is ever packed, and the build fails if the agent's instruction, the
+  script rules or the guide still read anywhere in the shipped tree or the APK.
+  It stops the cheap copies; it doesn't pretend code can't be recovered by
+  someone with the app and enough patience — see
+  [docs/PROTECTING_THE_CODE.md](docs/PROTECTING_THE_CODE.md).
+
 ## Quotas & plans
 
 | | Free | Pro | Enterprise |

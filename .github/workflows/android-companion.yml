@@ -80,7 +80,13 @@ jobs:
         working-directory: mobile
         run: |
           npx vite build
+          # The page in the APK is plain JavaScript and includes the shared agent
+          # core (the instruction, the guide, the briefing). Rewrite it before it
+          # is copied, then check the copies that actually ship. Fails the build
+          # if a phrase from code-protection.json still reads.
+          node scripts/protect-dist.mjs
           npx cap sync android
+          node scripts/protect-dist.mjs --verify android/app/src/main/assets/public
 
       - name: Signing key
         id: sign
@@ -132,6 +138,15 @@ jobs:
           perms="$(sed -n "s/^uses-permission: name='android.permission.\([A-Z_]*\)'.*/\1/p" "$RUNNER_TEMP/badging.txt" | tr '\n' ' ')"
           grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" "$RUNNER_TEMP/apksigner.txt"
           [ "$pkg" = "ai.soundwave.companion" ]
+          # What the customer actually downloads must not read either: grep the
+          # signed APK's own JavaScript for the agent's instruction (it is a real
+          # phrase from code-protection.json — if the marker list moves, the
+          # desktop test fails first, so this can't rot silently).
+          if unzip -p "$apk" "assets/public/assets/*.js" 2>/dev/null | grep -qF "You are Soundwave, the AI assistant inside the Soundwave AI app on the user's PC."; then
+            echo "::error title=APK check::the agent's instruction is readable inside the APK"
+            exit 1
+          fi
+          echo "::notice title=APK check::the app page inside the APK is protected (no readable instruction)"
           mkdir -p dist
           cp "$apk" "dist/SoundwaveCompanion-$version.apk"
           size="$(du -h "dist/SoundwaveCompanion-$version.apk" | cut -f1)"

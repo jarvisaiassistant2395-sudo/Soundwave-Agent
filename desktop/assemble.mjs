@@ -1,5 +1,9 @@
 // Assemble the production app tree at desktop/app/ from the built server and
-// frontend. Runs on the build machine (CI Windows runner, or dev):
+// frontend, then protect it (see protect.mjs / code-protection.json): a
+// customer can read every file in resources/app, so the staged server and
+// frontend are rewritten before they are ever packed — and the build fails if
+// any of the phrases that matter still read. Runs on the build machine (CI
+// Windows runner, or dev):
 //
 //   app/
 //     server/         package.json + package-lock.json + dist/ + prod node_modules/
@@ -14,6 +18,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { obfuscateTree, verifyShipped, verifySources } from "./protect.mjs";
+import JavaScriptObfuscator from "javascript-obfuscator";
 
 const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(desktopDir, "..");
@@ -78,6 +84,28 @@ console.log("[assemble] scripts/assets …");
 fs.cpSync(path.join(repoRoot, "scripts", "assets"), path.join(stage, "scripts", "assets"), {
   recursive: true,
 });
+
+// ── Protection: the last writer of these trees before they are packed ──────
+// Everything above copied readable code into desktop/app; from here on the
+// staged trees are rewritten and then checked against code-protection.json.
+// The Electron shell's own sources (desktop/src/**) are copied by
+// electron-builder itself, so they're protected later — scripts/afterPack.cjs.
+console.log("[assemble] protecting the staged server + frontend …");
+const drift = verifySources();
+if (drift.length) {
+  console.error("[assemble] code-protection.json no longer matches the source:");
+  for (const problem of drift) console.error(`  - ${problem}`);
+  process.exit(1);
+}
+obfuscateTree(JavaScriptObfuscator, path.join(stage, "server", "dist"), { preset: "code" });
+obfuscateTree(JavaScriptObfuscator, path.join(stage, "frontend", "dist"), { preset: "bundle" });
+const readable = verifyShipped(stage);
+if (readable.length) {
+  console.error("[assemble] the staged app still reads — refusing to pack it:");
+  for (const problem of readable) console.error(`  - ${problem}`);
+  process.exit(1);
+}
+console.log("[assemble] ✓ nothing of the brain is readable in the staged app");
 
 // Sanity: the exact entry points the runtime resolves.
 need(path.join(stage, "server", "dist", "index.js"), "stage incomplete");

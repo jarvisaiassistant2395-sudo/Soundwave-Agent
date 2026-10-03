@@ -1,0 +1,104 @@
+{
+  "why": [
+    "The app ships as real files on the customer's PC (electron-builder `asar: false`:",
+    "the bundled server chdirs there and spawns ffmpeg/yt-dlp/whisper against those paths).",
+    "Nothing stops a person who installs Soundwave from opening",
+    "`resources/app/server/dist/**` and reading the agent's instruction, the short-script",
+    "shape, the guide and every route as plain source. This file is the shared policy that",
+    "makes those files stop reading like source: names, string literals and structure are",
+    "rewritten on the way into the installer (`desktop/assemble.mjs` +",
+    "`desktop/scripts/afterPack.cjs`) and into the APK (`mobile/scripts/protect-dist.mjs`).",
+    "",
+    "`markers` are phrases that MUST exist in the source file they name and MUST NOT exist",
+    "anywhere in a shipped tree. The build fails when either side drifts — that is what makes",
+    "this check impossible to forget rather than a promise.",
+    "",
+    "It is not, and cannot be, \"impossible to steal\": anyone with the installer on their own",
+    "machine can run the code, dump decoded strings from memory, or reimplement what they see.",
+    "This pass removes the cheap wins (a readable copy, source maps, TypeScript types) and",
+    "makes copying an expensive project instead of a right-click. docs/PROTECTING_THE_CODE.md.",
+    "",
+    "Option presets below are passed to javascript-obfuscator verbatim — keep them to real",
+    "option names only (the engine rejects anything it does not know)."
+  ],
+  "presets": {
+    "code": {
+      "compact": false,
+      "simplify": true,
+      "target": "node",
+      "seed": "soundwave-2026",
+      "identifierNamesGenerator": "hexadecimal",
+      "renameGlobals": false,
+      "renameProperties": false,
+      "stringArray": true,
+      "stringArrayThreshold": 1,
+      "stringArrayEncoding": ["rc4", "base64"],
+      "stringArrayRotate": true,
+      "stringArrayShuffle": true,
+      "numbersToExpressions": false,
+      "splitStrings": false,
+      "controlFlowFlattening": false,
+      "deadCodeInjection": false,
+      "transformObjectKeys": false,
+      "selfDefending": false,
+      "debugProtection": false,
+      "disableConsoleOutput": false,
+      "sourceMap": false
+    },
+    "bundle": {
+      "compact": true,
+      "simplify": false,
+      "target": "browser",
+      "seed": "soundwave-2026",
+      "identifierNamesGenerator": "hexadecimal",
+      "renameGlobals": false,
+      "renameProperties": false,
+      "stringArray": true,
+      "stringArrayThreshold": 1,
+      "stringArrayEncoding": ["base64"],
+      "stringArrayRotate": true,
+      "stringArrayShuffle": true,
+      "numbersToExpressions": false,
+      "splitStrings": false,
+      "controlFlowFlattening": false,
+      "deadCodeInjection": false,
+      "transformObjectKeys": false,
+      "selfDefending": false,
+      "debugProtection": false,
+      "disableConsoleOutput": false,
+      "sourceMap": false
+    }
+  },
+  "markers": [
+    {
+      "label": "the agent's system instruction (PC and phone)",
+      "file": "server/src/lib/brain/core/prompt.ts",
+      "phrase": "You are Soundwave, the AI assistant inside the Soundwave AI app on the user's PC."
+    },
+    {
+      "label": "the phone-alone instruction",
+      "file": "server/src/lib/brain/core/prompt.ts",
+      "phrase": "Right now the user's PC is off or out of reach, so you are answering from the Soundwave phone app on your own."
+    },
+    {
+      "label": "what the agent knows the app can really do (promo brief)",
+      "file": "server/src/lib/brain/core/promo.ts",
+      "phrase": "Never invent users, testimonials, download numbers, ratings or growth."
+    },
+    {
+      "label": "the short-script shape's own words",
+      "file": "server/src/lib/brain/core/viral.ts",
+      "phrase": "Every line is long. Add two short punch lines (under eight words) to break the rhythm"
+    },
+    {
+      "label": "the guide's alarms section",
+      "file": "server/src/lib/brain/core/guide.ts",
+      "phrase": "The agent can set an alarm on your Android phone."
+    },
+    {
+      "label": "the shell's tray wording",
+      "file": "desktop/src/main.js",
+      "phrase": "It keeps working in the tray. Right-click the tray icon to quit."
+    }
+  ]
+}
