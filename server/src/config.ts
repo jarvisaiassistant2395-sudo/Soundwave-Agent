@@ -52,7 +52,7 @@ export const config = {
   // writable user-data copy; the Windows launcher updates the vendored exe
   // itself. Empty/"off" = never self-update.
   ytDlpAutoUpdate: str("YTDLP_AUTO_UPDATE", ""),
-  // Voice cloning (OmniVoice sidecar — see voiceclone/). Empty = feature off.
+  // Voice cloning (Chatterbox sidecar — see voiceclone/). Empty = feature off.
   voiceCloneUrl: str("VOICECLONE_URL", ""),
   elevenLabsApiKey: str("ELEVENLABS_API_KEY", ""),
   // Shared secret for the sidecar — REQUIRED when VOICECLONE_URL is a public

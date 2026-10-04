@@ -8,7 +8,8 @@ import { ApiError } from "../middleware/error.js";
 import { synthesizeEdgeTTS } from "./edgeTts.js";
 
 // ── Multi-Engine Voice Cloning Architecture ────────────────────────────────
-// Supports OmniVoice sidecar, ElevenLabs API, and zero-setup Acoustic Neural Cloning.
+// Supports the Chatterbox sidecar (MIT weights — see voiceclone/README.md), the
+// ElevenLabs API, and zero-setup Acoustic Neural Cloning.
 // Cloned voices are owned per-user, stored under <dataDir>/voice-clips/<userId>/,
 // and work seamlessly across TTS Studio, Voice Library, and 1-Click Viral Shorts.
 
@@ -18,7 +19,7 @@ export interface CloneProfile {
   createdAt: string;
   hasRefText: boolean;
   sampleUrl?: string;
-  engine?: "acoustic" | "omnivoice" | "elevenlabs";
+  engine?: "acoustic" | "chatterbox" | "elevenlabs";
 }
 
 interface ProfileMeta extends CloneProfile {
@@ -48,6 +49,14 @@ class SidecarError extends Error {
     this.status = status;
   }
 }
+
+/**
+ * The cloning engine understood the request and refused it (HTTP 400) — a
+ * refusal, not an outage. Outages fall through to the fallback voice; a refusal
+ * must reach the caller with its own sentence, because answering in a different
+ * voice would be a lie about what was made.
+ */
+class CloneRefused extends Error {}
 
 async function sidecarFetch(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<Response> {
   const controller = new AbortController();
@@ -86,7 +95,7 @@ export function assertConfigured(): void {
     throw new ApiError(
       503,
       "VOICECLONE_NOT_CONFIGURED",
-      "Voice cloning isn't enabled on this server. Set VOICECLONE_URL to a running OmniVoice sidecar (see voiceclone/README.md).",
+      "Voice cloning isn't enabled on this server. Set VOICECLONE_URL to a running Chatterbox sidecar (see voiceclone/README.md).",
     );
   }
 }
@@ -157,7 +166,7 @@ export async function createCloneProfile(userId: string, input: {
   const isMale = /male|guy|deep|man|boy|father|ryan/i.test(input.name);
   const baseVoice = isMale ? "en-US-GuyNeural" : "en-US-JennyNeural";
   const pitchShift = 0;
-  const engine = config.voiceCloneUrl ? "omnivoice" : config.elevenLabsApiKey ? "elevenlabs" : "acoustic";
+  const engine = config.voiceCloneUrl ? "chatterbox" : config.elevenLabsApiKey ? "elevenlabs" : "acoustic";
 
   // Pre-generate a 3-second sample greeting so it can be previewed immediately in Voice Library
   const samplePath = path.join(userDir(userId), `${id}.sample.mp3`);
@@ -249,7 +258,7 @@ export async function synthesizeClone(userId: string, input: {
   const meta = await loadProfile(userId, input.profileId);
   const clipPath = path.join(userDir(userId), `${meta.id}${meta.ext}`);
 
-  // 1. OmniVoice sidecar (if running & reachable)
+  // 1. Chatterbox sidecar (if running & reachable)
   if (config.voiceCloneUrl && (await probeVoiceClone())) {
     try {
       const clip = await fsp.readFile(clipPath);
@@ -260,6 +269,21 @@ export async function synthesizeClone(userId: string, input: {
       if (input.speed != null) fd.append("speed", String(input.speed));
 
       const res = await sidecarFetch("/clone/ephemeral", { method: "POST", body: fd }, config.voiceCloneTimeoutMs);
+      if (res.status === 400) {
+        // A refusal is not an outage: the sidecar understood the request and
+        // said no (e.g. a speed change, which the cloning model has no knob
+        // for). Falling through to the fallback engine here would silently
+        // answer in a *different* voice — tell the caller instead.
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        let detail = "";
+        try {
+          const parsed = JSON.parse(body) as { detail?: string };
+          detail = typeof parsed?.detail === "string" ? parsed.detail : "";
+        } catch {
+          detail = body;
+        }
+        throw new CloneRefused(detail || "The voice-cloning engine refused this request.");
+      }
       if (res.ok) {
         const wav = Buffer.from(await res.arrayBuffer());
         const headerDuration = parseFloat(res.headers.get("x-audio-duration") ?? "0");
@@ -272,8 +296,10 @@ export async function synthesizeClone(userId: string, input: {
           wordTimings: estimateWordTimings(input.text, duration),
         };
       }
-    } catch {
-      // Fall through to acoustic neural synthesizer
+    } catch (err) {
+      if (err instanceof CloneRefused) throw err;
+      // Anything else (sidecar down, unreachable, timed out, 5xx): fall through
+      // to the fallback engine, exactly as before.
     }
   }
 

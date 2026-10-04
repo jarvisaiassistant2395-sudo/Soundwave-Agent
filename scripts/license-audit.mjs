@@ -1,0 +1,261 @@
+#!/usr/bin/env node
+// ── Ship-licence audit: what we may and may not put in the installer ────────
+// This is the tripwire the 2026-10-04 licence review asked for. It answers two
+// questions every build, from the real dependency trees rather than from memory:
+//
+//   1. Does anything we ship carry a licence we cannot ship? Copyleft that would
+//      infect our closed source (GPL/AGPL/SSPL/BUSL), or a non-commercial
+//      licence (CC-BY-NC, CPML) — the trap OmniVoice's *weights* turned out to
+//      be, and the reason cloned voices now run on MIT-licensed Chatterbox.
+//   2. What exactly are we shipping, so THIRD-PARTY-NOTICES.txt is generated
+//      from the tree instead of being written by hand and going stale.
+//
+//   node scripts/license-audit.mjs                    # check only (CI default)
+//   node scripts/license-audit.mjs --write             # check, and refresh the notices
+//   node scripts/license-audit.mjs --write --out FILE  # …into a file of your choosing (tests)
+//
+// Binaries (ffmpeg, yt-dlp, whisper.cpp) and the Python sidecar are listed
+// explicitly because they are not npm packages: their licences are facts about
+// the *builds* we fetch, verified against the vendors' own pages.
+//
+// Exit code 1 on any denied licence; unknown licences are reported loudly but do
+// not fail the build, so a new dependency can't slip in silently and can't block
+// a release for a missing convenience field either.
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const write = process.argv.includes("--write");
+const outArg = process.argv.indexOf("--out");
+const outPath = outArg >= 0 && process.argv[outArg + 1] ? path.resolve(process.argv[outArg + 1]) : null;
+
+/** Licences we are happy to ship (permissive, or public-domain-equivalent). */
+const ALLOWED = new Map(
+  [
+    "MIT",
+    "ISC",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+    "Python-2.0",
+    "BlueOak-1.0.0",
+    "Zlib",
+    "X11",
+    "WTFPL",
+    "MIT-0",
+    "CC-BY-4.0",
+    "Artistic-2.0",
+    "OFL-1.1",
+    "MPL-2.0",
+  ].map((l) => [l, l]),
+);
+
+/** Licences we cannot ship in a proprietary product. */
+const DENIED = [
+  { test: /(^|\W)(A?GPL|LGPL)/i, why: "copyleft — would force our closed source open" },
+  { test: /SSPL/i, why: "SSPL is not open source and forbids our use" },
+  { test: /(BUSL|BSL-1\.1|FSL)/i, why: "source-available, not open source (Business/Functional Source Licence)" },
+  { test: /CC-BY-NC/i, why: "non-commercial — cannot be sold" },
+  { test: /CC-BY-ND/i, why: "no-derivatives" },
+  { test: /CPML/i, why: "Coqui Public Model Licence — non-commercial for models" },
+  { test: /Elastic/i, why: "Elastic Licence 2.0 is not open source" },
+  { test: /Commons-Clause/i, why: "Commons Clause removes the right to sell" },
+  { test: /CC-BY-NC-SA/i, why: "non-commercial" },
+  { test: /\b(UNLICENSED|SEE LICENCE IN|SEE LICENSE IN)/i, why: "no licence granted — check before shipping" },
+];
+
+/** Binaries and other non-npm payloads, with the licence facts behind them. */
+const BINARIES = [
+  {
+    name: "FFmpeg (Windows static build, gyan.dev 'release essentials')",
+    licence: "GPL-3.0-or-later",
+    note: "Bundled as a separate program (mere aggregation): it does not affect our licence, but GPLv3 requires the licence text and a written source offer to ship with it — see desktop/bin/FFMPEG-LICENSE.txt and desktop/bin/FFMPEG-SOURCE-OFFER.txt.",
+    allowed: true,
+  },
+  {
+    name: "yt-dlp",
+    licence: "Unlicense",
+    note: "Public domain. Used for the YouTube paths the user asks for.",
+    allowed: true,
+  },
+  {
+    name: "whisper.cpp + ggml",
+    licence: "MIT",
+    note: "The local speech engine (voice input, the wake word). Its licence ships as desktop/bin/whisper/LICENSE-whisper.cpp.txt.",
+    allowed: true,
+  },
+];
+
+/** The Python sidecar. Not an npm tree, so its direct dependencies are listed. */
+const PYTHON = [
+  { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", note: "Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights)." },
+  { name: "FastAPI", licence: "MIT" },
+  { name: "Uvicorn", licence: "BSD-3-Clause" },
+  { name: "python-multipart", licence: "Apache-2.0" },
+  { name: "soundfile", licence: "BSD-3-Clause" },
+  { name: "numpy", licence: "BSD-3-Clause" },
+  { name: "PyTorch", licence: "BSD-3-Clause" },
+];
+
+function licenceOf(pkg) {
+  const l = pkg?.license;
+  if (typeof l === "string") return l;
+  if (l && typeof l === "object" && typeof l.type === "string") return l.type;
+  if (Array.isArray(pkg?.licenses)) {
+    const names = pkg.licenses.map((x) => (typeof x === "string" ? x : x?.type)).filter(Boolean);
+    if (names.length) return names.join(" OR ");
+  }
+  if (typeof pkg?.licence === "string") return pkg.licence;
+  return null;
+}
+
+/** Every package physically present in a tree's node_modules (flat install). */
+function packagesIn(modulesDir) {
+  if (!fs.existsSync(modulesDir)) return [];
+  const found = [];
+  const add = (dir, name) => {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+      found.push({ name: pkg.name ?? name, version: pkg.version ?? "?", licence: licenceOf(pkg), private: pkg.private === true });
+    } catch {
+      /* not a package */
+    }
+  };
+  for (const entry of fs.readdirSync(modulesDir)) {
+    if (entry.startsWith(".")) continue;
+    const dir = path.join(modulesDir, entry);
+    if (entry.startsWith("@")) {
+      for (const scoped of fs.readdirSync(dir)) add(path.join(dir, scoped), `${entry}/${scoped}`);
+    } else {
+      add(dir, entry);
+    }
+  }
+  return found;
+}
+
+function verdict(licence) {
+  if (!licence) return { level: "unknown", why: "no licence field in package.json" };
+  for (const rule of DENIED) if (rule.test.test(licence)) return { level: "denied", why: rule.why };
+  const cleaned = licence.replace(/[()]/g, " ").trim();
+  for (const known of ALLOWED.keys()) if (new RegExp(`(^|\\W)${known.replace(/[.+]/g, "\\$&")}($|\\W)`, "i").test(cleaned)) return { level: "ok", why: known };
+  if (/ OR /i.test(cleaned)) {
+    const parts = cleaned.split(/\s+OR\s+/i);
+    if (parts.some((p) => [...ALLOWED.keys()].some((k) => new RegExp(`(^|\\W)${k.replace(/[.+]/g, "\\$&")}($|\\W)`, "i").test(p)))) return { level: "ok", why: cleaned };
+  }
+  return { level: "unknown", why: `not on the known-permissive list (“${licence}”)` };
+}
+
+function collectAppDeps(appDir, onlyShipped) {
+  if (!fs.existsSync(path.join(appDir, "node_modules"))) {
+    console.warn(`[licences] ${path.relative(repoRoot, appDir)}/node_modules is missing — run \`npm ci\` there to audit its dependencies`);
+    return [];
+  }
+  const pkg = JSON.parse(fs.readFileSync(path.join(appDir, "package.json"), "utf8"));
+  const shipped = new Set(Object.keys({ ...(pkg.dependencies ?? {}), ...(pkg.optionalDependencies ?? {}) }));
+  const dev = new Set(Object.keys(pkg.devDependencies ?? {}));
+  const all = packagesIn(path.join(appDir, "node_modules"));
+  return all.filter((p) => (onlyShipped ? shipped.has(p.name) : true)).map((p) => ({ ...p, devOnly: !onlyShipped && dev.has(p.name) && !shipped.has(p.name) }));
+}
+
+// ── Report ──────────────────────────────────────────────────────────────────
+const denied = [];
+const unknown = [];
+const lines = [];
+const today = new Date().toISOString().slice(0, 10);
+
+lines.push("THIRD-PARTY NOTICES — Soundwave AI");
+lines.push("=".repeat(60));
+lines.push("");
+lines.push(`Generated by scripts/license-audit.mjs on ${today}. Do not edit by hand:`);
+lines.push("run `node scripts/license-audit.mjs --write` instead. Full licence texts live in");
+lines.push("each package's own folder and (for the bundled programs) next to the binary.");
+lines.push("");
+lines.push("Soundwave AI's own code is proprietary: Copyright © 2026 Soundwave AI, all rights");
+lines.push("reserved. It ships with the third-party components below, each under its own");
+lines.push("licence, without affecting the terms of the others.");
+lines.push("");
+
+const sections = [
+  {
+    title: "Programs bundled next to the app (not libraries — they are run as separate programs)",
+    entries: BINARIES.map((b) => ({ name: b.name, version: "", licence: b.licence, note: b.note, separateProgram: true })),
+  },
+  {
+    title: "Backend (server/) — production dependencies",
+    entries: collectAppDeps(path.join(repoRoot, "server"), true).map((p) => ({ ...p, note: "" })),
+  },
+  {
+    title: "Frontend (frontend/) — everything in the built bundle",
+    entries: collectAppDeps(path.join(repoRoot, "frontend"), false).map((p) => ({ ...p, note: "" })),
+  },
+  {
+    title: "Phone app (mobile/) — everything in the APK",
+    entries: collectAppDeps(path.join(repoRoot, "mobile"), false).map((p) => ({ ...p, note: "" })),
+  },
+  {
+    title: "Voice-clone sidecar (voiceclone/) — Python",
+    entries: PYTHON.map((p) => ({ name: p.name, version: "", licence: p.licence, note: p.note ?? "" })),
+  },
+];
+
+for (const section of sections) {
+  lines.push(section.title);
+  lines.push("-".repeat(60));
+  const seen = new Set();
+  for (const entry of section.entries.sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
+    const key = `${entry.name}@${entry.version}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // A separate program with its own licence text + written offer is not the
+    // same thing as a copyleft *library* inside our code: skip the deny rule,
+    // but still list it, and check the paper trail below.
+    const check = entry.separateProgram ? { level: "ok", why: "separate program" } : verdict(entry.licence);
+    if (check.level === "denied") denied.push({ ...entry, why: check.why });
+    else if (check.level === "unknown") unknown.push({ ...entry, why: check.why });
+    const label = entry.version ? `${entry.name} ${entry.version}` : entry.name;
+    lines.push(`• ${label} — ${entry.licence ?? "licence not stated"}${entry.devOnly ? " (development only)" : ""}`);
+    if (entry.note) lines.push(`    ${entry.note}`);
+  }
+  lines.push("");
+}
+
+// ── The paper that has to travel with a bundled GPL program ─────────────────
+const binDir = path.join(repoRoot, "desktop", "bin");
+const hasFfmpegBinary = ["ffmpeg.exe", "ffmpeg"].some((f) => fs.existsSync(path.join(binDir, f)));
+const requiredWithBinary = ["FFMPEG-LICENSE.txt", "FFMPEG-SOURCE-OFFER.txt"];
+if (hasFfmpegBinary) {
+  const missing = requiredWithBinary.filter((f) => !fs.existsSync(path.join(binDir, f)));
+  if (missing.length) {
+    console.error(`[licences] REFUSING: ffmpeg is in desktop/bin but ${missing.join(", ")} is missing there.`);
+    console.error("  GPLv3 requires the licence text and a written source offer to ship with the binary.");
+    console.error("  Run `node desktop/assemble.mjs` (it writes both) or the packaging step that fetches ffmpeg.");
+    process.exit(1);
+  }
+  console.log("[licences] ffmpeg ships with its licence text and written source offer");
+} else {
+  console.log("[licences] no ffmpeg in desktop/bin yet (source checkout) — the packaging step writes its licence files");
+}
+
+const noticesPath = outPath ?? path.join(repoRoot, "THIRD-PARTY-NOTICES.txt");
+if (write) {
+  fs.writeFileSync(noticesPath, lines.join("\n") + "\n");
+  console.log(`[licences] wrote ${path.relative(repoRoot, noticesPath)} (${sections.reduce((n, s) => n + s.entries.length, 0)} entries)`);
+}
+
+console.log(`[licences] checked ${sections.reduce((n, s) => n + s.entries.length, 0)} shipped components`);
+if (unknown.length) {
+  console.warn(`[licences] ${unknown.length} component(s) with a licence that isn't on the known-permissive list:`);
+  for (const u of unknown.slice(0, 15)) console.warn(`  - ${u.name}${u.version ? ` ${u.version}` : ""}: ${u.why}`);
+  console.warn("  (not a failure — but check them before shipping, and add to ALLOWED if they're fine)");
+}
+if (denied.length) {
+  console.error(`[licences] REFUSING: ${denied.length} component(s) cannot be shipped in a proprietary product:`);
+  for (const d of denied) console.error(`  - ${d.name}${d.version ? ` ${d.version}` : ""} — ${d.licence} (${d.why})`);
+  process.exit(1);
+}
+console.log("[licences] every shipped component is under a licence we can ship");

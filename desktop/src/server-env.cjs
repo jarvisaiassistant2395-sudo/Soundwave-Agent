@@ -126,7 +126,6 @@ function loadYouTubeClient(appRoot, userDataDir = null) {
  *   appRoot/
  *     server/        package.json, dist/, node_modules/   (assembled)
  *     frontend/dist/ built SPA served at WEB_DIST
- *     scripts/assets bundled static assets (music, …)
  *   binDir/
  *     ffmpeg.exe, yt-dlp.exe                              (runtime binaries)
  *     whisper/whisper-cli.exe + DLLs + ggml-*.bin         (voice input)

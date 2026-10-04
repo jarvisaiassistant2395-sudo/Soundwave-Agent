@@ -76,6 +76,13 @@ jobs:
           npm run typecheck
           npm test
 
+      # The APK bundles the shared agent core (and, in phone-alone mode, the
+      # packaged server), so the same licence gate runs here: nothing copyleft,
+      # nothing non-commercial, no bundled program without its licence text.
+      - name: Audit the licences of everything in the APK
+        working-directory: mobile
+        run: node ../scripts/license-audit.mjs
+
       - name: Build the app page and copy it into the Android project
         working-directory: mobile
         run: |

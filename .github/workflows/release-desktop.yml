@@ -20,7 +20,6 @@ on:
       - "server/**"
       - "frontend/**"
       - "desktop/**"
-      - "scripts/assets/**"
       - ".github/workflows/release-desktop.yml"
   workflow_dispatch:
 
@@ -219,6 +218,13 @@ jobs:
           @{ client_id = $env:YT_CLIENT_ID; client_secret = $env:YT_CLIENT_SECRET } |
             ConvertTo-Json | Set-Content -Encoding utf8 desktop/config/youtube-client.json
           Write-Host "Baked Soundwave's own Google client: Connect YouTube is one press in this build."
+
+      # The build refuses to ship a component it may not ship (copyleft inside our
+      # code, a non-commercial model or asset, a bundled program without its
+      # licence text), and refreshes THIRD-PARTY-NOTICES.txt from the real trees
+      # rather than from anyone's memory. See scripts/license-audit.mjs.
+      - name: Audit the licences of everything in the installer
+        run: node scripts/license-audit.mjs --write
 
       - name: Assemble packaged app
         working-directory: desktop

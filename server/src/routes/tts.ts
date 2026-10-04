@@ -112,7 +112,7 @@ router.post("/synthesize", requireAuth, usageLimiter, validate({ body: synthesiz
   }
 });
 
-// ── Voice cloning (OmniVoice sidecar) ───────────────────────────────────────
+// ── Voice cloning (Chatterbox sidecar) ──────────────────────────────────────
 // Cloned voices are owned per-user by THIS API (reference clips stored under
 // <dataDir>/voice-clips/<userId>/); the sidecar itself stays stateless so it
 // can run on ephemeral free hosting. Everything degrades gracefully when

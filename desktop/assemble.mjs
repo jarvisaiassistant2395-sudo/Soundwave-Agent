@@ -8,7 +8,6 @@
 //   app/
 //     server/         package.json + package-lock.json + dist/ + prod node_modules/
 //     frontend/dist/  built SPA
-//     scripts/assets/ bundled static assets (music)
 //     config/         youtube-client.json, when the build ships one (one-click
 //                     "Connect YouTube"; gitignored, CI writes it from a secret)
 //
@@ -17,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeBinaryLicenses } from "../scripts/write-binary-licenses.mjs";
 import { execFileSync } from "node:child_process";
 import { obfuscateTree, verifyShipped, verifySources } from "./protect.mjs";
 import JavaScriptObfuscator from "javascript-obfuscator";
@@ -35,7 +35,6 @@ function need(p, hint) {
 need(path.join(repoRoot, "server", "dist", "index.js"), "run: cd server && npm ci && npm run build");
 need(path.join(repoRoot, "server", "package-lock.json"), "server lockfile required for npm ci");
 need(path.join(repoRoot, "frontend", "dist", "index.html"), "run: cd frontend && npm ci && npm run build");
-need(path.join(repoRoot, "scripts", "assets"), "bundled assets folder missing");
 
 console.log("[assemble] cleaning stage …");
 fs.rmSync(stage, { recursive: true, force: true });
@@ -80,10 +79,29 @@ fs.cpSync(path.join(repoRoot, "frontend", "dist"), path.join(stage, "frontend", 
   recursive: true,
 });
 
-console.log("[assemble] scripts/assets …");
-fs.cpSync(path.join(repoRoot, "scripts", "assets"), path.join(stage, "scripts", "assets"), {
-  recursive: true,
-});
+// ── Bundled programs: their licences ship next to them ─────────────────────
+// ffmpeg is a separate program (mere aggregation — it does not touch our
+// licence), but GPLv3 still requires its licence text and a written offer of
+// source to travel with it. Writing them here means every build carries them,
+// however the binary got into bin/.
+// The generated third-party notices travel with the app, next to the frontend.
+const notices = path.join(repoRoot, "THIRD-PARTY-NOTICES.txt");
+if (fs.existsSync(notices)) {
+  console.log("[assemble] THIRD-PARTY-NOTICES.txt …");
+  fs.copyFileSync(notices, path.join(stage, "THIRD-PARTY-NOTICES.txt"));
+} else {
+  console.warn("[assemble] ⚠ THIRD-PARTY-NOTICES.txt is missing — run: node scripts/license-audit.mjs --write");
+  process.exitCode = 1;
+}
+
+console.log("[assemble] bundled-program licences …");
+try {
+  const written = writeBinaryLicenses(path.join(desktopDir, "bin"));
+  for (const file of written) console.log(`[assemble]   ${path.basename(file)}`);
+} catch (err) {
+  console.error(`[assemble] ⚠ ${err.message}`);
+  process.exitCode = 1;
+}
 
 // ── Protection: the last writer of these trees before they are packed ──────
 // Everything above copied readable code into desktop/app; from here on the

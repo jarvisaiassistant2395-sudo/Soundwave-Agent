@@ -1,7 +1,8 @@
-# OmniVoice voice-clone sidecar dependencies.
+# Chatterbox voice-clone sidecar dependencies.
 # IMPORTANT: install PyTorch for your hardware FIRST (see README.md), then
-# install this file — `omnivoice` will reuse the torch you already have.
-omnivoice
+# install this file — `chatterbox-tts` will reuse the torch you already have.
+# Chatterbox is MIT-licensed, code AND weights (github.com/resemble-ai/chatterbox).
+chatterbox-tts
 fastapi
 uvicorn[standard]
 python-multipart

@@ -2,7 +2,7 @@
 
 **Autonomous, high-retention vertical video (Shorts, TikTok, Reels) generator and voice assistant.**
 
-100% original, clean-room implementation. Commercial-grade and ready to sell with full commercial rights under the MIT License.
+100% original, clean-room implementation. Part of the Soundwave AI product: Copyright © 2026 Soundwave AI, all rights reserved — the code is not licensed for redistribution or reuse outside this product. (The MIT text that used to sit in this folder granted away exactly the rights `docs/PROTECTING_THE_CODE.md` exists to keep; it is gone.)
 
 ---
 

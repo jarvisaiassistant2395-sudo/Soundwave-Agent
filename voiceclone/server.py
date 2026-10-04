@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """
-OmniVoice sidecar for Soundwave AI.
+Chatterbox voice-clone sidecar for Soundwave AI.
 
-Loads the OmniVoice voice-cloning model once and exposes a small JSON API the
-Node backend proxies to:
+Loads Resemble AI's Chatterbox voice-cloning model once and exposes a small JSON
+API the Node backend proxies to.
+
+Why this model and not the obvious alternatives: Chatterbox is MIT-licensed
+**including the pre-trained weights** (github.com/resemble-ai/chatterbox,
+verified 2026-10-04), so cloned voices can legally be sold. OmniVoice, which
+this sidecar used before, has Apache-2.0 *code* but CC-BY-NC *weights* — the
+maintainers confirmed on the model card that they "can't be used commercially"
+(training data such as WenetSpeech-Yue and part of Emilia is non-commercial).
+X(TTS v2), F5-TTS and Higgs Audio are non-commercial for the same reason; Piper's
+current fork is GPL-3.0. Nothing here may be swapped for one of those without
+this paragraph changing first.
 
     GET  /health                  → { ok, model_loaded, device, mock }
     GET  /profiles                → saved cloned voices
     POST /profiles                → create a cloned voice from a reference clip
                                     (multipart: file + name + optional refText)
     DELETE /profiles/{id}         → remove a cloned voice
-    POST /clone                   → { text, profileId, speed?, numStep? } → WAV
+    POST /clone                   → { text, profileId, speed? } → WAV
                                     (+ X-Audio-Duration header, seconds)
 
-Set OMNIVOICE_MOCK=1 to run without the model (sine-wave output) — used for
+Set CHATTERBOX_MOCK=1 to run without the model (sine-wave output) — used for
 development/testing the plumbing without downloading multi-GB weights.
 """
 
@@ -32,11 +42,17 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 # ── Config ───────────────────────────────────────────────────────────────────
-MODEL_NAME = os.environ.get("OMNIVOICE_MODEL", "k2-fsa/OmniVoice")
-DEVICE = os.environ.get("OMNIVOICE_DEVICE", "cpu")  # cpu | cuda:0 | mps | xpu
-DTYPE = os.environ.get("OMNIVOICE_DTYPE", "float16" if DEVICE != "cpu" else "float32")
-MOCK = os.environ.get("OMNIVOICE_MOCK", "").lower() in ("1", "true", "yes")
-SAMPLE_RATE = 24_000
+# Chatterbox v1 (English) — MIT code and MIT weights. `nano=1` uses the smaller
+# Turbo/Nano model, which is designed to run on CPU.
+CHATTERBOX_NANO = os.environ.get("CHATTERBOX_NANO", "").lower() in ("1", "true", "yes")
+DEVICE = os.environ.get("CHATTERBOX_DEVICE", "cpu")  # cpu | cuda:0 | mps | xpu
+MOCK = os.environ.get("CHATTERBOX_MOCK", "").lower() in ("1", "true", "yes")
+# Emotion dial (0 = flat, 1 = excited) and how strongly the reference clip is
+# followed. Chatterbox's own defaults; env-tunable for a particular voice.
+EXAGGERATION = float(os.environ.get("CHATTERBOX_EXAGGERATION", "0.5"))
+CFG_WEIGHT = float(os.environ.get("CHATTERBOX_CFG_WEIGHT", "0.5"))
+# Fallback sample rate until the model is loaded (Chatterbox v1 outputs 24 kHz).
+DEFAULT_SAMPLE_RATE = 24_000
 
 PROFILES_DIR = Path(os.environ.get("VOICECLONE_PROFILES_DIR", Path(__file__).parent / "profiles"))
 PROFILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -47,38 +63,55 @@ model = None
 model_lock = threading.Lock()
 
 if not MOCK:
-    print(f"[voiceclone] loading OmniVoice model {MODEL_NAME} on {DEVICE} ({DTYPE}) — this can take a minute…", flush=True)
+    print(f"[voiceclone] loading Chatterbox on {DEVICE}{' (nano)' if CHATTERBOX_NANO else ''} — this can take a minute…", flush=True)
     try:
-        import torch
+        if CHATTERBOX_NANO:
+            from chatterbox.tts_turbo import ChatterboxTurboTTS as ModelClass
+        else:
+            from chatterbox.tts import ChatterboxTTS as ModelClass
 
-        from omnivoice import OmniVoice
-
-        dtype = getattr(torch, DTYPE.replace("torch.", ""), torch.float32)
-        model = OmniVoice.from_pretrained(MODEL_NAME, device_map=DEVICE, dtype=dtype)
-        print("[voiceclone] model ready", flush=True)
+        model = ModelClass.from_pretrained(device=DEVICE, nano=True) if CHATTERBOX_NANO else ModelClass.from_pretrained(device=DEVICE)
+        print(f"[voiceclone] model ready ({getattr(model, 'sr', DEFAULT_SAMPLE_RATE)} Hz)", flush=True)
     except Exception as e:  # noqa: BLE001 — surface a clean startup failure
-        print(f"[voiceclone] FATAL: failed to load OmniVoice: {e}", flush=True)
+        print(f"[voiceclone] FATAL: failed to load Chatterbox: {e}", flush=True)
         raise
 
-
-def _build_prompt(ref_path: Path, ref_text: str | None):
-    """Create a VoiceClonePrompt from a reference clip (Whisper ASR when no transcript)."""
-    with model_lock:
-        return model.create_voice_clone_prompt(
-            ref_audio=str(ref_path),
-            **({"ref_text": ref_text} if ref_text and ref_text.strip() else {}),
-        )
+SAMPLE_RATE = int(getattr(model, "sr", DEFAULT_SAMPLE_RATE)) if not MOCK else DEFAULT_SAMPLE_RATE
 
 
-def _render(req: "CloneRequest", prompt) -> "tuple[bytes, float]":
-    kwargs: dict = {"voice_clone_prompt": prompt}
-    if req.speed is not None:
-        kwargs["speed"] = req.speed
-    if req.numStep is not None:
-        kwargs["num_step"] = req.numStep
+def _reference_audio_ok(ref_path: Path) -> None:
+    """Refuse a clip the model can't read, now rather than at first synthesis.
+
+    Chatterbox conditions on the reference clip itself (`audio_prompt_path`), so
+    there is nothing to precompute and store — only this check, so a broken
+    upload is caught while the person is still looking at the form.
+    """
+    import torchaudio
+
+    try:
+        info = torchaudio.info(str(ref_path))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"That reference clip couldn't be read: {e}") from e
+    seconds = info.num_frames / max(1, info.sample_rate)
+    if seconds < 2:
+        raise HTTPException(400, "The reference clip is too short — use 3–10 seconds of clean speech.")
+    if seconds > 60:
+        raise HTTPException(400, "The reference clip is too long — use 3–10 seconds of clean speech.")
+
+
+def _render(req: "CloneRequest", ref_path: Path) -> "tuple[bytes, float]":
+    if req.speed is not None and abs(req.speed - 1.0) > 1e-6:
+        # Chatterbox has no speed control (OmniVoice did). The narration engine
+        # does — say where it works instead of quietly ignoring the request.
+        raise HTTPException(400, "Cloned voices don't support a speed change — set the speed on the narration voice instead.")
     try:
         with model_lock:
-            audio = model.generate(text=req.text, **kwargs)
+            audio = model.generate(
+                text=req.text,
+                audio_prompt_path=str(ref_path),
+                exaggeration=EXAGGERATION,
+                cfg_weight=CFG_WEIGHT,
+            )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Generation failed: {e}") from e
     samples = audio[0]
@@ -121,6 +154,15 @@ def _write_index(items: list[dict]) -> None:
         INDEX_PATH.write_text(json.dumps(items, indent=2), encoding="utf-8")
 
 
+def _stored_reference(profile_id: str) -> Path:
+    """The reference clip saved for this profile (it is what the model clones)."""
+    for ext in (".wav", ".mp3", ".flac", ".ogg", ".m4a"):
+        path = PROFILES_DIR / f"{profile_id}.ref{ext}"
+        if path.exists():
+            return path
+    raise HTTPException(404, "This voice's reference clip is missing — recreate the profile.")
+
+
 def _get_profile(profile_id: str) -> dict | None:
     if not profile_id or any(c not in "0123456789abcdef-" for c in profile_id):
         return None
@@ -161,20 +203,19 @@ async def create_profile(
 
     profile_id = str(uuid.uuid4())
     ref_path = PROFILES_DIR / f"{profile_id}.ref{_ext_for(file.filename)}"
-    prompt_path = PROFILES_DIR / f"{profile_id}.pt"
     ref_path.write_bytes(data)
 
-    if MOCK:
-        prompt_path.write_bytes(b"mock-prompt")
-    else:
+    if not MOCK:
+        # The clip itself is what the model conditions on, so make sure it is
+        # readable and the right length before the profile exists.
         try:
-            _build_prompt(ref_path, refText).save(str(prompt_path))
+            _reference_audio_ok(ref_path)
         except HTTPException:
             ref_path.unlink(missing_ok=True)
             raise
         except Exception as e:  # noqa: BLE001
             ref_path.unlink(missing_ok=True)
-            raise HTTPException(500, f"Failed to clone this reference clip: {e}") from e
+            raise HTTPException(500, f"Failed to read this reference clip: {e}") from e
 
     entry = {
         "id": profile_id,
@@ -193,7 +234,7 @@ def delete_profile(profile_id: str) -> dict:
     if _get_profile(profile_id) is None:
         raise HTTPException(404, "Voice profile not found.")
     _write_index([p for p in _read_index() if p["id"] != profile_id])
-    for suffix in (".pt", ".ref.wav", ".ref.mp3", ".ref.flac", ".ref.ogg", ".ref.m4a"):
+    for suffix in (".ref.wav", ".ref.mp3", ".ref.flac", ".ref.ogg", ".ref.m4a"):
         (PROFILES_DIR / f"{profile_id}{suffix}").unlink(missing_ok=True)
     return {"ok": True}
 
@@ -201,8 +242,9 @@ def delete_profile(profile_id: str) -> dict:
 class CloneRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10_000)
     profileId: str = Field(min_length=1, max_length=64)
+    # Kept in the schema because the Node API's contract has it; only 1.0 is
+    # accepted (see _render).
     speed: float | None = Field(default=None, ge=0.5, le=2.0)
-    numStep: int | None = Field(default=None, ge=4, le=64)
 
 
 @app.post("/clone", dependencies=[Depends(require_token)])
@@ -214,12 +256,8 @@ def clone(req: CloneRequest) -> Response:
     if MOCK:
         wav, duration = _mock_wav(req.text)
     else:
-        from omnivoice import VoiceClonePrompt
-
-        prompt_path = PROFILES_DIR / f"{req.profileId}.pt"
-        if not prompt_path.exists():
-            raise HTTPException(404, "Voice prompt file is missing — recreate this profile.")
-        wav, duration = _render(req, VoiceClonePrompt.load(str(prompt_path)))
+        ref_path = _stored_reference(req.profileId)
+        wav, duration = _render(req, ref_path)
     return _wav_response(wav, duration)
 
 
@@ -233,7 +271,6 @@ async def clone_ephemeral(
     text: str = Form(...),
     refText: str | None = Form(None),
     speed: float | None = Form(None),
-    numStep: int | None = Form(None),
 ) -> Response:
     if not text or len(text) > 10_000:
         raise HTTPException(400, "Text is required (max 10,000 chars).")
@@ -250,13 +287,14 @@ async def clone_ephemeral(
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(data)
+            if not MOCK:
+                _reference_audio_ok(Path(tmp))
             req = CloneRequest(
                 text=text,
                 profileId="ephemeral",
                 speed=speed if speed is None else min(2.0, max(0.5, speed)),
-                numStep=numStep if numStep is None else min(64, max(4, numStep)),
             )
-            wav, duration = _render(req, _build_prompt(Path(tmp), refText))
+            wav, duration = _render(req, Path(tmp))
         except HTTPException:
             raise
         except Exception as e:  # noqa: BLE001

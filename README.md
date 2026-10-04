@@ -350,7 +350,7 @@ soundwave-ai/
 │   ├── prisma/schema.prisma
 │   └── scripts/generate-samples.ts
 ├── deploy/              # Dockerfile.api, nginx.conf
-├── voiceclone/          # optional OmniVoice voice-cloning sidecar (see its README)
+├── voiceclone/          # optional Chatterbox voice-cloning sidecar (see its README)
 ├── docker-compose.yml
 └── vendor/              # static ffmpeg (export) + yt-dlp zipapp (YouTube import); whisper/ (voice input, git-ignored)
 ```
@@ -592,13 +592,20 @@ OAuth identity; new OAuth users are created email-verified with no password.
 | Weather (Open-Meteo) | unreachable / no city | Morning Setup leaves the weather out and says why (`OPEN_METEO_GEOCODING_URL` / `OPEN_METEO_FORECAST_URL` point tests at a stand-in) |
 | YouTube | not linked | Morning Setup skips the channel numbers; posting buttons ask you to link it (`GOOGLE_OAUTH_*_URL` / `YOUTUBE_API_BASE` point tests at stand-ins) |
 
-### Voice cloning (OmniVoice)
+### Voice cloning (Chatterbox)
 
 An optional sidecar in [`voiceclone/`](voiceclone/README.md) runs
-[OmniVoice](https://github.com/k2-fsa/OmniVoice) (zero-shot voice cloning,
-600+ languages) next to the app. It is API-only (`/api/v1/tts/clone*`): the
-app no longer has a voiceover page — the agent is the only thing that makes
-videos, and it narrates with the Soundwave voices.
+[Chatterbox](https://github.com/resemble-ai/chatterbox) (Resemble AI's zero-shot
+voice cloning) next to the app. It is API-only (`/api/v1/tts/clone*`): the app
+no longer has a voiceover page — the agent is the only thing that makes videos,
+and it narrates with the Soundwave voices.
+
+**Why Chatterbox:** its license is MIT for the code *and the pre-trained
+weights*, so cloned voices can lawfully be offered on paid plans. The model this
+replaced (OmniVoice) has Apache-2.0 code but CC-BY-NC weights — the maintainers
+confirm on the model card that the pre-trained model "can't be used
+commercially" — which is why it was removed on 2026-10-04. Do not substitute
+XTTS v2 (Coqui CPML), F5-TTS (CC-BY-NC-4.0), Higgs Audio or Piper's GPL-3.0 fork.
 
 - **Multi-user safe.** Cloned voices are owned per-user by this API (reference
   clips under `<dataDir>/voice-clips/<userId>/`); the sidecar is stateless and
@@ -614,11 +621,38 @@ videos, and it narrates with the Soundwave voices.
   paying tiers.
 
 The Node API proxies it under `/api/v1/tts/clone*`: quota accounting and auth
-are identical to `/tts/synthesize`. OmniVoice doesn't emit word timings, so
+are identical to `/tts/synthesize`. Chatterbox doesn't emit word timings, so
 the API derives weighted per-word estimates from the text + audio duration,
-which keeps subtitle auto-cueing working.
+which keeps subtitle auto-cueing working. Chatterbox has no speed knob either:
+a cloned-voice request asking for a speed other than 1.0 is refused with a
+sentence saying speed belongs to the narration voice.
 
 ---
+
+### Licences and third-party components
+
+Soundwave AI's own code is proprietary (Copyright © 2026 Soundwave AI, all rights
+reserved). Everything bundled with it is listed, with its licence, in
+[`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt) — generated from the real
+dependency trees by [`scripts/license-audit.mjs`](scripts/license-audit.mjs),
+which both build workflows run and which **fails the build** on anything
+copyleft inside our code or non-commercial outright.
+
+- **ffmpeg** (gyan.dev static Windows build) is GPLv3. It ships as a separate
+  program, which does not affect our licence, and the installer carries its
+  licence text and a written offer of corresponding source
+  (`desktop/bin/FFMPEG-LICENSE.txt`, `FFMPEG-SOURCE-OFFER.txt`, written on every
+  packaging run).
+- **whisper.cpp** (MIT) does the local speech recognition; **yt-dlp** (Unlicense)
+  does the YouTube imports.
+- A licence review on 2026-10-04 removed three things from this repo that had no
+  business being in a product for sale: two unlicensed MP3s staged into the
+  installer (nothing referenced them), an MIT `LICENSE` file in
+  `soundwave-agent/` that granted away the shorts engine, and the OmniVoice
+  voice-cloning model — its code is Apache-2.0 but its **weights are CC-BY-NC**
+  (the maintainers say so on the model card), and cloned voices were behind paid
+  plan tiers. Cloning now runs on **Chatterbox**, which is MIT for both code and
+  weights. If you add a model here, check the *weights'* licence, not the repo's.
 
 ## Design system
 
