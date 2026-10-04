@@ -67,6 +67,10 @@ async function briefingDiagnosis(page, day = null) {
   bits.push(
     `PC says: day ${status.day}, plan ${status.plan?.time ?? "?"} (auto ${status.plan?.auto}, ${status.plan?.topics?.length ?? 0} topic(s)), due ${status.due}, inWindow ${status.inWindow}, today's message ${status.message ? `"${String(status.message.text).slice(0, 50)}…"` : "NONE"}, heard ${status.heard ? status.heard.on : "no"}`,
   );
+  // Whether the PC has a brain key at all is the first thing to know when a
+  // briefing can't be written: without one, neither side can write it.
+  const brain = await pc("/api/v1/brain").catch(() => null);
+  bits.push(`PC brain: ${brain?.configured ? `key set (${brain.keyHint}${brain.source === "env" ? ", from the environment" : ""})` : "NO KEY"}`);
   const conv = await pc("/api/v1/companion/conversation");
   const briefs = conv.messages.filter((m) => m.briefingDate);
   bits.push(
@@ -89,11 +93,14 @@ async function briefingDiagnosis(page, day = null) {
       briefings: mine.map((m) => `${m.briefingDate}/${m.sender}${m.answeredBy ? `/${m.answeredBy}` : ""}`),
       heard: read("soundwave.heardBriefings") ?? [],
       outbox: `${o?.messages?.length ?? 0} message(s), ${o?.memoryOps?.length ?? 0} memory op(s)`,
-      hasKey: Boolean(read("soundwave.kit")),
+      // Named for what it is: the kit the PC shares (it carries the Gemini key
+      // the phone researches with). "false" here means the phone had nothing to
+      // write a briefing with, whatever the PC could or couldn't do.
+      hasKit: Boolean(read("soundwave.kit")),
     };
   }, day);
   bits.push(
-    `phone holds: ${phone.messages} message(s), briefings ${phone.briefings.join(", ") || "none"}, heard ${JSON.stringify(phone.heard)}, outbox ${phone.outbox}, own key ${phone.hasKey} (the PC's day when the stage started: ${phone.day})`,
+    `phone holds: ${phone.messages} message(s), briefings ${phone.briefings.join(", ") || "none"}, heard ${JSON.stringify(phone.heard)}, outbox ${phone.outbox}, kit from the PC ${phone.hasKit} (the PC's day when the stage started: ${phone.day})`,
   );
   return bits.join(" | ");
 }

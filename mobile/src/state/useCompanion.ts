@@ -147,6 +147,14 @@ export function useCompanion(): Companion {
   pcRef.current = pc;
   const conversationRef = useRef<Conversation | null>(null);
   const kitRef = useRef<PhoneKit | null>(null);
+  /**
+   * Asks the PC for the shared brain kit (which carries the Gemini key used to
+   * research on the phone) and stores it. Held in a ref because the briefing
+   * path — which an alarm can start at any moment — has to be able to call it:
+   * an alarm at 06:30 must not fail because the kit hadn't been fetched yet in
+   * that app session, when the PC is right there and can hand it over.
+   */
+  const refreshKitRef = useRef<(() => Promise<void>) | null>(null);
   const memoryRef = useRef<MemorySnapshot | null>(null);
   const outboxRef = useRef<Outbox>(EMPTY_OUTBOX);
   const stateRef = useRef(state);
@@ -310,6 +318,8 @@ export function useCompanion(): Companion {
         if ((err as CompanionError).code === "UNKNOWN_OP") setKitRefusal(null); // an older Soundwave AI on the PC
       }
     };
+
+    refreshKitRef.current = refreshKit;
 
     const offs = [
       c.on("state", (s) => {
@@ -540,6 +550,13 @@ export function useCompanion(): Companion {
         await settled(8000);
         const c = clientRef.current;
         if (!c || stateRef.current.kind === "forgotten") return;
+        /** The kit — fetched from the PC if this session hasn't got it yet. */
+        const ensureKit = async (): Promise<PhoneKit | null> => {
+          if (kitRef.current) return kitRef.current;
+          if (stateRef.current.kind !== "online") return null;
+          await refreshKitRef.current?.().catch(() => undefined);
+          return kitRef.current;
+        };
         const find = () => [...(conversationRef.current?.messages ?? [])].reverse().find((m) => m.sender === "assistant" && m.briefingDate === day) ?? null;
         let msg = find();
         if (stateRef.current.kind === "online") {
@@ -582,7 +599,9 @@ export function useCompanion(): Companion {
                       : "its research came back empty";
             if (!msg) {
               // The PC named what it is missing (no key there, no topics, no
-              // memory): write it here and say which piece was missing there.
+              // memory): write it here — fetching the kit from the PC first if
+              // this session hasn't got it, since that kit holds the key this
+              // phone would research with.
               const why =
                 answer.prepareRefused === "no-key"
                   ? "no Gemini key on the PC yet"
@@ -591,10 +610,11 @@ export function useCompanion(): Companion {
                     : answer.prepareRefused === "no-memory"
                       ? "the PC's memory isn't available"
                       : undefined;
+              await ensureKit();
               msg = await writeBriefingOnPhone(plan, "pc-nothing", why);
             }
           }
-        } else if (!msg && kitRef.current) {
+        } else if (!msg && stateRef.current.kind === "offline" && (await ensureKit())) {
           msg = await writeBriefingOnPhone(plan, "pc-off");
         }
         if (briefingStop.current) return;
