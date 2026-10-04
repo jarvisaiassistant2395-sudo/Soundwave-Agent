@@ -658,7 +658,43 @@ try {
   const macroId = created?.macro?.id;
   if (!macroId) await fail(`Ghost Operator: the custom macro wasn't saved (${JSON.stringify(created).slice(0, 200)})`);
   await main.goto(`${appBase}/agent`);
-  await main.locator('button[title="Ghost Operator Macro Automations"]').click();
+  // On the CI runner this click has hung at Playwright's "attempting click
+  // action" once (the packaging window stopped handing out animation frames, so
+  // the stability/hit-target wait never came back) while the page itself still
+  // answered `evaluate`. That is the input path, not the feature: say what
+  // happened, count the frames to tell a hidden window from a stuck one, and
+  // send the click straight at the button so the macro itself is still tested.
+  const macroButton = main.locator('button[title="Ghost Operator Macro Automations"]');
+  try {
+    await macroButton.click({ timeout: 20_000 });
+  } catch (err) {
+    const frames = await main
+      .evaluate(
+        () =>
+          new Promise((resolve) => {
+            let seen = 0;
+            const t0 = performance.now();
+            const tick = () => {
+              seen++;
+              if (performance.now() - t0 < 500) requestAnimationFrame(tick);
+              else resolve(`${seen} frames/500ms, visibility=${document.visibilityState}`);
+            };
+            requestAnimationFrame(tick);
+            setTimeout(() => resolve(`${seen} frames/500ms, visibility=${document.visibilityState} (timed out)`), 2500);
+          }),
+      )
+      .catch(() => "the page didn't answer either");
+    annotate(
+      "warning",
+      "Desktop E2E: Ghost Operator macros",
+      `the macro button didn't take a normal click (${String(err.message).split("\n")[0]}); the page reports ${frames} — dispatching the click at the element instead`,
+    );
+    await main.evaluate(() => {
+      const button = document.querySelector('button[title="Ghost Operator Macro Automations"]');
+      if (!button) throw new Error("the macro button is gone from the page");
+      button.click();
+    });
+  }
   await main.waitForFunction(() => /really run on this PC/.test(document.body.innerText), null, { timeout: 30_000 });
   // The macro's row: the h4's nearest rounded-lg ancestor (the card that also
   // holds its Run button).
