@@ -247,19 +247,25 @@ Where it's kept: on the PC (%APPDATA%\\Soundwave AI\\data\\agent-memory.json). P
   {
     id: "voice-input",
     title: "Talking to Soundwave (voice input)",
-    summary: "mic button, hold-to-talk, auto-send, the Ctrl+Shift+Space voice bar, Settings → Voice & Desktop, microphone problems",
+    summary: "mic button, hold-to-talk, the “Hey Soundwave” wake word, the Ctrl+Shift+Space voice bar, Settings → Voice & Desktop, microphone problems",
     text: `On the PC:
 - Tap the microphone in the dock (or the orb) and talk. It sends by itself when you pause; tap again to send sooner. Hold the mic instead for push-to-talk (it sends when you let go).
-- From any app: press Ctrl+Shift+Space. A small voice bar appears above the taskbar, listens, answers out loud and shows the reply. Press the shortcut again to send right away. Your words and the answer also land in the Command Center's conversation.
+- From any app: hold Ctrl+Shift+Space and talk — the small voice bar appears above the taskbar, listens while you hold, and sends the moment you let go. (A quick tap works the old way: it keeps listening and sends when you pause.) The bar answers out loud and shows the reply, and your words and the answer also land in the Command Center's conversation.
+- Hands free: say "Hey Soundwave" (or "Hey Soundwave, what's on my screen?"). The wake word is listened for while the app runs — everything it hears is recognized on this PC by whisper.cpp, and anything that isn't the phrase is thrown away on the spot; nothing is recorded to disk and nothing is uploaded. Say just the phrase and the bar opens and listens for what you say next; say it with the question and it answers straight away. It pauses by itself while Soundwave is already recording or speaking.
 
-Speech is recognized on your PC by whisper.cpp with a built-in English model — no account, no key, your voice is never uploaded. (Replies are spoken with Microsoft's online voices.)
+Speech is recognized on your PC by whisper.cpp with a built-in English model — no account, no key, your voice is never uploaded. (Replies are spoken with Microsoft's online voices. The wake word costs a little CPU while you talk, because every sentence is checked locally.)
 
 Settings → Voice & Desktop:
 - Voice input: test your microphone ("I heard: …").
+- Push to talk: hold the shortcut (or the mic) and talk — releasing it sends. Off = press to start, press again to send.
+- Wake word — "Hey Soundwave": on by default. The line under it shows what it is doing ("Listening", "Paused", the last phrase it heard, or why it can't).
 - Send when I stop talking: on = sends after a short pause; off = tap again to send.
 - Sound cues: a soft chime when listening starts and stops.
 - Speak replies aloud.
 - Voice shortcut: choose the key combination (or turn it off).
+- The tray menu has both switches too ("Hold Ctrl+Shift+Space to talk", "Wake word — Hey Soundwave").
+
+Hold-to-talk needs Windows: Electron's shortcut tells the app when a key goes down, never when it comes up, so a tiny key watcher polls Windows' own key state for exactly your shortcut's keys (it runs only while the setting is on, and only between the press and the release). Where it can't run, the app says so and the shortcut keeps the press-to-start/press-to-send behaviour.
 
 Microphone blocked? On Windows: Settings → Privacy & security → Microphone → turn on "Microphone access" and "Let desktop apps access your microphone".
 

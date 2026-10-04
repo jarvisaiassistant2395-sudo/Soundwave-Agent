@@ -121,6 +121,8 @@ export function VoiceOverlay() {
     [desktop, finishReply, showProblem],
   );
 
+  const [holdHint, setHoldHint] = useState(false);
+
   const capture = useVoiceCapture({
     onTranscript: (text) => void answer(text),
     onNothingHeard: () => showProblem("I didn't catch anything. Press the shortcut and try again."),
@@ -140,6 +142,12 @@ export function VoiceOverlay() {
     void capture.start();
   }, [capture, desktop]);
 
+  // While a hold is down the bar says so; a released tap falls back to
+  // "pause to send" by itself (the "hold-end" command above).
+  useEffect(() => {
+    if (phase !== "listening" && phase !== "starting") setHoldHint(false);
+  }, [phase]);
+
   const close = useCallback(() => {
     window.clearTimeout(hideTimer.current);
     capture.cancel();
@@ -153,12 +161,42 @@ export function VoiceOverlay() {
     desktop?.hideOverlay();
   }, [capture, desktop]);
 
-  // The shortcut: start → (speak) → press again to send. While the agent is
-  // still transcribing/thinking, extra presses are ignored.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // The shortcut: tap = start, tap again = send. With hold-to-talk on, the
+  // shell says hold-start when the keys go down and hold-end when they come up,
+  // so releasing sends — but a quick tap still behaves like a tap (it keeps
+  // listening and sends when you stop talking).
+  const holdRef = useRef(false);
   const onCommand = useRef<(cmd: string) => void>(() => undefined);
   onCommand.current = (cmd: string) => {
     const p = phaseRef.current;
     if (cmd === "cancel") return close();
+    if (cmd === "hold-start" || cmd === "wake-listen") {
+      window.clearTimeout(hideTimer.current);
+      holdRef.current = cmd === "hold-start";
+      setHoldHint(holdRef.current);
+      listen();
+      if (holdRef.current) capture.holdStarted();
+      return;
+    }
+    if (cmd === "hold-end") {
+      if (!holdRef.current) return;
+      if (p !== "listening" && p !== "starting") {
+        holdRef.current = false;
+        return;
+      }
+      if (capture.hasSpeech()) {
+        holdRef.current = false;
+        void capture.finish("manual");
+        return;
+      }
+      // Let go before saying anything: that was a tap, not a hold. Keep
+      // listening and send when they stop talking (auto-stop is back on).
+      holdRef.current = false;
+      capture.tapConfirmed();
+      setHoldHint(false);
+      return;
+    }
     if (p === "listening" || p === "starting") {
       if (cmd === "toggle" || cmd === "stop") void capture.finish("manual");
       return;
@@ -166,6 +204,18 @@ export function VoiceOverlay() {
     if (cmd === "stop" || p === "transcribing" || stageRef.current === "thinking") return;
     listen();
   };
+
+  // The shell heard "Hey Soundwave, …" and sends what came after it.
+  useEffect(() => {
+    if (!desktop) return;
+    return desktop.onWakeHit(({ text }) => {
+      const said = String(text ?? "").trim();
+      if (!said) return;
+      window.clearTimeout(hideTimer.current);
+      stopSpeaking();
+      void answer(said);
+    });
+  }, [desktop, answer]);
 
   useEffect(() => {
     if (!desktop) return;
@@ -245,7 +295,11 @@ export function VoiceOverlay() {
           >
             {stage === "thinking" || phase === "transcribing" ? (heard ? `“${heard}”` : body) : body}
           </p>
-          {listening && <p className="mt-0.5 font-mono text-[10px] text-gray-500">Pause to send · {hotkeyLabel(hotkey)} sends now</p>}
+          {listening && (
+            <p className="mt-0.5 font-mono text-[10px] text-gray-500">
+              {holdHint ? `Release ${hotkeyLabel(hotkey)} to send` : `Pause to send · ${hotkeyLabel(hotkey)} sends now`}
+            </p>
+          )}
           {voiceWarning && stage === "done" && <p className="mt-0.5 line-clamp-1 text-[10px] text-amber-300/90" title={voiceWarning}>{voiceWarning}</p>}
           {problem?.micSettings && (
             <button

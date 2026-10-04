@@ -34,6 +34,8 @@ const path = require("node:path");
 const http = require("node:http");
 const { pathToFileURL } = require("node:url");
 const { applyServerEnv } = require("./server-env.cjs");
+const { createKeyWatcher } = require("./keywatch.cjs");
+const { DEFAULT_WAKE_PHRASES, vkCodesFor, wakeHit } = require("./wake.cjs");
 const {
   HOTKEY_CHOICES,
   applySettingsPatch,
@@ -75,6 +77,18 @@ const PRELOAD = path.join(__dirname, "preload.cjs");
 
 let mainWindow = null;
 let overlayWindow = null;
+/** The hidden window that listens for "Hey Soundwave" (frontend /wake). */
+let wakeWindow = null;
+const WAKE_SIZE = { width: 360, height: 120 };
+/** What the wake listener has heard, for Settings and the tests. */
+let wakeInfo = { state: "starting", detail: null, heard: 0, ignored: 0, lastHeard: null, lastHit: null, hitAt: null };
+/** Reasons the wake listener is paused (holding a set: overlap-safe). */
+const wakePaused = new Set();
+let wakeResumeTimer = null;
+/** The Windows key watcher that turns the shortcut into hold-to-talk. */
+let keyWatcher = null;
+/** A wake command that arrived before the voice bar was ready to receive it. */
+let pendingWake = null;
 /** The voice bar's page subscribed to shortcut presses (earlier presses wait in pendingVoice). */
 let overlayListening = false;
 let pendingVoice = [];
@@ -176,6 +190,8 @@ function updateSettings(patch) {
   const before = settings;
   settings = applySettingsPatch(settings, patch);
   if (settings.hotkey !== before.hotkey || settings.hotkeyEnabled !== before.hotkeyEnabled) applyHotkey();
+  if (settings.pushToTalk !== before.pushToTalk || settings.hotkey !== before.hotkey || settings.hotkeyEnabled !== before.hotkeyEnabled) applyPushToTalk();
+  if (settings.wakeEnabled !== before.wakeEnabled) applyWakeSetting();
   if (settings.openAtLogin !== before.openAtLogin && supportsLoginItems()) {
     try {
       app.setLoginItemSettings({ openAtLogin: settings.openAtLogin, ...loginItemOptions() });
@@ -309,6 +325,21 @@ function sendToOverlay(command) {
   else pendingVoice.push(command);
 }
 
+/** The wake phrase was heard with words after it: hand the overlay something to ask. */
+function sendWakeHit(payload) {
+  // The overlay may still be loading (first wake after startup): keep the last
+  // one until it says it's ready.
+  if (!alive(overlayWindow) || !overlayListening) {
+    pendingWake = payload;
+    return;
+  }
+  try {
+    overlayWindow.webContents.send("soundwave:wake-hit", payload);
+  } catch {
+    /* window going away */
+  }
+}
+
 function toggleVoiceBar() {
   if (!alive(overlayWindow)) createOverlayWindow();
   if (!alive(overlayWindow)) return;
@@ -322,10 +353,176 @@ function toggleVoiceBar() {
 function hideOverlay() {
   if (alive(overlayWindow) && overlayWindow.isVisible()) overlayWindow.hide();
   setTrayTooltip("idle");
+  // The bar is away: the wake listener may listen again (with a short grace).
+  setWakePaused("voice", false);
 }
 
-/** The voice shortcut: the Command Center's own mic when it's in front, the voice bar otherwise. */
+/** Show the voice bar without telling it anything yet. */
+function showVoiceBar() {
+  if (!alive(overlayWindow)) createOverlayWindow();
+  if (!alive(overlayWindow)) return false;
+  if (!overlayWindow.isVisible()) {
+    positionOverlay();
+    overlayWindow.showInactive();
+  }
+  return true;
+}
+
+// ── "Hey Soundwave" — the hidden listener ────────────────────────────────────
+
+function createWakeWindow() {
+  if (alive(wakeWindow) || !serverUrl) return;
+  wakeWindow = new BrowserWindow({
+    ...WAKE_SIZE,
+    show: false,
+    frame: false,
+    focusable: false,
+    skipTaskbar: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: "Soundwave AI — wake word",
+    icon: ICON_PNG,
+    webPreferences: {
+      preload: PRELOAD,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+      autoplayPolicy: "no-user-gesture-required",
+      // A hidden window must keep its microphone running — no timer throttling.
+      backgroundThrottling: false,
+    },
+  });
+  lockNavigation(wakeWindow);
+  wakeInfo = { state: "starting", detail: null, heard: 0, ignored: 0, lastHeard: null, lastHit: null, hitAt: null };
+  wakeWindow.on("closed", () => {
+    wakeWindow = null;
+  });
+  wakeWindow.webContents.on("render-process-gone", () => {
+    if (alive(wakeWindow)) wakeWindow.destroy();
+  });
+  wakeWindow.loadURL(`${serverUrl}/wake`).catch((err) => console.warn("[soundwave-desktop] wake listener failed to load:", err.message));
+}
+
+function destroyWakeWindow() {
+  const win = wakeWindow;
+  wakeWindow = null;
+  wakePaused.clear();
+  if (wakeResumeTimer) clearTimeout(wakeResumeTimer);
+  wakeResumeTimer = null;
+  if (alive(win)) win.destroy();
+}
+
+/** Pause/resume the listener: never listen while it is itself talking or recording. */
+function setWakePaused(reason, paused) {
+  const before = wakePaused.size > 0;
+  if (paused) wakePaused.add(reason);
+  else wakePaused.delete(reason);
+  const now = wakePaused.size > 0;
+  if (now === before) return;
+  if (wakeResumeTimer) clearTimeout(wakeResumeTimer);
+  wakeResumeTimer = null;
+  if (now) {
+    sendToWake("pause");
+    return;
+  }
+  // A moment's grace so the tail of the assistant's own voice isn't transcribed.
+  wakeResumeTimer = setTimeout(() => sendToWake("resume"), 1200);
+  wakeResumeTimer.unref?.();
+}
+
+function sendToWake(command) {
+  if (alive(wakeWindow)) {
+    try {
+      wakeWindow.webContents.send("soundwave:wake-control", command);
+    } catch {
+      /* window going away */
+    }
+  }
+}
+
+/** The setting decides whether the listener exists at all. */
+function applyWakeSetting() {
+  if (settings.wakeEnabled) createWakeWindow();
+  else destroyWakeWindow();
+}
+
+/** What the wake listener said it heard (from the hidden page, after whisper). */
+function onWakeHeard(text) {
+  const said = String(text ?? "").trim().slice(0, 600);
+  if (!said) return;
+  wakeInfo.heard += 1;
+  wakeInfo.lastHeard = said.slice(0, 200);
+  const hit = wakeHit(said);
+  if (!hit.hit) {
+    wakeInfo.ignored += 1;
+    return; // ordinary speech: transcribed on this PC, then thrown away
+  }
+  // If the bar is already up (the person is holding the shortcut, or the agent
+  // is answering), the phrase was aimed at that conversation — not a new wake.
+  if (overlayWindow && alive(overlayWindow) && overlayWindow.isVisible()) {
+    wakeInfo.ignored += 1;
+    return;
+  }
+  if (wakePaused.size > 0) {
+    wakeInfo.ignored += 1;
+    return;
+  }
+  wakeInfo.lastHit = hit.command ? `“${hit.command}”` : "“Hey Soundwave”";
+  wakeInfo.hitAt = Date.now();
+  if (!showVoiceBar()) return;
+  if (hit.command) sendWakeHit({ text: hit.command });
+  else sendToOverlay("wake-listen");
+}
+
+// ── Push-to-talk: hold the shortcut (or the mic) and speak ───────────────────
+
+/** The shortcut was tapped (or the watcher isn't there): listen, then send by itself. */
+function tapVoiceShortcut() {
+  if (!showVoiceBar()) return;
+  sendToOverlay("hold-start");
+  setTimeout(() => {
+    // A real hold is still down — its own release is coming, leave it alone.
+    if (keyWatcher && keyWatcher.isDown()) return;
+    sendToOverlay("hold-end");
+  }, 250).unref?.();
+}
+
+function startPushToTalk() {
+  if (!showVoiceBar()) return;
+  sendToOverlay("hold-start");
+}
+
+function endPushToTalk() {
+  sendToOverlay("hold-end");
+}
+
+/** Arm or disarm the key watcher for the current settings. */
+function applyPushToTalk() {
+  const wanted = settings.pushToTalk && settings.hotkeyEnabled;
+  const codes = wanted ? vkCodesFor(settings.hotkey) : null;
+  if (keyWatcher && (!wanted || keyWatcher.info().keys.join(",") !== (codes ?? []).join(","))) {
+    keyWatcher.stop();
+    keyWatcher = null;
+  }
+  if (!wanted || keyWatcher) return;
+  keyWatcher = createKeyWatcher({
+    accelerator: settings.hotkey,
+    onDown: () => startPushToTalk(),
+    onUp: () => endPushToTalk(),
+    onProblem: (message) => console.warn(`[soundwave-desktop] hold-to-talk: ${message}`),
+  });
+  keyWatcher.start();
+}
+
+/** The voice shortcut: the key watcher when hold-to-talk is on, otherwise a tap. */
 function onVoiceShortcut() {
+  if (keyWatcher?.info().supported) {
+    if (keyWatcher.isDown()) return; // the watcher's own press/release drives it
+    tapVoiceShortcut();
+    return;
+  }
   if (alive(mainWindow) && mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized()) {
     mainWindow.webContents.send("soundwave:voice", "toggle");
     return;
@@ -352,7 +549,15 @@ function applyHotkey() {
 
 function setTrayTooltip(state) {
   if (!tray) return;
-  tray.setToolTip(state === "listening" ? "Soundwave AI — listening…" : state === "working" ? "Soundwave AI — thinking…" : "Soundwave AI");
+  tray.setToolTip(
+    state === "listening"
+      ? "Soundwave AI — listening…"
+      : state === "working"
+        ? "Soundwave AI — thinking…"
+        : settings.wakeEnabled
+          ? `Soundwave AI — say “${DEFAULT_WAKE_PHRASES[0]}”`
+          : "Soundwave AI",
+  );
 }
 
 function refreshTrayMenu() {
@@ -372,6 +577,19 @@ function refreshTrayMenu() {
         type: "checkbox",
         checked: settings.closeToTray,
         click: (item) => updateSettings({ closeToTray: item.checked }),
+      },
+      {
+        label: `Hold ${hotkeyLabel(settings.hotkey)} to talk`,
+        type: "checkbox",
+        checked: settings.pushToTalk && settings.hotkeyEnabled,
+        enabled: settings.hotkeyEnabled,
+        click: (item) => updateSettings({ pushToTalk: item.checked }),
+      },
+      {
+        label: `Wake word — “${DEFAULT_WAKE_PHRASES[0]}”`,
+        type: "checkbox",
+        checked: settings.wakeEnabled,
+        click: (item) => updateSettings({ wakeEnabled: item.checked }),
       },
       { label: "Voice & desktop settings…", click: () => showMainWindow("/settings/voice") },
       { label: "Connect your phone…", click: () => showMainWindow("/settings/phone") },
@@ -436,6 +654,11 @@ function registerIpc() {
     const queued = pendingVoice;
     pendingVoice = [];
     for (const command of queued) overlayWindow.webContents.send("soundwave:voice", command);
+    if (pendingWake) {
+      const payload = pendingWake;
+      pendingWake = null;
+      overlayWindow.webContents.send("soundwave:wake-hit", payload);
+    }
   });
   ipcMain.on("soundwave:notify", (event, payload) => {
     if (!trusted(event) || !settings.notifications) return;
@@ -449,7 +672,23 @@ function registerIpc() {
     if (trusted(event)) hideOverlay();
   });
   ipcMain.on("soundwave:voice-state", (event, state) => {
-    if (trusted(event) && (state === "idle" || state === "listening" || state === "working")) setTrayTooltip(state);
+    if (!trusted(event)) return;
+    if (state !== "idle" && state !== "listening" && state !== "working") return;
+    setTrayTooltip(state);
+    // While Soundwave is listening or answering, the wake listener stays quiet:
+    // it must never transcribe the person's own push-to-talk, or its own voice.
+    setWakePaused("voice", state !== "idle");
+  });
+  ipcMain.on("soundwave:wake-state", (event, payload) => {
+    if (!trusted(event) || !alive(wakeWindow) || event.sender !== wakeWindow.webContents) return;
+    const state = payload && typeof payload.state === "string" ? payload.state : "unknown";
+    wakeInfo.state = state.slice(0, 40);
+    wakeInfo.detail = payload && typeof payload.detail === "string" ? payload.detail.slice(0, 300) : null;
+    refreshTrayMenu();
+  });
+  ipcMain.on("soundwave:wake-heard", (event, payload) => {
+    if (!trusted(event) || !alive(wakeWindow) || event.sender !== wakeWindow.webContents) return;
+    onWakeHeard(payload && payload.text);
   });
   ipcMain.on("soundwave:open-mic-settings", (event) => {
     if (!trusted(event)) return;
@@ -602,6 +841,10 @@ async function main() {
 
   // Get the voice bar ready in the background so the first shortcut press is instant.
   setTimeout(createOverlayWindow, 1500);
+  // "Hey Soundwave" and hold-to-talk: both need their machinery warm (the
+  // listener's microphone, the key watcher's compiled key-state call).
+  applyWakeSetting();
+  applyPushToTalk();
 
   if (settings.hotkeyEnabled && !hotkeyState.registered && hotkeyState.error) {
     notify({ title: "Voice shortcut unavailable", body: hotkeyState.error, route: "/settings/voice" });
@@ -620,9 +863,23 @@ globalThis.__soundwaveShell = {
     mainVisible: alive(mainWindow) && mainWindow.isVisible(),
     overlayVisible: alive(overlayWindow) && overlayWindow.isVisible(),
     overlayListening,
+    wake: {
+      enabled: settings.wakeEnabled,
+      running: alive(wakeWindow),
+      phrases: [...DEFAULT_WAKE_PHRASES],
+      paused: wakePaused.size > 0,
+      ...wakeInfo,
+    },
+    pushToTalkStatus: {
+      enabled: settings.pushToTalk && settings.hotkeyEnabled,
+      ...(keyWatcher ? keyWatcher.info() : { supported: false, ready: false, down: false, problem: "off", keys: [] }),
+    },
   }),
   mainWindow: () => mainWindow,
   overlayWindow: () => overlayWindow,
+  wakeWindow: () => wakeWindow,
+  /** Tests: pretend the wake listener heard this (already transcribed on the PC). */
+  heardWake: (text) => onWakeHeard(text),
 };
 
 app.whenReady().then(() =>
@@ -650,6 +907,8 @@ app.on("before-quit", () => {
 
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
+  keyWatcher?.stop();
+  keyWatcher = null;
   if (tray) {
     tray.destroy();
     tray = null;

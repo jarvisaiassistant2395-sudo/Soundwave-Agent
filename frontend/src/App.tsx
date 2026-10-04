@@ -10,6 +10,7 @@ import { VoiceLibrary } from "./pages/VoiceLibrary";
 import { AgentHub } from "./pages/AgentHub";
 import { CreatorStudio } from "./pages/CreatorStudio";
 import { VoiceOverlay } from "./pages/VoiceOverlay";
+import { WakeListener } from "./pages/WakeListener";
 import { NotFound } from "./pages/NotFound";
 import { BackgroundServices } from "./components/agent/BackgroundServices";
 
@@ -51,6 +52,8 @@ export default function App() {
 
         {/* The desktop app's floating voice bar (its own transparent window). */}
         <Route path="/overlay" element={<VoiceOverlay />} />
+        {/* Hidden window: listens for "Hey Soundwave" (desktop shell only). */}
+        <Route path="/wake" element={<WakeListener />} />
 
         <Route
           path="/agent"

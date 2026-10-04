@@ -41,6 +41,7 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
   const stopWhenReadyRef = useRef<StopReason | null>(null);
   const cancelledRef = useRef(false);
   const holdRef = useRef(false);
+  const speechRef = useRef(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
@@ -92,6 +93,7 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
     if (phaseRef.current !== "idle") return;
     cancelledRef.current = false;
     holdRef.current = false;
+    speechRef.current = false;
     stopWhenReadyRef.current = null;
     stopSpeaking();
     go("starting");
@@ -99,6 +101,9 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
       const recorder = await startRecording({
         autoStop: loadVoicePrefs().autoStop,
         onLevel: setLevel,
+        onSpeech: () => {
+          speechRef.current = true;
+        },
         onAutoStop: (reason) => void finish(reason),
       });
       if (cancelledRef.current) {
@@ -159,5 +164,5 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
     [],
   );
 
-  return { phase, level, phaseRef, start, finish, cancel, toggle, holdStarted, tapConfirmed };
+  return { phase, level, phaseRef, start, finish, cancel, toggle, holdStarted, tapConfirmed, hasSpeech: () => speechRef.current };
 }

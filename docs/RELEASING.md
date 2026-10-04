@@ -351,6 +351,48 @@ dead sign-in, deltas, and the wording), the guide checks in
 labels as tooltips, still minimized after a reload) and proves a voice set on
 the PC's conversation reaches the open window.
 
+1.6.1 is voice, hands-free:
+
+- **Push to talk** (`desktop/src/keywatch.cjs`, `desktop/src/wake.cjs`):
+  `vkCodesFor()` maps an accelerator to Windows virtual keys (or says it can't),
+  `keyWatchScript()` builds the PowerShell watcher that reports "ready"/"down"/
+  "up" from `GetAsyncKeyState`, and `createKeyWatcher()` drives it: pre-warmed
+  while the setting is on, restarted up to three times if it dies (and a death
+  mid-hold ends the recording instead of holding forever), stopped with the app,
+  and honest about why when it can't run at all. The overlay gained
+  `hold-start`/`hold-end` commands: releasing with speech sends immediately, and
+  releasing before you've said anything falls back to tap-to-talk rather than
+  closing on nothing. A tap of the shortcut (or a machine where the watcher
+  can't run) keeps the old press-to-start/press-to-send behaviour.
+- **The wake word** ("Hey Soundwave"): a hidden window loads `/wake`
+  (`frontend/src/pages/WakeListener.tsx`), which keeps the microphone open and
+  cuts speech into utterances (`frontend/src/lib/wakeCapture.ts`, the same
+  adaptive-floor approach as the recorder), transcribes each one locally through
+  the existing `/api/v1/agent/transcribe` (whisper.cpp), and reports the text to
+  the shell. `wakeHit()` in `desktop/src/wake.cjs` decides — a greeting plus the
+  name, one word or two, and the words after it become the command; ordinary
+  speech, including the app's own name in a sentence, never wakes it. The shell
+  ignores wake hits while the bar is already open, pauses the listener whenever
+  Soundwave records or speaks (and for 1.2 s after), shows the tray tooltip
+  "say Hey Soundwave", and the Settings page polls the real state.
+- Settings → Voice & Desktop gained both switches with honest state lines, the
+  tray menu gained both, and `desktop/test/wake.test.cjs` (11 tests, run by
+  `npm test` in the desktop package) pins the matcher's yes/no cases and the
+  watcher's behaviour through a fake child process.
+- The packaged end-to-end test drives it with real input, not simulated events:
+  it watches the hidden listener for up to 90 s while the fake microphone talks
+  (it has to transcribe locally and wake on none of it), a PowerShell helper
+  holds Ctrl+Shift+Space with `keybd_event` so the watcher really sees the key
+  state go down and up and the release sends, it flips the Settings switch off
+  and on again (the microphone must actually be released and reopened), and
+  finally it restarts the app with a recording of its own voice saying "Hey
+  Soundwave. What can you do?" as the fake microphone — nobody touches anything
+  and the agent has to answer by itself. If the online voice service is
+  unreachable in a run, that last stage says so and skips instead of pretending.
+- The agent's instruction tells it voice turns arrive as text and to answer like
+  a person speaking; the guide's voice section covers the hold and the wake word
+  and where hold-to-talk can't run.
+
 1.6.0 is the "hands and eyes" release — four new abilities, all of them real,
 all of them tested without a Windows machine in CI:
 

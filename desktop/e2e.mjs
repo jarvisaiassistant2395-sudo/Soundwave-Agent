@@ -15,7 +15,7 @@
 // the Workflow panel really copies to the clipboard (verified in Electron) and
 // skips — with the reason — the steps Soundwave can't do yet. Needs
 // playwright-core (CI: npm i --no-save).
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +98,23 @@ async function fail(message) {
 
 function ok(label) {
   console.log(`[e2e] ✓ ${label} (${since()})`);
+}
+
+/**
+ * A real key hold, pressed by Windows itself: keybd_event updates the async key
+ * state that the app's watcher polls, so this exercises the same path as a
+ * person holding Ctrl+Shift+Space on their keyboard (Playwright's key events
+ * only reach a focused window and would prove nothing here).
+ */
+function holdShortcutScript(ms) {
+  return [
+    "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);' -Name Kb -Namespace Sw",
+    "function Down([int]$k){ [Sw.Kb]::keybd_event([byte]$k, 0, 0, [UIntPtr]::Zero) }",
+    "function Up([int]$k){ [Sw.Kb]::keybd_event([byte]$k, 0, 2, [UIntPtr]::Zero) }",
+    "Down 0x11; Down 0x10; Start-Sleep -Milliseconds 200; Down 0x20",
+    `Start-Sleep -Milliseconds ${ms}`,
+    "Up 0x20; Up 0x10; Up 0x11",
+  ].join("\n");
 }
 
 function defaultExe() {
@@ -753,6 +770,133 @@ try {
   }
   await main.screenshot({ path: path.join(shotsDir, "12-clip-from-video.png"), timeout: 15_000 }).catch(() => {});
 
+  // ── 3g. "Hey Soundwave": it listens on its own, and ignores everything else ──
+  at("wake word: listening, and ignoring ordinary speech");
+  // The hidden wake window has been up since startup with the fake microphone
+  // talking (JFK on a loop). It transcribes what it hears **on this PC** and the
+  // shell checks for the phrase. So: the counter must climb (the listener really
+  // is working) and nothing may have woken (the phrase isn't in that speech).
+  let wake = (await shell()).wake;
+  const wakeDeadline = Date.now() + 90_000;
+  while (Date.now() < wakeDeadline && wake.heard < 2) {
+    await sleep(1000);
+    wake = (await shell()).wake;
+  }
+  if (!wake.enabled) await fail("the wake word starts enabled, but the shell says it is off");
+  if (!wake.running) await fail(`the wake listener isn't running (state ${wake.state}: ${wake.detail ?? "no detail"})`);
+  if (wake.heard < 2) {
+    await fail(`the wake listener transcribed nothing in 90 s while the fake microphone was talking (state ${wake.state}: ${wake.detail ?? "no detail"})`);
+  }
+  if (wake.lastHit) await fail(`ordinary speech woke it: ${wake.lastHit}`);
+  ok(`the wake listener transcribed ${wake.heard} utterances of ordinary speech on this PC and woke on none of them`);
+  annotate(
+    "notice",
+    "Desktop E2E: wake word",
+    `"Hey Soundwave" is listened for while the app runs: ${wake.heard} utterance(s) checked locally with whisper.cpp, ${wake.ignored} ignored (last heard: "${String(wake.lastHeard ?? "").slice(0, 80)}"), and none of them woke the agent. Paused while Soundwave recorded or spoke.`,
+  );
+
+  // The phrase itself — through the same entry point the hidden listener uses
+  // (what whisper heard is handed to the shell, which decides). The listening
+  // half is proven above and by the whisper stages; this proves the wiring.
+  at("Hey Soundwave, what can you do?");
+  const wakeTurns = (await voiceTurns(main)).length;
+  await app.evaluate(() => globalThis.__soundwaveShell.heardWake("Hey Soundwave, what can you do?"));
+  await sleep(500);
+  const wakeShell = await shell();
+  if (!wakeShell.overlayVisible) await fail(`the wake phrase didn't open the voice bar (state ${JSON.stringify(wakeShell.wake)}).`);
+  let wakeOverlay = app.windows().find((p) => p.url().includes("/overlay")) ?? null;
+  try {
+    await main.waitForFunction((n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n, wakeTurns, {
+      timeout: 90_000,
+      polling: 500,
+    });
+  } catch {
+    await fail(`the wake phrase never reached the agent (bar said: ${wakeOverlay ? (await wakeOverlay.evaluate(() => document.body.innerText)).replace(/\s+/g, " ").slice(0, 200) : "no bar"})`);
+  }
+  const wakeHeardTurn = (await voiceTurns(main)).at(-1) ?? "";
+  if (!/what can you do/i.test(wakeHeardTurn)) await fail(`the wake command reached the agent as "${wakeHeardTurn}"`);
+  ok(`"Hey Soundwave, what can you do?" opened the bar by itself and the command reached the agent: "${wakeHeardTurn}"`);
+  await wakeOverlay?.screenshot({ path: path.join(shotsDir, "13-wake-word.png"), timeout: 10_000 }).catch(() => {});
+
+  // ── 3h. Push to talk: hold the keys, speak, let go ────────────────────────
+  at("push to talk (held shortcut)");
+  const pttState = (await shell()).pushToTalkStatus;
+  if (!pttState.supported) await fail(`hold-to-talk isn't available here: ${pttState.problem}`);
+  if (!pttState.ready) await fail(`the key watcher never became ready: ${pttState.problem ?? "no reason given"}`);
+  await app.evaluate(() => {
+    const w = globalThis.__soundwaveShell.mainWindow();
+    w.hide();
+  });
+  const pttBefore = (await voiceTurns(main)).length;
+  const holder = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", holdShortcutScript(4000)], {
+    windowsHide: true,
+  });
+  // Listen for the exit *before* the key checks: PowerShell can fail instantly
+  // (a locked-down machine without user32 access), and a missed event would hang
+  // the whole run instead of saying what went wrong.
+  let held = "";
+  holder.stdout?.on("data", (b) => (held += b.toString()));
+  holder.stderr?.on("data", (b) => (held += b.toString()));
+  const holderDone = new Promise((resolve) => holder.on("exit", (code) => resolve(code ?? -1)));
+  let sawDown = false;
+  for (let i = 0; i < 60 && !sawDown; i++) {
+    if ((await shell()).pushToTalkStatus.down === true) sawDown = true;
+    else await sleep(100);
+  }
+  if (!sawDown) {
+    const code = await Promise.race([holderDone, sleep(10_000).then(() => "still running")]);
+    await fail(`the key watcher never saw Ctrl+Shift+Space go down (a real OS key hold); PowerShell said (${code}): ${held.trim().slice(-300) || "nothing"}`);
+  }
+  ok("holding the shortcut made the key watcher report the chord down");
+  const holderCode = await Promise.race([holderDone, sleep(30_000).then(() => "timed out")]);
+  if (holderCode !== 0) await fail(`the key-holding helper exited with ${holderCode}: ${held.trim().slice(-300) || "nothing"}`);
+  const afterRelease = await shell();
+  if (afterRelease.pushToTalkStatus.down) await fail("the key watcher still thinks the keys are held after the release");
+  try {
+    await main.waitForFunction((n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n, pttBefore, {
+      timeout: 150_000,
+      polling: 500,
+    });
+  } catch {
+    await fail(`releasing the held shortcut sent nothing (chat has ${((await voiceTurns(main)).length) - pttBefore} new voice turn(s))`);
+  }
+  const pttTurn = (await voiceTurns(main)).at(-1) ?? "";
+  if (!EXPECT.test(pttTurn)) await fail(`push-to-talk sent "${pttTurn}" — expected what the microphone was playing`);
+  ok(`push-to-talk: held the keys, spoke, released → sent "${pttTurn.slice(0, 60)}…"`);
+  annotate(
+    "notice",
+    "Desktop E2E: push to talk",
+    `Ctrl+Shift+Space was held by Windows itself (keybd_event) for 4 s: the watcher saw the chord go down and up, the bar listened while held, and releasing sent the microphone's words ("${pttTurn.slice(0, 80)}").`,
+  );
+  await app.evaluate(() => {
+    const w = globalThis.__soundwaveShell.mainWindow();
+    w.show();
+  });
+
+  // ── 3i. The wake switch is real (Settings → Voice & Desktop) ─────────────
+  at("Settings → Voice & Desktop: the wake switch");
+  await main.goto(`${appBase}/settings/voice`);
+  const wakeToggle = main.locator('button[role="switch"][aria-label="Wake word"]');
+  await wakeToggle.waitFor({ timeout: 30_000 });
+  await wakeToggle.click(); // off
+  let switched = null;
+  for (let i = 0; i < 40; i++) {
+    switched = await shell();
+    if (!switched.wake.running) break;
+    await sleep(250);
+  }
+  if (switched.wake.running) await fail("turning the wake word off left the listener running");
+  ok("turning the wake word off stops the listener (the microphone is released)");
+  await wakeToggle.click(); // back on
+  let wakeBack = null;
+  for (let i = 0; i < 60; i++) {
+    wakeBack = await shell();
+    if (wakeBack.wake.running) break;
+    await sleep(250);
+  }
+  if (!wakeBack.wake.running) await fail("turning the wake word back on didn't start the listener");
+  ok("turning it back on starts the listener again");
+
   // ── 4. Tray behaviour + notifications bridge ──────────────────────────────
   at("tray behaviour and notifications");
   await app.evaluate(() => {
@@ -768,8 +912,116 @@ try {
   const supported = await app.evaluate(({ Notification }) => Notification.isSupported());
   ok(`notification bridge called (Windows notifications supported: ${supported})`);
 
+  // ── 4b. "Hey Soundwave" on real audio ────────────────────────────────────
+  // The phrase is spoken by the app's own neural voice, saved as the fake
+  // microphone's recording, and the app is started again with nothing but that
+  // playing: the hidden listener must hear it through the microphone, transcribe
+  // it locally and wake up. If the voice service is unreachable in CI (it
+  // happens), this stage says so and skips — it never pretends.
+  let wakeAudio = null;
+  try {
+    const spoken = await main.evaluate(
+      async (text) => {
+        const res = await fetch(`/api/v1/agent/speak/stream?voice=${encodeURIComponent("en-US-AvaMultilingualNeural")}&text=${encodeURIComponent(text)}`);
+        if (!res.ok) return { error: `HTTP ${res.status}` };
+        const buf = await res.arrayBuffer();
+        return { bytes: Array.from(new Uint8Array(buf)), type: res.headers.get("content-type") };
+      },
+      "Hey Soundwave. What can you do?",
+    );
+    if (!spoken?.bytes?.length) throw new Error(spoken?.error ?? "the voice service returned no audio");
+    const mp3 = path.join(desktopDir, "e2e-wake.mp3");
+    fs.writeFileSync(mp3, Buffer.from(spoken.bytes));
+    const wav = path.join(desktopDir, "e2e-wake.wav");
+    execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-y", "-i", mp3, "-af", "apad=pad_dur=3.5", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], {
+      windowsHide: true,
+    });
+    wakeAudio = wav;
+    ok(`recorded "Hey Soundwave. What can you do?" with the app's own voice (${Math.round(spoken.bytes.length / 1024)} KB MP3 → fake microphone)`);
+  } catch (err) {
+    annotate("warning", "Desktop E2E: wake word audio", `the wake phrase couldn't be recorded this run (${err.message}) — the real-audio wake test is skipped, not failed.`);
+  }
+
   await app.close();
   ok("app quits cleanly");
+
+  if (wakeAudio) {
+    at('wake word on real audio ("Hey Soundwave")');
+    await sleep(2500); // the single-instance lock must be free
+    let second = null;
+    try {
+      second = await electron.launch({
+        executablePath: exe,
+        args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-audio-capture=${wakeAudio}`],
+        env: {
+          ...process.env,
+          GEMINI_API_BASE: fakeGemini.url,
+          OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
+          OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
+        },
+        timeout: 180_000,
+      });
+    } catch (err) {
+      await fail(`the app didn't start a second time for the wake test: ${err.message}`);
+    }
+    app = second;
+    const main2 = await app.firstWindow({ timeout: 180_000 });
+    mainPage = main2;
+    main2.on("console", (m) => {
+      if (m.type() === "error") rememberPageLog(`[wake-run] ${m.text()}`);
+    });
+    await main2.waitForURL(/\/agent/, { timeout: 120_000 });
+    // Nobody touches anything: the microphone is playing the wake phrase and the
+    // listener has to notice by itself.
+    const turnsBefore = await main2.evaluate(() => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length);
+    let woke = null;
+    const wakeAudioDeadline = Date.now() + 120_000;
+    while (Date.now() < wakeAudioDeadline) {
+      const now = await app.evaluate(() => globalThis.__soundwaveShell.state());
+      if (now.wake.lastHit) {
+        woke = now;
+        break;
+      }
+      await sleep(1000);
+    }
+    if (!woke) {
+      const st = await app.evaluate(() => globalThis.__soundwaveShell.state());
+      await fail(
+        `the wake phrase played into the microphone never woke it (state ${st.wake.state}: ${st.wake.detail ?? "no detail"}; ${st.wake.heard} utterance(s) checked, last "${String(st.wake.lastHeard ?? "").slice(0, 60)}")`,
+      );
+    }
+    if (!woke.wake.lastHit.toLowerCase().includes("what can you do")) {
+      await fail(`the wake listener heard something else: ${woke.wake.lastHit}`);
+    }
+    ok(`the app heard "Hey Soundwave…" through its own microphone and woke by itself: ${woke.wake.lastHit}`);
+    try {
+      await main2.waitForFunction(
+        (n) => {
+          const turns = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice);
+          return turns.length > n && /what can you do/i.test(turns.at(-1)?.text ?? "");
+        },
+        turnsBefore,
+        { timeout: 90_000, polling: 500 },
+      );
+    } catch {
+      const said = await main2.evaluate(() => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).map((m) => m.text).slice(-2));
+      await fail(`the wake command never reached the agent (chat's last voice turns: ${JSON.stringify(said)})`);
+    }
+    const wokeTurn = await main2.evaluate(() => {
+      const turns = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).map((m) => m.text);
+      return turns.at(-1) ?? "";
+    });
+    ok(`hands free: saying "Hey Soundwave, what can you do?" reached the agent: "${wokeTurn}"`);
+    annotate(
+      "notice",
+      "Desktop E2E: wake word (real audio)",
+      `The app's own neural voice spoke "Hey Soundwave. What can you do?" into the fake microphone; the hidden listener transcribed it on this PC (${woke.wake.heard} utterance(s) checked, ${woke.wake.ignored} ignored) and the agent answered without a single click or key press.`,
+    );
+    await main2.screenshot({ path: path.join(shotsDir, "14-wake-real-audio.png"), timeout: 15_000 }).catch(() => {});
+    await app.close();
+    ok("app quits cleanly after the wake-word run");
+  }
+
   console.log(`[e2e] PASS (${since()})`);
   process.exit(0);
 } catch (err) {

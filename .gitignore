@@ -19,6 +19,8 @@ desktop/bin/*
 # voice-input test assets (CI downloads them) + end-to-end screenshots
 desktop/jfk.wav
 desktop/e2e-mic.wav
+desktop/e2e-wake.mp3
+desktop/e2e-wake.wav
 desktop/e2e-shots/
 
 # env

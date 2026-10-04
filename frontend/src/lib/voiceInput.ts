@@ -312,6 +312,10 @@ export async function startRecording(opts: RecorderOptions = {}): Promise<Record
 }
 
 /** High-quality resampling through the browser's own resampler. */
+export async function resampleAudio(samples: Float32Array, from: number, to: number): Promise<Float32Array> {
+  return resample(samples, from, to);
+}
+
 async function resample(samples: Float32Array, from: number, to: number): Promise<Float32Array> {
   if (samples.length === 0) return new Float32Array(0);
   if (from === to) return samples.slice();

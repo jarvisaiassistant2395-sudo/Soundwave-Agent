@@ -150,6 +150,25 @@ sidebar also has a **minimize** button (the small chevron at its top): it folds
 to a 4rem rail of icons — same tabs, labels as tooltips — and remembers the
 choice between restarts.
 
+**Push to talk, and "Hey Soundwave"** (desktop 1.6.1): talk to it without
+touching the app. *Hold* the shortcut — **Ctrl+Shift+Space** from any program —
+and speak: the voice bar appears, listens for as long as you hold, and sends the
+moment you let go (a quick tap still works the old way: it keeps listening and
+sends when you pause). Electron only reports the press, never the release, so a
+tiny Windows key watcher polls the OS for exactly your shortcut's keys — it runs
+only between the press and the release, and where it can't run the app says so
+and keeps press-to-start/press-to-send. *Say* **"Hey Soundwave"** and it answers
+without a key at all: a hidden window keeps the microphone open, each burst of
+speech is transcribed **on your PC** with the bundled whisper.cpp, and the shell
+checks the transcript for the phrase (`desktop/src/wake.cjs`). Everything that
+isn't the phrase is thrown away on the spot — no audio is written to disk, no
+account, nothing uploaded — and it pauses itself while Soundwave is already
+recording or speaking. Say just the phrase and the bar opens for the next
+sentence; say it with the question ("Hey Soundwave, what's on my screen?") and
+it answers straight away. Both switches live in Settings → Voice & Desktop and
+in the tray menu, and the Settings line says honestly what it is doing
+("Listening", "Paused", the last phrase it heard, or why it can't).
+
 **Its hands and eyes on your PC** (desktop 1.6.0): the agent can finally look
 and touch, for real, with the key you already have — no extra service. *Look at
 the screen*: "what does this error say?", "what's on my screen?", "which button

@@ -7,6 +7,10 @@ export interface DesktopSettings {
   /** Electron accelerator for the global voice shortcut, e.g. "Control+Shift+Space". */
   hotkey: string;
   hotkeyEnabled: boolean;
+  /** Hold the shortcut and talk — releasing it sends. */
+  pushToTalk: boolean;
+  /** Say "Hey Soundwave" and it listens (recognized on this PC, nothing uploaded). */
+  wakeEnabled: boolean;
   /** Closing the window keeps the app (hotkey, notifications, renders) running in the tray. */
   closeToTray: boolean;
   /** Start with Windows (in the tray). */
@@ -15,7 +19,36 @@ export interface DesktopSettings {
   notifications: boolean;
 }
 
+/** What the hidden wake listener is doing (Settings shows this). */
+export interface WakeListenerStatus {
+  enabled: boolean;
+  running: boolean;
+  /** "Hey Soundwave" — the phrases that wake it. */
+  phrases: string[];
+  paused: boolean;
+  state: "starting" | "listening" | "paused" | "off" | "error";
+  detail: string | null;
+  /** How many utterances were transcribed on this PC, and how many were ignored. */
+  heard: number;
+  ignored: number;
+  lastHeard: string | null;
+  lastHit: string | null;
+}
+
+/** Hold-to-talk: the Windows key watcher that knows when you let go. */
+export interface PushToTalkStatus {
+  enabled: boolean;
+  supported: boolean;
+  ready: boolean;
+  down: boolean;
+  problem: string | null;
+  keys: number[];
+}
+
 export interface DesktopState extends DesktopSettings {
+  wake: WakeListenerStatus;
+  /** The key watcher's state (the setting itself is `pushToTalk`). */
+  pushToTalkStatus: PushToTalkStatus;
   version: string;
   hotkeyLabel: string;
   hotkeyRegistered: boolean;
@@ -46,6 +79,14 @@ export interface SoundwaveDesktop {
   hideOverlay(): void;
   setVoiceState(state: "idle" | "listening" | "working"): void;
   openMicrophoneSettings(): void;
+  /** The wake page: pause/resume the microphone (the shell does it while it talks). */
+  onWakeControl(callback: (command: "pause" | "resume") => void): () => void;
+  /** The wake page: what it is doing, for Settings and the tray. */
+  wakeState(payload: { state: "starting" | "listening" | "paused" | "off" | "error"; detail?: string }): void;
+  /** The wake page: what whisper.cpp heard on this PC. Ordinary speech is thrown away. */
+  wakeHeard(payload: { text: string }): void;
+  /** The voice bar: "Hey Soundwave, <this>" — answer it. */
+  onWakeHit(callback: (payload: { text: string }) => void): () => void;
 }
 
 declare global {

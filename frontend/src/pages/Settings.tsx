@@ -414,7 +414,13 @@ function VoiceDesktopTab() {
       ?.getState()
       .then(setDesk)
       .catch(() => undefined);
-    return () => recorderRef.current?.cancel();
+    // The wake listener and the key watcher change on their own; the state line
+    // must be true, not "as it was when the page opened".
+    const poll = desktop ? window.setInterval(() => void desktop.getState().then(setDesk).catch(() => undefined), 4000) : undefined;
+    return () => {
+      if (poll) window.clearInterval(poll);
+      recorderRef.current?.cancel();
+    };
   }, [desktop]);
 
   const updatePrefs = (patch: Partial<VoicePrefs>) => setPrefs(saveVoicePrefs(patch));
@@ -554,6 +560,50 @@ function VoiceDesktopTab() {
         ) : (
           <div>
             <SettingRow
+              title="Push to talk"
+              hint={
+                !desk.pushToTalk ? (
+                  "Off — the shortcut starts listening, press again to send."
+                ) : desk.pushToTalkStatus.problem ? (
+                  <span className="text-amber-300">{desk.pushToTalkStatus.problem} Press to start, press again to send.</span>
+                ) : desk.pushToTalkStatus.ready ? (
+                  "Hold the shortcut (or the mic) and talk — releasing it sends."
+                ) : (
+                  "Getting ready…"
+                )
+              }
+            >
+              <Toggle
+                checked={desk.pushToTalk}
+                onChange={(v) => void updateDesk({ pushToTalk: v })}
+                label="Push to talk"
+                disabled={savingDesk || !desk.hotkeyEnabled}
+              />
+            </SettingRow>
+            <SettingRow
+              title={`Wake word — “Hey Soundwave”`}
+              hint={
+                !desk.wakeEnabled ? (
+                  "Off."
+                ) : desk.wake.state === "listening" ? (
+                  desk.wake.lastHit ? `Heard it — ${desk.wake.lastHit} (${desk.wake.heard} checked, ${desk.wake.ignored} ignored)` : "Listening. Everything you say is checked on this PC and thrown away unless it's the phrase — nothing is uploaded."
+                ) : desk.wake.state === "paused" ? (
+                  "Paused while Soundwave is recording or speaking."
+                ) : desk.wake.state === "error" ? (
+                  <span className="text-amber-300">{desk.wake.detail ?? "The wake word can't listen right now."}</span>
+                ) : (
+                  "Starting…"
+                )
+              }
+            >
+              <Toggle
+                checked={desk.wakeEnabled}
+                onChange={(v) => void updateDesk({ wakeEnabled: v })}
+                label="Wake word"
+                disabled={savingDesk}
+              />
+            </SettingRow>
+            <SettingRow
               title="Voice shortcut"
               hint={
                 !desk.hotkeyEnabled ? (
@@ -595,7 +645,10 @@ function VoiceDesktopTab() {
                 <Toggle checked={desk.notifications} onChange={(v) => void updateDesk({ notifications: v })} label="Notifications" disabled={savingDesk} />
               </div>
             </SettingRow>
-            <p className="pt-2 text-xs text-gray-600">Soundwave AI {desk.version} · shortcut {hotkeyLabel(desk.hotkey)}</p>
+            <p className="pt-2 text-xs text-gray-600">
+              Soundwave AI {desk.version} · shortcut {hotkeyLabel(desk.hotkey)}
+              {desk.pushToTalk && desk.pushToTalkStatus.ready ? " (hold to talk)" : desk.pushToTalk ? " (press to start, press again to send)" : ""}
+            </p>
           </div>
         )}
       </Card>

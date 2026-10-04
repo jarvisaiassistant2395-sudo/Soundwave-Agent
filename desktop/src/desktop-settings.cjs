@@ -16,6 +16,10 @@ const HOTKEY_CHOICES = Object.freeze([
 const DEFAULT_SETTINGS = Object.freeze({
   hotkey: "Control+Shift+Space",
   hotkeyEnabled: true,
+  /** Hold the shortcut (or the mic) and talk — released, it sends. */
+  pushToTalk: true,
+  /** "Hey Soundwave" wakes it while the app runs (recognized on this PC). */
+  wakeEnabled: true,
   closeToTray: true,
   openAtLogin: false,
   notifications: true,
@@ -24,8 +28,8 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 
 /** Keys the app's Settings page may change. */
-const USER_KEYS = ["hotkey", "hotkeyEnabled", "closeToTray", "openAtLogin", "notifications"];
-const BOOLEAN_KEYS = ["hotkeyEnabled", "closeToTray", "openAtLogin", "notifications", "trayHintShown"];
+const USER_KEYS = ["hotkey", "hotkeyEnabled", "pushToTalk", "wakeEnabled", "closeToTray", "openAtLogin", "notifications"];
+const BOOLEAN_KEYS = ["hotkeyEnabled", "pushToTalk", "wakeEnabled", "closeToTray", "openAtLogin", "notifications", "trayHintShown"];
 
 function normalizeSettings(raw) {
   const settings = { ...DEFAULT_SETTINGS };

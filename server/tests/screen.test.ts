@@ -10,7 +10,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { captureScreen, screenAvailable, screenRequest } from "../src/lib/screen.js";
 import { toolsFor } from "../src/lib/brain/tools.js";
-import { resetRemindersForTests } from "../src/lib/reminders.js";
 
 const HOST = "__soundwaveDesktopHost" as const;
 
@@ -153,23 +152,28 @@ describe("what the agent gets back", () => {
   });
 
   it("sets, lists and cancels a reminder through the tools", async () => {
-    resetRemindersForTests();
-    const made = await tool("set_reminder").run({ when: "in 10 minutes", label: "check the render" }, ctx() as never);
-    expect(made).toMatchObject({ ok: true, label: "check the render", kind: "timer" });
+    // The reminders file is shared with the other test files, so this one never
+    // clears it and never counts what's in it: it names its own reminder with a
+    // token only this run can produce and asks only about that one. (A test that
+    // wipes a file another file is using fails somebody else's run, not its own.)
+    const token = `sw-check-${Math.random().toString(36).slice(2, 8)}`;
+    const made = await tool("set_reminder").run({ when: "in 10 minutes", label: token }, ctx() as never);
+    expect(made).toMatchObject({ ok: true, label: token, kind: "timer" });
     expect(String(made.note)).toMatch(/as long as Soundwave is running/i);
 
     const waiting = await tool("list_reminders").run({}, ctx() as never);
-    expect(waiting).toMatchObject({ ok: true, count: 1 });
-    expect(String((waiting.reminders as Array<{ text: string }>)[0]?.text)).toContain("⏰ Timer done — check the render");
+    expect(waiting).toMatchObject({ ok: true });
+    const mine = (waiting.reminders as Array<{ text: string }>).filter((r) => r.text.includes(token));
+    expect(mine, `my reminder isn't in the list: ${JSON.stringify(waiting.reminders)}`).toHaveLength(1);
+    expect(String(mine[0]?.text)).toBe(`⏰ Timer done — ${token}`);
 
-    const cancelled = await tool("cancel_reminder").run({ which: "render" }, ctx() as never);
-    expect(cancelled).toMatchObject({ ok: true, cancelled: "⏰ Timer done — check the render" });
+    const cancelled = await tool("cancel_reminder").run({ which: token }, ctx() as never);
+    expect(cancelled).toMatchObject({ ok: true, cancelled: `⏰ Timer done — ${token}` });
     const after = await tool("list_reminders").run({}, ctx() as never);
-    expect(after.count).toBe(0);
+    expect((after.reminders as Array<{ text: string }>).some((r) => r.text.includes(token))).toBe(false);
   });
 
   it("refuses a time it can't read instead of ringing at a made-up moment", async () => {
-    resetRemindersForTests();
     const made = await tool("set_reminder").run({ when: "after the render finishes" }, ctx() as never);
     expect(made.ok).toBe(false);
     expect(String(made.reason)).toMatch(/can't read a time/i);

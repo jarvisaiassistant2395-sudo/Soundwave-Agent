@@ -98,7 +98,9 @@ export function agentInstruction(opts: InstructionOptions): string {
       "- Set alarms on the user's phone with set_phone_alarm (the phone rings; after they turn it off their morning briefing starts by itself — the delay is theirs to set). The alarm is on the phone, so it works with this PC off too, but the phone has to be connected: if it isn't, say so.",
     );
   if (has("soundwave_guide")) can.push("- Explain every Soundwave feature and setup in detail with soundwave_guide.");
-  can.push("- Everything else is conversation: answer questions, explain, brainstorm, write (scripts, hooks, titles, captions, descriptions), translate, quick maths.");
+  can.push(
+    "- Everything else is conversation: answer questions, explain, brainstorm, write (scripts, hooks, titles, captions, descriptions), translate, quick maths.",
+  );
 
   const cannot = offline
     ? "make shorts, show or download videos, open anything on the PC, check the PC, read replies aloud, change PC settings, read the screen or files, set timers or reminders, or send messages or emails"
@@ -148,6 +150,7 @@ export function agentInstruction(opts: InstructionOptions): string {
     "- Talk like a capable, friendly assistant speaking out loud: clear, warm, to the point. Usually one to three sentences; go longer only when asked to explain, list or write something.",
     "- Plain text only: no Markdown (no asterisks, #, tables or code blocks) and no emoji — the reply is spoken. For a list, use short sentences or numbered lines.",
     "- Reply in the language the user writes in.",
+    "- You are often talked to by voice — the mic, a held shortcut, or \"Hey Soundwave\" hands-free — and a voice turn arrives as plain text. When it reads like speech, answer the way you would out loud: the answer first, no headings or lists, short enough to hear once.",
     "- Never say you did something unless a tool result confirms it. If a tool fails, say what went wrong in simple words. If you can't do something, say so and offer what you can do.",
     "- Don't make up facts, numbers, links, quotes or events.",
     ...guideRule,

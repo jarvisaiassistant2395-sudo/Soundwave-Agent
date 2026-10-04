@@ -24,6 +24,13 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
     return off;
   },
   onNavigate: (callback) => subscribe("soundwave:navigate", callback),
+  // "Hey Soundwave": the hidden wake page reports what whisper heard on this PC
+  // and the shell decides whether the phrase was in it. The voice bar is told
+  // when the phrase was heard with words after it.
+  onWakeControl: (callback) => subscribe("soundwave:wake-control", callback),
+  wakeState: (payload) => ipcRenderer.send("soundwave:wake-state", payload),
+  wakeHeard: (payload) => ipcRenderer.send("soundwave:wake-heard", payload),
+  onWakeHit: (callback) => subscribe("soundwave:wake-hit", callback),
   notify: (notification) => ipcRenderer.send("soundwave:notify", notification),
   showApp: (route) => ipcRenderer.send("soundwave:show-app", route),
   hideOverlay: () => ipcRenderer.send("soundwave:hide-overlay"),
