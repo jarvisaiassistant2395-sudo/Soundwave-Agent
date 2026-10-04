@@ -4,9 +4,13 @@
 // instruction refuses guessing, and that every empty-handed path ends in a
 // sentence a person understands rather than an invented answer.
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { captureScreen, screenAvailable, screenRequest } from "../src/lib/screen.js";
 import { toolsFor } from "../src/lib/brain/tools.js";
+import { resetRemindersForTests } from "../src/lib/reminders.js";
 
 const HOST = "__soundwaveDesktopHost" as const;
 
@@ -103,5 +107,85 @@ describe("the tool", () => {
   it("offers the volume on Windows only, and never lies about it elsewhere", () => {
     const onMac = toolsFor({ ...ctx, platform: "darwin" });
     expect(onMac.map((t) => t.declaration.name)).not.toContain("set_volume");
+  });
+});
+
+// ── The tools as the agent calls them ───────────────────────────────────────
+// Every one of them has to end in either a real fact or a sentence a person
+// understands — never a made-up result.
+
+describe("what the agent gets back", () => {
+  const ctx = () => ({
+    userId: "u1",
+    voice: "v",
+    resolution: "1080p" as const,
+    seconds: 30,
+    desktop: true,
+    platform: "win32" as NodeJS.Platform,
+    effects: { log: [] as string[] },
+  });
+  const tool = (name: string) => toolsFor(ctx() as never).find((t) => t.declaration.name === name)!;
+
+  it("says the screen can only be seen inside the desktop app", async () => {
+    const result = await tool("look_at_screen").run({ question: "what does this error say?" }, ctx() as never);
+    expect(result.ok).toBe(false);
+    expect(String(result.reason)).toMatch(/desktop app/i);
+  });
+
+  it("reads a real file, and says when there is no file there", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sw-tool-files-"));
+    const file = path.join(dir, "todo.txt");
+    fs.writeFileSync(file, "buy milk\ncall the plumber\n");
+    try {
+      const read = await tool("read_file").run({ path: file }, ctx() as never);
+      expect(read).toMatchObject({ ok: true, kind: "file", name: "todo.txt", lines: 3 });
+      expect(String(read.text)).toContain("call the plumber");
+
+      const listed = await tool("read_file").run({ path: dir }, ctx() as never);
+      expect(listed).toMatchObject({ ok: true, kind: "folder", count: 1 });
+
+      const missing = await tool("read_file").run({ path: path.join(dir, "ghost.txt") }, ctx() as never);
+      expect(missing.ok).toBe(false);
+      expect(String(missing.reason)).toMatch(/no file at/i);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sets, lists and cancels a reminder through the tools", async () => {
+    resetRemindersForTests();
+    const made = await tool("set_reminder").run({ when: "in 10 minutes", label: "check the render" }, ctx() as never);
+    expect(made).toMatchObject({ ok: true, label: "check the render", kind: "timer" });
+    expect(String(made.note)).toMatch(/as long as Soundwave is running/i);
+
+    const waiting = await tool("list_reminders").run({}, ctx() as never);
+    expect(waiting).toMatchObject({ ok: true, count: 1 });
+    expect(String((waiting.reminders as Array<{ text: string }>)[0]?.text)).toContain("⏰ Timer done — check the render");
+
+    const cancelled = await tool("cancel_reminder").run({ which: "render" }, ctx() as never);
+    expect(cancelled).toMatchObject({ ok: true, cancelled: "⏰ Timer done — check the render" });
+    const after = await tool("list_reminders").run({}, ctx() as never);
+    expect(after.count).toBe(0);
+  });
+
+  it("refuses a time it can't read instead of ringing at a made-up moment", async () => {
+    resetRemindersForTests();
+    const made = await tool("set_reminder").run({ when: "after the render finishes" }, ctx() as never);
+    expect(made.ok).toBe(false);
+    expect(String(made.reason)).toMatch(/can't read a time/i);
+  });
+
+  it("asks the sound for its real level — and never invents one", async () => {
+    // Read-only on purpose: running the tests on a Windows dev machine must not
+    // turn that machine's volume down. CI (Linux) has no PowerShell at all, and
+    // the honest refusal is the answer there.
+    const result = await tool("set_volume").run({}, ctx() as never);
+    if (process.platform === "win32") {
+      if (result.ok) expect(typeof result.level).toBe("number");
+      else expect(String(result.reason).length).toBeGreaterThan(5);
+    } else {
+      expect(result.ok).toBe(false);
+      expect(String(result.reason).length).toBeGreaterThan(5);
+    }
   });
 });

@@ -360,18 +360,18 @@ all of them tested without a Windows machine in CI:
   that PNG to Gemini as `inlineData` with an instruction that forbids guessing
   and tells it to say when a word is too small to read. Without a Gemini key it
   says exactly that (`needsBrain`) instead of inventing an answer;
-  `server/tests/screen.test.ts` pins the request shape, the fake-host capture
-  and the blank/no-shell failures.
+  `server/tests/screen.test.ts` pins the request shape, the fake-host capture,
+  the blank/no-shell failures and every tool's answer (14 tests).
 - `read_file` (`lib/files.ts`): text files come back whole (cut at 200 KB with
   `truncated` set, size and line count included), folders list with sizes and
   dates, binaries and >40 MB files are refused with the reason, and a missing
-  path says there's no file at that path. `server/tests/files.test.ts`.
+  path says there's no file at that path. `server/tests/files.test.ts` (10 tests).
 - `set_volume` (`lib/pcControl.ts`): master volume and mute through Windows'
   own `IAudioEndpointVolume` (inline C# over PowerShell, no download). The
   script and the `"62|0"` report are pure functions
   (`volumeScript`/`parseVolumeReport`), the runner is injectable so CI on Linux
   drives the whole path, and **an unreadable report throws** instead of a
-  made-up number. `server/tests/pcControl.test.ts`.
+  made-up number. `server/tests/pcControl.test.ts` (11 tests).
 - Timers and reminders (`lib/reminders.ts`, `brain/core/reminders.ts`):
   `parseWhen` is a pure parser ("in 10 minutes", "1h30", "half an hour", "in
   20", "at 17:30", "8pm", "tomorrow at 8", "tonight", "friday at 9") that
@@ -380,7 +380,7 @@ all of them tested without a Windows machine in CI:
   throwing announcement can't double-ring), appends a `tag: "SYS"` message to
   the shared conversation so the phone sees it, and pops a Windows notification.
   `initReminders()` ticks every 20 s (unref'd) from `server/src/index.ts`.
-  `server/tests/reminders.test.ts`.
+  `server/tests/reminders.test.ts` (14 tests).
 - The Command Center card for long videos → Shorts: `POST/GET /api/v1/clips`
   (`routes/clips.ts`) starts the same `startClipsJob` the agent's tool uses,
   with the honest 409 when one video is already being cut and the source's real
