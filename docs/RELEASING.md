@@ -365,7 +365,14 @@ description underneath (`NicheButton` in `AgentHub.tsx`). The Voice Library's
 "Agent's voice" badge no longer pushes itself out of the card (the badge row
 wraps, and the badge says "In use"). E2E follows the two labels it clicked by
 name: the chat placeholder is now `Message…` and the settings tab carries
-`data-testid="youtube-tab"`.
+`data-testid="youtube-tab"`. Two E2E lessons are enforced by checks instead of
+by memory now: the sidebar rail is desktop-layout-only, so the E2E asks the
+shell for a 1400×900 window and records the real page width instead of assuming
+a screen size; and `server/tests/desktop_scripts.test.ts` reads
+`e2e.mjs`/`smoke.mjs`/`verify-runtime.mjs` with the TypeScript compiler on every
+build, failing on any name that doesn't exist in them (`node --check` sees
+syntax, not a helper that was never written — "sleep is not defined" cost one
+Windows run to find).
 
 ## Versioning
 

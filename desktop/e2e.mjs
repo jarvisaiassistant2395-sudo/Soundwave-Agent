@@ -25,6 +25,7 @@ const shotsDir = path.join(desktopDir, "e2e-shots");
 const EXPECT = /ask not what your country/i;
 const started = Date.now();
 const since = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function annotate(level, title, message) {
   if (process.env.GITHUB_ACTIONS !== "true") return;
