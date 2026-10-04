@@ -113,7 +113,10 @@ const pageErrors = [];
 function watch(page) {
   page.on("pageerror", (e) => pageErrors.push(`pageerror: ${e.message}`.slice(0, 300)));
   page.on("console", (m) => {
-    if (m.type() === "error") pageErrors.push(`console: ${m.text()}`.slice(0, 300));
+    // Everything the app calls an error, plus the app's own briefing lines: when
+    // a briefing can't be delivered, the reason (and the state it was in) is one
+    // of those, and a failure annotation that can't say why is a wasted run.
+    if (m.type() === "error" || /^\[briefing\]/.test(m.text())) pageErrors.push(`console: ${m.text()}`.slice(0, 300));
   });
   return page;
 }
@@ -708,11 +711,12 @@ try {
     if (!alarmSpoke && !alarmProblem) await sleep(500);
   }
   if (alarmProblem) {
-    // Say what the PC knew at that moment: with the app's own sentence alone a
-    // red run here can't be told apart from a bad test (that is exactly what
-    // happened once, and cost a whole run to work out).
+    // Say what the PC knew at that moment, and what the app itself logged: with
+    // the app's own sentence alone a red run here can't be told apart from a bad
+    // test (that is exactly what happened once, and cost a whole run to work out).
     const why = await briefWhy(page, briefingNow?.day ?? null);
-    fail(`the briefing after the alarm failed: ${alarmProblem} — ${why}`);
+    const logged = pageErrors.filter((l) => /\[briefing\]/.test(l)).slice(-2).join(" | ") || "no briefing line was logged";
+    fail(`the briefing after the alarm failed: ${alarmProblem} — ${why} — the app logged: ${logged}`);
   } else if (!alarmSpoke) {
     const why = await briefWhy(page, briefingNow?.day ?? null);
     fail(`the briefing never started talking after the alarm was turned off — ${why} | app screen: "${lastScreen}"`);

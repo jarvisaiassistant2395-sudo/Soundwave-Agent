@@ -529,7 +529,12 @@ export function useCompanion(): Companion {
    * phone researches and writes itself. Once per day per phone (and not if
    * it was already heard on the PC), unless `force`.
    */
-  /** Why the PC said it couldn't write one, for the sentence the person reads. */
+  /**
+   * Why the PC said it couldn't write one *this time*, for the sentence the
+   * person reads. Cleared at the start of every attempt: quoting a refusal from
+   * an hour ago blamed a key the PC had been given long since, and a run went
+   * red on that sentence rather than on what actually happened.
+   */
   const lastPrepareRefused = useRef<string | null>(null);
 
   const deliverBriefing = useCallback(
@@ -541,6 +546,7 @@ export function useCompanion(): Companion {
       if (!opts.force && (!settingsRef.current.talkOnOpen || !plan?.auto || !inBriefingWindow(plan.time, now) || heardRef.current.includes(day))) return;
       briefingBusy.current = true;
       briefingStop.current = false;
+      lastPrepareRefused.current = null;
       // A briefing the person asked for right now (they turned an alarm off, or
       // tapped to hear it): if the media volume — which the voice plays on, and
       // which the alarm does not touch — is at zero, turn it up so it is heard.
@@ -635,9 +641,16 @@ export function useCompanion(): Companion {
           // The sentence is built from what was actually true (lib/briefingSource):
           // a phone holding the key is never told it has none, and a PC that never
           // answered is described as unreachable rather than off.
-          throw new Error(
-            briefingFailureNote(stateRef.current.kind as CompanionPhase, { pcRefusedNote: lastPrepareRefused.current }),
+          const note = briefingFailureNote(stateRef.current.kind as CompanionPhase, {
+            pcRefusedNote: lastPrepareRefused.current,
+            hasKit: Boolean(kitRef.current),
+          });
+          // The ingredients, on the console: a red run can be read from its page
+          // log, and a person reporting this can copy one line instead of guessing.
+          console.warn(
+            `[briefing] nothing to speak: ${note} (state ${stateRef.current.kind}, kit ${kitRef.current ? "yes" : "no"}, plan ${plan ? `${plan.time} auto=${plan.auto} topics=${plan.topics.length}` : "none"}, pc refused ${lastPrepareRefused.current ?? "nothing"})`,
           );
+          throw new Error(note);
         }
         markHeard(day, msg);
         // This run IS the briefing: clear the "an alarm was turned off" flag so the

@@ -638,45 +638,86 @@ try {
   // to ignore red. What matters is that the answer is reported every run.
   at("agent eyes (real video + real page)");
   await main.goto(`${appBase}/agent`);
-  await main.waitForSelector('input[placeholder="Message…"]', { timeout: 30_000 });
+  /**
+   * Ask the Command Center something, and if its message box isn't usable say
+   * exactly why: on the run that failed here, "fill: Timeout 30000ms exceeded"
+   * named neither the element's state nor what covered it, and the stage took
+   * the whole run down with it. The eyes stage is informational by design
+   * (YouTube bot-checks and CI networks make the reads flaky, and a flaky gate
+   * teaches people to ignore red) — so it may not abort the acceptance-critical
+   * stages that follow (wake word, push-to-talk, tray, alarm).
+   */
+  const askAgent = async (text) => {
+    try {
+      await main.waitForSelector('input[placeholder="Message…"]', { state: "visible", timeout: 20_000 });
+      await main.fill('input[placeholder="Message…"]', text);
+      await main.press('input[placeholder="Message…"]', "Enter");
+    } catch (err) {
+      const state = await main
+        .evaluate(() => {
+          const el = document.querySelector('input[placeholder="Message…"]');
+          const r = el ? el.getBoundingClientRect() : null;
+          const mid = r
+            ? document.elementFromPoint(Math.min(Math.max(r.x + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.y + r.height / 2, 0), innerHeight - 1))
+            : null;
+          return {
+            url: location.href,
+            exists: Boolean(el),
+            visible: Boolean(el && el.offsetParent !== null),
+            disabled: el?.disabled ?? null,
+            readOnly: el?.readOnly ?? null,
+            rect: r ? `${Math.round(r.width)}×${Math.round(r.height)} at ${Math.round(r.x)},${Math.round(r.y)}` : null,
+            onTop: mid ? `${mid.tagName}${mid.getAttribute("data-testid") ? `[${mid.getAttribute("data-testid")}]` : ""}` : null,
+            screen: document.body.innerText.replace(/\s+/g, " ").slice(0, 200),
+          };
+        })
+        .catch((e) => ({ error: e.message }));
+      throw new Error(`the Command Center's message box isn't usable: ${JSON.stringify(state)} (${String(err.message).split("\n")[0]})`);
+    }
+  };
   const watchUrl = "https://www.youtube.com/watch?v=iG9CE55wbtY"; // a TED talk with human-made English subtitles
-  await main.fill('input[placeholder="Message…"]', `read this video and tell me what it says: ${watchUrl}`);
-  await main.press('input[placeholder="Message…"]', "Enter");
-  const eyesSeen = async () =>
-    main
-      .evaluate(() => {
-        const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
-        return list.slice(-3).map((m) => `${m.sender}: ${String(m.text ?? "")}`).join(" | ");
-      })
-      .catch(() => "");
-  let videoRead = "";
-  for (let i = 0; i < 40 && !videoRead; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const seen = await eyesSeen();
-    if (/READ_VEOK/.test(seen)) videoRead = seen;
-    else if (/couldn't read that video/i.test(seen)) {
-      annotate("warning", "Desktop E2E: agent eyes", `Reading a real YouTube video didn't work this run (YouTube bot check or network): ${seen.slice(-300)}`);
-      break;
+  try {
+    await askAgent(`read this video and tell me what it says: ${watchUrl}`);
+    const eyesSeen = async () =>
+      main
+        .evaluate(() => {
+          const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
+          return list.slice(-3).map((m) => `${m.sender}: ${String(m.text ?? "")}`).join(" | ");
+        })
+        .catch(() => "");
+    let videoRead = "";
+    for (let i = 0; i < 40 && !videoRead; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const seen = await eyesSeen();
+      if (/READ_VEOK/.test(seen)) videoRead = seen;
+      else if (/couldn't read that video/i.test(seen)) {
+        annotate("warning", "Desktop E2E: agent eyes", `Reading a real YouTube video didn't work this run (YouTube bot check or network): ${seen.slice(-300)}`);
+        break;
+      }
     }
-  }
-  if (videoRead) {
-    const title = /READ_VEOK (.+?) \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
-    const kind = /READ_VEOK .+? \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
-    ok(`the agent read a real YouTube video (${kind} captions): “${title}”`);
-  }
-  await main.fill('input[placeholder="Message…"]', "read this page and tell me what it says: https://example.com/");
-  await main.press('input[placeholder="Message…"]', "Enter");
-  let pageRead = "";
-  for (let i = 0; i < 30 && !pageRead; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const seen = await eyesSeen();
-    if (/READ_PAGE_OK/.test(seen)) pageRead = seen;
-    else if (/couldn't read that page/i.test(seen)) {
-      annotate("warning", "Desktop E2E: agent eyes", `Reading a real web page didn't work this run: ${seen.slice(-300)}`);
-      break;
+    if (videoRead) {
+      const title = /READ_VEOK (.+?) \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
+      const kind = /READ_VEOK .+? \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
+      ok(`the agent read a real YouTube video (${kind} captions): “${title}”`);
     }
+    await askAgent("read this page and tell me what it says: https://example.com/");
+    let pageRead = "";
+    for (let i = 0; i < 30 && !pageRead; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const seen = await eyesSeen();
+      if (/READ_PAGE_OK/.test(seen)) pageRead = seen;
+      else if (/couldn't read that page/i.test(seen)) {
+        annotate("warning", "Desktop E2E: agent eyes", `Reading a real web page didn't work this run: ${seen.slice(-300)}`);
+        break;
+      }
+    }
+    if (pageRead) ok("the agent read a real web page (example.com) through its own fetch");
+  } catch (err) {
+    // Informational stage: record what happened and carry on. Every later stage
+    // (wake word, push-to-talk, tray, notifications) is the reason this run
+    // exists, and none of them may be skipped because YouTube bot-checked us.
+    annotate("warning", "Desktop E2E: agent eyes", `${err.message} — continuing (this stage is informational)`);
   }
-  if (pageRead) ok("the agent read a real web page (example.com) through its own fetch");
 
   // ── 3e. Ghost Operator macros really run: a clipboard round trip through ──
   at("Ghost Operator macro");

@@ -30,11 +30,19 @@ export function canWriteBriefingOnPhone(phase: CompanionPhase, hasKit: boolean):
  * was actually true — a phone that holds the key is never told it doesn't, and
  * a PC that never answered is described as unreachable rather than off.
  */
-export function briefingFailureNote(phase: CompanionPhase, opts: { pcRefusedNote?: string | null } = {}): string {
+export function briefingFailureNote(
+  phase: CompanionPhase,
+  opts: { pcRefusedNote?: string | null; hasKit?: boolean } = {},
+): string {
   if (phase === "online") {
-    return `your PC couldn't write today's briefing when this phone asked it just now${
+    const pc = `your PC couldn't write today's briefing when this phone asked it just now${
       opts.pcRefusedNote ? ` (${opts.pcRefusedNote})` : ""
-    } and this phone has no key of its own — try again in a moment`;
+    }`.replace(/^your PC/, "Your PC");
+    // Say what the phone could not do, and why — never a reason that belonged to
+    // an earlier attempt (the note is only ever what the PC said *this* time).
+    return opts.hasKit
+      ? `${pc}, and writing one here didn't work either — try again in a moment`
+      : `${pc}, and this phone hasn't got the key it needs to write one here (that comes from the PC) — open Soundwave on the PC once, then ask again`;
   }
   if (phase === "forgotten") return "this phone isn't paired with your PC any more — pair it again from the PC (Settings → Phone)";
   return "Soundwave hasn't reached your PC yet, and this phone hasn't got the PC's key to write a briefing by itself (that arrives in the background while the PC is on) — open Soundwave on the PC once, then ask again";

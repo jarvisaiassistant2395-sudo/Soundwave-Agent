@@ -466,6 +466,27 @@ what was actually true (`mobile/src/lib/briefingSource.ts`, tested): a phone
 holding the key is never told it has none, and a PC that never answered is
 called unreachable rather than off.
 
+**A failed briefing must not quote yesterday's reason.** The refusal note the
+phone shows came from a `useRef` that nothing ever cleared, so a delivery that
+failed late could be blamed on something the PC said an hour earlier — in the
+alarm run it read "no Gemini key on the PC" while the PC had been given a key
+before the alarm was even set, which is exactly the kind of sentence that sends
+someone looking in the wrong place. Each attempt now starts with a clean slate
+(`lastPrepareRefused.current = null`), the sentence is built from this attempt's
+facts (`briefingFailureNote(..., { pcRefusedNote, hasKit })`, tested), and the
+ingredients — state, kit, plan, what the PC refused — go to the console as one
+`[briefing]` line, which the phone e2e keeps in its failure annotations.
+
+**An informational stage may not abort the run.** The desktop e2e's eyes stage is
+informational on purpose (YouTube bot-checks the CI runner), yet a Playwright
+timeout there — `fill: Timeout 30000ms exceeded` for the Command Center's
+message box — took the whole run down, so the acceptance-critical stages after it
+(wake word, push-to-talk, tray, alarm) were skipped three runs in a row. The
+stage now asks through one helper (`askAgent`) that, when the box isn't usable,
+reports the truth about it — does it exist, is it visible, disabled, read-only,
+what is on top of it, what is on screen — and a failure inside the stage is
+recorded as a warning and the run continues.
+
 **One microphone at a time.** The wake word ("Hey Soundwave", 1.6.0) put a
 hidden window on the PC that listens and transcribes what it hears in the
 background. That window and the person both want the same thing: this PC's

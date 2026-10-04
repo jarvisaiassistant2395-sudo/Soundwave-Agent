@@ -25,10 +25,23 @@ describe("who writes today's briefing", () => {
     expect(canWriteBriefingOnPhone("forgotten", true)).toBe(false);
   });
 
-  it("blames the PC only when the PC was actually asked", () => {
-    const asked = briefingFailureNote("online", { pcRefusedNote: "no Gemini key on the PC" });
-    expect(asked).toMatch(/your PC couldn't write today's briefing/);
+  it("blames the PC only when the PC was actually asked — and only with what it said this time", () => {
+    const asked = briefingFailureNote("online", { pcRefusedNote: "no Gemini key on the PC", hasKit: false });
+    expect(asked).toMatch(/Your PC couldn't write today's briefing/);
     expect(asked).toMatch(/no Gemini key on the PC/);
+    // No note from this attempt → the sentence must not invent one: a stale
+    // note (a ref that was never cleared) once blamed a key the PC had had for
+    // an hour, which is worse than saying less.
+    const bare = briefingFailureNote("online", { hasKit: false });
+    expect(bare).not.toMatch(/no Gemini key on the PC|no topics|memory isn't available/);
+    expect(bare).toMatch(/hasn't got the key it needs/);
+  });
+
+  it("says a different thing when the phone did have the key", () => {
+    const withKit = briefingFailureNote("online", { pcRefusedNote: "nothing in the PC's Morning Setup to research", hasKit: true });
+    expect(withKit).toMatch(/nothing in the PC's Morning Setup to research/);
+    expect(withKit).toMatch(/writing one here didn't work either/);
+    expect(withKit).not.toMatch(/hasn't got the key/);
   });
 
   it("describes an unreachable PC as unreachable — never as a phone without a key", () => {
