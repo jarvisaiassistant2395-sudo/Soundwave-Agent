@@ -642,16 +642,20 @@ OAuth identity; new OAuth users are created email-verified with no password.
 
 ### On-device narration (Kokoro)
 
-On the packaged **Windows x64 desktop app**, Kokoro sets itself up on first
-launch: a checksum-verified Python runtime, CPU-only PyTorch and the Kokoro
-packages/model download into per-user app data. It starts as a hidden background
+On the packaged **Windows x64 desktop app**, Kokoro sets itself up automatically
+on first launch: a checksum-verified Python runtime, CPU-only PyTorch, the
+speech engine, pronunciation assets, the model and **all 28 advertised voice
+packs** are cached in per-user app data. It starts as a hidden background
 service whenever Soundwave runs and stops when the app exits. No terminal,
-manual environment setup or Chatterbox install is required; the first setup
-needs internet, while later narration runs on the PC. The Voice Library and
-Settings show setup progress and let you cancel it without affecting Soundwave's
-default voices; a cancelled setup can be retried next launch. CI can disable
-first-run setup with
-`SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP=1`.
+manual environment setup or Chatterbox install is required; first setup needs
+internet and enough free disk space; after setup, later starts load from the
+verified cache offline and narration runs locally.
+The Voice Library and Settings report runtime, package and model/asset progress,
+and let you cancel without affecting Soundwave's voices. If setup is cancelled
+or fails, choose **Retry setup** in the same session: completed verified files
+are reused, incomplete downloads are cleaned up, and network/disk blockers are
+called out. Later starts are silent once setup succeeds. CI can disable first-run
+setup with `SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP=1`.
 
 Standalone Node servers, development builds and non-Windows installs still use
 the optional service instructions in [`voiceclone/README.md`](voiceclone/README.md)

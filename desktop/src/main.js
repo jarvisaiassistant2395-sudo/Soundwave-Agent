@@ -664,6 +664,7 @@ function registerIpc() {
   ipcMain.handle("soundwave:get-state", (event) => (trusted(event) ? publicState() : null));
   ipcMain.handle("soundwave:update-settings", (event, patch) => (trusted(event) ? updateSettings(patch) : null));
   ipcMain.handle("soundwave:cancel-kokoro-setup", (event) => (trusted(event) ? Boolean(kokoroManager?.cancelSetup()) : false));
+  ipcMain.handle("soundwave:retry-kokoro-setup", (event) => (trusted(event) ? (kokoroManager?.retrySetup() ?? false) : false));
   ipcMain.handle("soundwave:is-app-focused", (event) => {
     if (!trusted(event)) return false;
     return alive(mainWindow) && mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized();

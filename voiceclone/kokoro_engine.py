@@ -20,15 +20,16 @@ What this file uses instead — every piece permissively licensed:
                                    phonemizer or espeak-ng.
                                    Caveat, recorded rather than glossed over:
                                    FallbackNetwork loads a ~3 MB BART model from
-                                   `PeterReid/graphemes_to_phonemes_en_us` on
-                                   Hugging Face. Its model card is empty and
-                                   states **no licence** (checked 2026-10-04), so
-                                   it is listed as unverified in
+                                   the dialect-specific `PeterReid/graphemes_to_phonemes_en_us`
+                                   or `PeterReid/graphemes_to_phonemes_en_gb` on
+                                   Hugging Face. Their model cards are empty and
+                                   state **no licence** (checked 2026-10-04), so
+                                   they are listed as unverified in
                                    THIRD-PARTY-NOTICES.txt instead of being
-                                   called Apache-2.0. It is what misaki itself
-                                   uses by default, and it is downloaded to the
+                                   called Apache-2.0. They are what misaki itself
+                                   uses by default, and are downloaded to the
                                    user's own machine — nothing we ship conveys
-                                   it — but the gap is named, not hidden.
+                                   them — but the gap is named, not hidden.
   • `kokoro.model`     Apache-2.0  KModel (the 82M network + weights loader),
                                    installed with --no-deps so its GPL extra
                                    never lands in the environment.
@@ -108,6 +109,27 @@ class KokoroEngine:
                 path = hf_hub_download(repo_id=self.repo_id, filename=f"voices/{voice}.pt")
                 self._voices[voice] = torch.load(path, weights_only=True)
             return self._voices[voice]
+
+    def preload_text_assets(self) -> None:
+        """Warm misaki's tokenizer and fallback G2P weights for offline use."""
+        # These uncommon names plus a deliberately unknown token exercise the
+        # fallback network used for words absent from misaki's dictionary. It is a small Hugging Face
+        # asset that would otherwise first download on an arbitrary narration.
+        self.g2p("Soundwave Kokoro qzxvkp")
+
+    def preload_voice_packs(self, voices: Iterable[str], on_progress=None) -> int:
+        """Download/cache every requested pack before an offline-first service starts.
+
+        ``on_progress`` receives (completed, total, voice_id) after each pack is
+        present in Hugging Face's local cache and loaded into this engine.
+        """
+        voice_ids = list(dict.fromkeys(voices))
+        total = len(voice_ids)
+        for completed, voice_id in enumerate(voice_ids, start=1):
+            self.voice_tensor(voice_id)
+            if callable(on_progress):
+                on_progress(completed, total, voice_id)
+        return total
 
     def attach_model(self, model) -> None:
         """Share one KModel across languages (upstream recommends this)."""

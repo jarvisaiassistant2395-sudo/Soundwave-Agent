@@ -69,9 +69,33 @@ MOCK = os.environ.get("CHATTERBOX_MOCK", "").lower() in ("1", "true", "yes")
 # Keep cloning endpoints present for API compatibility, but never import or
 # advertise Chatterbox there.
 CHATTERBOX_OFF = os.environ.get("CHATTERBOX_OFF", "").lower() in ("1", "true", "yes")
-# The packaged desktop warms the base model and default voice before uvicorn
-# begins listening, so the first narration request doesn't wait on downloads.
+# The packaged desktop loads the model and all advertised voice packs before
+# uvicorn listens, so narration is available offline after setup.
 KOKORO_PRELOAD = os.environ.get("KOKORO_PRELOAD", "").lower() in ("1", "true", "yes")
+KOKORO_SETUP_PROGRESS_FILE = os.environ.get("KOKORO_SETUP_PROGRESS_FILE", "")
+
+
+def _write_kokoro_setup_progress(message: str, progress: int | None = None, progress_label: str | None = None) -> None:
+    """Publish model/voice-pack setup progress for the desktop supervisor."""
+    if not KOKORO_SETUP_PROGRESS_FILE:
+        return
+    target = Path(KOKORO_SETUP_PROGRESS_FILE)
+    temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    payload = {"phase": "loading-model", "message": message[:400]}
+    if progress is not None:
+        payload["progress"] = max(0, min(100, int(progress)))
+    if progress_label:
+        payload["progressLabel"] = progress_label[:80]
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        os.replace(temporary, target)
+    except OSError as exc:
+        print(f"[voiceclone] could not write Kokoro setup progress: {exc}", flush=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 # Emotion dial (0 = flat, 1 = excited) and how strongly the reference clip is
 # followed. Chatterbox's own defaults; env-tunable for a particular voice.
 EXAGGERATION = float(os.environ.get("CHATTERBOX_EXAGGERATION", "0.5"))
@@ -183,13 +207,32 @@ KOKORO_READY = False
 if not KOKORO_OFF and not MOCK:
     print(f"[voiceclone] loading Kokoro (narration, lang '{KOKORO_LANG}') — Apache-2.0, CPU…", flush=True)
     try:
+        if KOKORO_PRELOAD:
+            _write_kokoro_setup_progress("Loading Kokoro's English pronunciation model.", progress_label="Pronunciation assets")
         engine = _kokoro_pipeline(KOKORO_LANG)
         if KOKORO_PRELOAD:
-            # Download/cache the 82M model and its default voice before the
-            # desktop service reports ready. Other voice packs stay on-demand.
+            # Download/cache the model, both dialects' G2P fallback assets and
+            # all 28 voice packs before the desktop reports ready. Subsequent
+            # narration is offline, regardless of the advertised voice chosen.
+            _write_kokoro_setup_progress("Downloading and loading the Kokoro speech model.", progress_label="Speech model")
             engine._ensure_model()
-            default_voice = next(v["id"] for v in KOKORO_VOICES if v.get("default"))
-            engine.voice_tensor(default_voice)
+            for lang_code, label in (("a", "American"), ("b", "British")):
+                _write_kokoro_setup_progress(f"Preparing Kokoro's {label} pronunciation assets.", progress_label=f"{label} text assets")
+                _kokoro_pipeline(lang_code).preload_text_assets()
+            voice_ids = [voice["id"] for voice in KOKORO_VOICES]
+            _write_kokoro_setup_progress(f"Caching all {len(voice_ids)} Kokoro voice packs.", 0, f"Voice packs (0/{len(voice_ids)})")
+
+            def report_voice_progress(completed: int, total: int, voice_id: str) -> None:
+                voice = next((item for item in KOKORO_VOICES if item["id"] == voice_id), None)
+                voice_name = voice["name"] if voice else voice_id
+                percent = round(completed * 100 / max(1, total))
+                _write_kokoro_setup_progress(
+                    f"Caching Kokoro voice {completed} of {total}: {voice_name}.",
+                    percent,
+                    f"Voice packs ({completed}/{total})",
+                )
+
+            engine.preload_voice_packs(voice_ids, report_voice_progress)
         KOKORO_READY = True
         print(f"[voiceclone] Kokoro ready ({len(KOKORO_VOICES)} voices)", flush=True)
     except Exception as e:  # noqa: BLE001

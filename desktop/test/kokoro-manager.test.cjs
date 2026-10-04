@@ -11,9 +11,13 @@ const {
   PYTHON_INSTALLER_SHA256,
   PYTHON_INSTALLER_URL,
   PYTHON_VERSION,
+  RUNTIME_REVISION,
   SETUP_REVISION,
+  assertFreeSpace,
   atomicWriteJson,
+  cleanIncompleteDownloads,
   createManagedKokoro,
+  describeSetupFailure,
   downloadHttps,
   readJson,
   shouldManageLocalVoice,
@@ -21,6 +25,16 @@ const {
 const { getFreePort } = require("../src/server-env.cjs");
 
 const packagedWindows = { enabled: true, platform: "win32", arch: "x64", env: {} };
+
+async function waitForSetupState(manager, predicate, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = manager.state();
+    if (predicate(state)) return state;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.fail(`Timed out waiting for Kokoro setup state; last state: ${JSON.stringify(manager.state())}`);
+}
 
 test("managed Kokoro runs only in a packaged x64 Windows app without an explicit override", () => {
   assert.equal(shouldManageLocalVoice(packagedWindows), true);
@@ -52,6 +66,40 @@ test("the Python download honors a cancellation signal without leaving a partial
   }
 });
 
+test("setup blockers distinguish network and disk-space failures", () => {
+  assert.match(describeSetupFailure(new Error("getaddrinfo ENOTFOUND huggingface.co")), /internet connection/);
+  assert.match(describeSetupFailure(new Error("write failed: ENOSPC")), /free disk space/);
+  assert.match(describeSetupFailure(new Error("pip exited with code 1"), "OSError: [Errno 28] No space left on device"), /free disk space/);
+
+  const originalStatfs = fs.statfsSync;
+  try {
+    fs.statfsSync = () => ({ bavail: 1, bsize: 1 });
+    assert.throws(() => assertFreeSpace(os.tmpdir(), 1024, "test assets"), /Kokoro needs about/);
+  } finally {
+    fs.statfsSync = originalStatfs;
+  }
+});
+
+test("repair cleanup removes only incomplete cache downloads", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-cleanup-"));
+  try {
+    const cache = path.join(dir, "huggingface", "hub");
+    fs.mkdirSync(cache, { recursive: true });
+    const verified = path.join(cache, "model.bin");
+    const incomplete = path.join(cache, "model.bin.incomplete");
+    const temporary = path.join(cache, "download.tmp");
+    fs.writeFileSync(verified, "verified");
+    fs.writeFileSync(incomplete, "partial");
+    fs.writeFileSync(temporary, "partial");
+    cleanIncompleteDownloads(path.join(dir, "huggingface"));
+    assert.equal(fs.readFileSync(verified, "utf8"), "verified");
+    assert.equal(fs.existsSync(incomplete), false);
+    assert.equal(fs.existsSync(temporary), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("managed setup writes status atomically under the per-user data directory", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-"));
   try {
@@ -61,6 +109,39 @@ test("managed setup writes status atomically under the per-user data directory",
     assert.deepEqual(readJson(statusPath), status);
     assert.deepEqual(fs.readdirSync(path.dirname(statusPath)), ["status.json"]);
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a full disk still publishes an actionable setup status when the atomic temp write fails", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-status-enospc-"));
+  let manager;
+  const originalWriteFile = fs.writeFileSync;
+  try {
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir: path.join(dir, "resources"),
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48125,
+      spawnProcess: () => { throw new Error("setup must not start before manager.start()"); },
+    });
+    let simulatedFullDisk = false;
+    fs.writeFileSync = function (filePath, ...args) {
+      if (!simulatedFullDisk && String(filePath).endsWith(".tmp")) {
+        simulatedFullDisk = true;
+        const error = new Error("No space left on device");
+        error.code = "ENOSPC";
+        throw error;
+      }
+      return originalWriteFile.call(fs, filePath, ...args);
+    };
+
+    manager.writeState("failed", "There isn't enough free disk space.");
+    assert.equal(simulatedFullDisk, true);
+    assert.equal(readJson(manager.statusFile).message, "There isn't enough free disk space.");
+  } finally {
+    fs.writeFileSync = originalWriteFile;
+    manager?.stop();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -122,6 +203,146 @@ test("cancelling model setup terminates the sidecar and preserves a cancelled st
   }
 });
 
+test("cancelled and failed Kokoro setup can be repaired in-session with cached files and progress", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-retry-"));
+  const resourcesDir = path.join(dir, "resources");
+  const runtimeDir = path.join(dir, "user-data", "kokoro");
+  const pythonExe = path.join(runtimeDir, "python", "python.exe");
+  const venvPython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+  const cacheDir = path.join(runtimeDir, "cache", "huggingface");
+  const originalFetch = global.fetch;
+  let manager;
+  let serviceAttempts = 0;
+  let thirdHealthRequests = 0;
+  const offlineFlags = [];
+
+  try {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+    fs.mkdirSync(path.dirname(pythonExe), { recursive: true });
+    fs.mkdirSync(path.dirname(venvPython), { recursive: true });
+    for (const file of ["server.py", "kokoro_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    fs.writeFileSync(pythonExe, "test runtime");
+    fs.writeFileSync(venvPython, "test venv");
+    fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const verifiedCache = path.join(cacheDir, "verified-model.bin");
+    const partialCache = path.join(cacheDir, "voice.pt.incomplete");
+    fs.writeFileSync(verifiedCache, "keep me");
+    fs.writeFileSync(partialCache, "partial");
+
+    global.fetch = async (url) => {
+      if (!String(url).endsWith("/health")) return { ok: false, status: 404 };
+      if (serviceAttempts >= 3) {
+        if (serviceAttempts === 3 && thirdHealthRequests++ === 0) return { ok: false, status: 503 };
+        return {
+          ok: true,
+          json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true } } }),
+        };
+      }
+      return { ok: false, status: 503 };
+    };
+
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir,
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48129,
+      spawnProcess: (_executable, args, options) => {
+        const child = new EventEmitter();
+        child.pid = 54330 + serviceAttempts;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => {
+          child.signalCode = "SIGTERM";
+          setImmediate(() => child.emit("exit", null, "SIGTERM"));
+          return true;
+        };
+        child.unref = () => {};
+        if (args.includes("uvicorn")) {
+          serviceAttempts++;
+          offlineFlags.push(options.env.HF_HUB_OFFLINE);
+          if (serviceAttempts === 1) {
+            setImmediate(() => manager.cancelSetup());
+          } else if (serviceAttempts === 2) {
+            setImmediate(() => {
+              child.exitCode = 1;
+              child.emit("exit", 1, null);
+            });
+          } else {
+            fs.writeFileSync(
+              options.env.KOKORO_SETUP_PROGRESS_FILE,
+              JSON.stringify({ phase: "loading-model", message: "Caching voice pack 14 of 28.", progress: 50, progressLabel: "Voice packs (14/28)" }),
+            );
+          }
+        } else {
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
+        }
+        return child;
+      },
+    });
+
+    await manager.start();
+    assert.equal(manager.state().phase, "cancelled");
+    assert.equal(await manager.retrySetup(), true);
+    await waitForSetupState(manager, (state) => state.phase === "failed");
+    assert.equal(fs.existsSync(partialCache), false);
+    assert.equal(fs.readFileSync(verifiedCache, "utf8"), "keep me");
+    assert.equal(fs.existsSync(path.join(runtimeDir, "install.json")), true);
+
+    assert.equal(await manager.retrySetup(), true);
+    const progress = await waitForSetupState(manager, (state) => state.phase === "loading-model" && state.progress === 50);
+    assert.equal(progress.progressLabel, "Voice packs (14/28)");
+    await waitForSetupState(manager, (state) => state.phase === "ready");
+    assert.equal(serviceAttempts, 3);
+    assert.deepEqual(offlineFlags, ["0", "0", "0"]);
+    assert.equal(readJson(path.join(runtimeDir, "assets-ready.json")).revision, RUNTIME_REVISION);
+
+    manager.stop();
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir,
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48130,
+      spawnProcess: (_executable, args, options) => {
+        const child = new EventEmitter();
+        child.pid = 54340 + serviceAttempts;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => {
+          child.signalCode = "SIGTERM";
+          setImmediate(() => child.emit("exit", null, "SIGTERM"));
+          return true;
+        };
+        child.unref = () => {};
+        if (args.includes("uvicorn")) {
+          serviceAttempts++;
+          offlineFlags.push(options.env.HF_HUB_OFFLINE);
+          fs.writeFileSync(
+            options.env.KOKORO_SETUP_PROGRESS_FILE,
+            JSON.stringify({ phase: "loading-model", message: "Using the verified offline cache.", progress: 100, progressLabel: "Offline cache" }),
+          );
+        } else {
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
+        }
+        return child;
+      },
+    });
+    await manager.start();
+    assert.equal(manager.state().phase, "ready");
+    assert.deepEqual(offlineFlags, ["0", "0", "0", "1"]);
+  } finally {
+    manager?.stop();
+    global.fetch = originalFetch;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("managed Kokoro setup can be cancelled before its first subprocess starts", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-cancel-"));
   try {
@@ -164,7 +385,13 @@ test("the first managed run gets a loopback URL and a private token without star
     assert.equal(manager.url, "http://127.0.0.1:48123");
     assert.match(manager.token, /^[a-f0-9]{64}$/);
     assert.ok(fs.existsSync(manager.statusFile));
-    assert.equal(readJson(path.join(dir, "user-data", "kokoro", "managed-runtime.json")).port, 48123);
+    assert.deepEqual(readJson(path.join(dir, "user-data", "kokoro", "managed-runtime.json")), {
+      revision: RUNTIME_REVISION,
+      port: 48123,
+      token: manager.token,
+      pid: null,
+      url: "http://127.0.0.1:48123",
+    });
     manager.stop();
     assert.equal(fs.existsSync(path.join(dir, "user-data", "kokoro", "managed-runtime.json")), false);
   } finally {

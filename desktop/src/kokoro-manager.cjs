@@ -11,6 +11,9 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const SETUP_REVISION = 1;
+// Invalidates an older resident service which preloaded only one voice pack,
+// without forcing a reinstall of the already-verified Python package environment.
+const RUNTIME_REVISION = 2;
 const PYTHON_VERSION = "3.13.16";
 const PYTHON_INSTALLER_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe`;
 // Published by python.org for the x64 Windows installer.
@@ -20,6 +23,8 @@ const TORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu";
 const REQUEST_TIMEOUT_MS = 3_000;
 const SERVICE_START_TIMEOUT_MS = 15 * 60_000;
 const COMMAND_TIMEOUT_MS = 30 * 60_000;
+const MIN_PYTHON_SETUP_FREE_BYTES = 300 * 1024 * 1024;
+const MIN_PACKAGE_SETUP_FREE_BYTES = 1536 * 1024 * 1024;
 
 function shouldManageLocalVoice({ enabled, platform, arch, env = {} }) {
   if (!enabled || platform !== "win32" || arch !== "x64") return false;
@@ -49,6 +54,53 @@ function readJson(filePath) {
   } catch {
     return null;
   }
+}
+
+function assertFreeSpace(location, requiredBytes, purpose) {
+  if (typeof fs.statfsSync !== "function") return;
+  try {
+    const stats = fs.statfsSync(location);
+    const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+    if (!Number.isFinite(freeBytes) || freeBytes >= requiredBytes) return;
+    const requiredGb = (requiredBytes / (1024 ** 3)).toFixed(1);
+    const freeGb = (freeBytes / (1024 ** 3)).toFixed(1);
+    const error = new Error(`Kokoro needs about ${requiredGb} GB of free disk space for ${purpose}; ${freeGb} GB is available. Free some space and choose Retry.`);
+    error.code = "KOKORO_INSUFFICIENT_DISK_SPACE";
+    throw error;
+  } catch (error) {
+    if (error?.code === "KOKORO_INSUFFICIENT_DISK_SPACE") throw error;
+    // Some Windows volumes/filesystems do not implement statfs. Let the actual
+    // write report ENOSPC rather than blocking setup on an unavailable probe.
+  }
+}
+
+function cleanIncompleteDownloads(root) {
+  if (!fs.existsSync(root)) return;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const filePath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      cleanIncompleteDownloads(filePath);
+      continue;
+    }
+    if (entry.isFile() && /(?:\.incomplete|\.part|\.tmp)$/i.test(entry.name)) {
+      fs.rmSync(filePath, { force: true });
+    }
+  }
+}
+
+function describeSetupFailure(error, logTail = "") {
+  const summary = `${error?.code ?? ""} ${error?.message ?? error ?? ""}`;
+  const evidence = `${summary}\n${logTail}`;
+  if (/KOKORO_INSUFFICIENT_DISK_SPACE|ENOSPC|no space left on device|disk quota exceeded|not enough (?:free )?disk space|WinError 112|insufficient disk space/i.test(evidence)) {
+    return /Kokoro needs about/i.test(summary)
+      ? String(error.message)
+      : "There isn't enough free disk space to finish Kokoro setup. Free up space and choose Retry; completed runtime, packages, and model files are kept.";
+  }
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|network is unreachable|no internet|offline mode|outgoing traffic.{0,40}disabled|(?:temporary )?failure in name resolution|nameresolutionerror|failed to establish a new connection|max retries exceeded|connectionerror|connectionreseterror|newconnectionerror|connecttimeout|readtimeout|sslcertverificationerror|proxyerror|httpsconnectionpool|could not fetch url|couldn't connect|unable to connect|no route to host|timed out|socket timeout|winerror 100(?:51|54|60|61)/i.test(evidence)) {
+    return "Kokoro needs an internet connection to download missing setup files. Connect to the internet, then choose Retry; completed runtime, packages, and model files are kept.";
+  }
+  const detail = String(error?.message ?? "").replace(/[\r\n]+/g, " ").slice(0, 180);
+  return `Kokoro setup couldn't finish${detail ? ` (${detail})` : ""}. Completed runtime, packages, and downloads are kept. Choose Retry to continue; if it fails again, check the Kokoro setup log in Soundwave's local app data.`;
 }
 
 function delay(ms) {
@@ -196,8 +248,10 @@ function createKokoroManager({
   const pythonExe = path.join(pythonHome, "python.exe");
   const venvPython = path.join(venvDir, "Scripts", "python.exe");
   const installMarker = path.join(runtimeDir, "install.json");
+  const assetsMarker = path.join(runtimeDir, "assets-ready.json");
   const runtimeFile = path.join(runtimeDir, "managed-runtime.json");
   const statusFile = path.join(runtimeDir, "status.json");
+  const setupProgressFile = path.join(runtimeDir, "setup-progress.json");
   const logFile = path.join(runtimeDir, "kokoro.log");
   const cacheDir = path.join(runtimeDir, "cache");
   const profilesDir = path.join(runtimeDir, "profiles");
@@ -208,7 +262,9 @@ function createKokoroManager({
   let stopped = false;
   let cancelled = false;
   let setupStarted = false;
-  const setupAbortController = new AbortController();
+  let setupAbortController = new AbortController();
+  let setupPromise = null;
+  let setupLogOffset = 0;
   let runtime = null;
   let reusedProcessId = null;
   let state = { phase: "checking", message: "Soundwave is preparing the on-device Kokoro voice in the background." };
@@ -226,6 +282,17 @@ function createKokoroManager({
     try {
       atomicWriteJson(statusFile, state);
     } catch (error) {
+      // On ENOSPC the temp-file write above can fail before the server sees
+      // the blocker. Truncating the previous tiny status file may still leave
+      // enough room to publish the actionable failure state.
+      if (error?.code === "ENOSPC") {
+        try {
+          fs.writeFileSync(statusFile, `${JSON.stringify(state)}\n`, { mode: 0o600 });
+          return;
+        } catch {
+          /* preserve the in-memory state and report below */
+        }
+      }
       console.warn("[soundwave-desktop] could not save Kokoro setup status:", error.message);
     }
   }
@@ -293,6 +360,16 @@ function createKokoroManager({
     });
   }
 
+  function pythonInstallerVerified() {
+    try {
+      if (fs.statSync(pythonInstaller).size > MAX_PYTHON_INSTALLER_BYTES) return false;
+      const bytes = fs.readFileSync(pythonInstaller);
+      return crypto.createHash("sha256").update(bytes).digest("hex") === PYTHON_INSTALLER_SHA256;
+    } catch {
+      return false;
+    }
+  }
+
   async function pythonInstallerValid() {
     if (!fs.existsSync(pythonExe)) return false;
     try {
@@ -306,24 +383,28 @@ function createKokoroManager({
   async function ensurePython() {
     if (await pythonInstallerValid()) return;
     if (stopped || cancelled) throw new Error("Kokoro setup was cancelled.");
-    writeState("installing-python", "Installing the private Python runtime for Kokoro in the background.");
+    writeState("installing-python", "Installing the private Python runtime for Kokoro in the background.", undefined, "Python runtime");
     fs.rmSync(pythonHome, { recursive: true, force: true });
     fs.mkdirSync(runtimeDir, { recursive: true });
-    writeState("installing-python", "Downloading the signed Python runtime for Kokoro.");
-    let lastProgress = -1;
-    await downloadHttps(PYTHON_INSTALLER_URL, pythonInstaller, {
-      sha256: PYTHON_INSTALLER_SHA256,
-      maxBytes: MAX_PYTHON_INSTALLER_BYTES,
-      signal: setupAbortController.signal,
-      onProgress: (received, total) => {
-        const progress = total > 0 ? Math.round((received / total) * 100) : undefined;
-        if (progress !== undefined && progress !== lastProgress) {
-          lastProgress = progress;
-          writeState("installing-python", "Downloading the signed Python runtime for Kokoro.", progress, "Python runtime download");
-        }
-      },
-    });
-    writeState("installing-python", "Installing the private Python runtime for Kokoro.");
+    if (!pythonInstallerVerified()) {
+      assertFreeSpace(runtimeDir, MIN_PYTHON_SETUP_FREE_BYTES, "the Python runtime");
+      fs.rmSync(pythonInstaller, { force: true });
+      writeState("installing-python", "Downloading the signed Python runtime for Kokoro.", 0, "Python runtime download");
+      let lastProgress = -1;
+      await downloadHttps(PYTHON_INSTALLER_URL, pythonInstaller, {
+        sha256: PYTHON_INSTALLER_SHA256,
+        maxBytes: MAX_PYTHON_INSTALLER_BYTES,
+        signal: setupAbortController.signal,
+        onProgress: (received, total) => {
+          const progress = total > 0 ? Math.round((received / total) * 100) : undefined;
+          if (progress !== undefined && progress !== lastProgress) {
+            lastProgress = progress;
+            writeState("installing-python", "Downloading the signed Python runtime for Kokoro.", progress, "Python runtime download");
+          }
+        },
+      });
+    }
+    writeState("installing-python", "Installing the private Python runtime for Kokoro.", undefined, "Installing Python runtime");
     await runCommand(
       pythonInstaller,
       [
@@ -341,8 +422,9 @@ function createKokoroManager({
       ],
       { timeoutMs: 5 * 60_000, successCodes: [0, 3010] },
     );
-    fs.rmSync(pythonInstaller, { force: true });
     if (!(await pythonInstallerValid())) throw new Error("The private Python runtime did not install correctly.");
+    fs.rmSync(pythonInstaller, { force: true });
+    writeState("installing-python", "The private Python runtime is ready.", 100, "Python runtime");
   }
 
   async function ensureEnvironment() {
@@ -363,23 +445,33 @@ function createKokoroManager({
       }
     }
 
-    writeState("installing-packages", "Installing Kokoro's CPU speech engine and its dependencies in the background.");
+    assertFreeSpace(runtimeDir, MIN_PACKAGE_SETUP_FREE_BYTES, "Kokoro's speech engine and Python packages");
+    writeState("installing-packages", "Preparing Kokoro's private Python package environment.", undefined, "Isolated Python environment");
     fs.mkdirSync(runtimeDir, { recursive: true });
-    const pipEnv = managedPythonEnv();
+    const pipEnv = managedPythonEnv({ PIP_CACHE_DIR: path.join(cacheDir, "pip"), PIP_DISABLE_PIP_VERSION_CHECK: "1" });
     if (!fs.existsSync(venvPython)) {
       await runCommand(pythonExe, ["-m", "venv", venvDir], { cwd: runtimeDir, env: pipEnv, timeoutMs: 2 * 60_000 });
     }
     const common = ["-m", "pip", "install", "--disable-pip-version-check", "--progress-bar", "off"];
-    await runCommand(venvPython, [...common, "--upgrade", "pip"], { cwd: resourcesDir, env: pipEnv });
+    const packageSteps = 6;
+    let completedPackageSteps = 0;
+    const runPackageStep = async (label, executable, args, options = {}) => {
+      const progress = Math.round((completedPackageSteps / packageSteps) * 100);
+      writeState("installing-packages", `Installing ${label} for Kokoro.`, progress, `${label} (${completedPackageSteps + 1}/${packageSteps})`);
+      await runCommand(executable, args, options);
+      completedPackageSteps++;
+    };
+    await runPackageStep("the package installer", venvPython, [...common, "--upgrade", "pip"], { cwd: resourcesDir, env: pipEnv });
     // CPU-only PyTorch: works on ordinary Windows PCs without CUDA or an
     // NVIDIA card and avoids pulling the multi-gigabyte CUDA runtime.
-    await runCommand(venvPython, [...common, "torch", "--index-url", TORCH_CPU_INDEX], { cwd: resourcesDir, env: pipEnv });
-    await runCommand(venvPython, [...common, "-r", path.join(resourcesDir, "requirements-kokoro.txt")], { cwd: resourcesDir, env: pipEnv });
+    await runPackageStep("CPU PyTorch", venvPython, [...common, "torch", "--index-url", TORCH_CPU_INDEX], { cwd: resourcesDir, env: pipEnv });
+    await runPackageStep("Kokoro dependencies", venvPython, [...common, "-r", path.join(resourcesDir, "requirements-kokoro.txt")], { cwd: resourcesDir, env: pipEnv });
     // Installing the package without its optional [en] extra is deliberate:
     // that extra brings GPL phonemizer/espeak-ng, which Soundwave never uses.
-    await runCommand(venvPython, [...common, "--no-deps", "kokoro"], { cwd: resourcesDir, env: pipEnv });
-    await runCommand(venvPython, ["-m", "spacy", "download", "en_core_web_sm"], { cwd: resourcesDir, env: pipEnv });
-    await runCommand(
+    await runPackageStep("Kokoro's speech engine", venvPython, [...common, "--no-deps", "kokoro"], { cwd: resourcesDir, env: pipEnv });
+    await runPackageStep("English pronunciation data", venvPython, ["-m", "spacy", "download", "en_core_web_sm"], { cwd: resourcesDir, env: pipEnv });
+    await runPackageStep(
+      "runtime verification",
       venvPython,
       [
         "-c",
@@ -388,11 +480,29 @@ function createKokoroManager({
       { cwd: resourcesDir, env: pipEnv, timeoutMs: 2 * 60_000 },
     );
     atomicWriteJson(installMarker, { revision: SETUP_REVISION, python: PYTHON_VERSION, installedAt: new Date().toISOString() });
+    writeState("installing-packages", "Kokoro's offline speech engine and pronunciation data are ready.", 100, "Python packages");
+  }
+
+  function readLogSince(offset = 0) {
+    try {
+      const log = fs.readFileSync(logFile);
+      return log.subarray(Math.min(offset, log.length)).toString("utf8").slice(-20_000);
+    } catch {
+      return "";
+    }
   }
 
   function launchService() {
     if (stopped) throw new Error("Soundwave is closing.");
+    fs.rmSync(setupProgressFile, { force: true });
+    let serviceLogOffset = 0;
+    try {
+      serviceLogOffset = fs.statSync(logFile).size;
+    } catch {
+      /* first launch */
+    }
     const fd = openLogFd();
+    const assetsReady = readJson(assetsMarker)?.revision === RUNTIME_REVISION;
     const serviceEnv = managedPythonEnv({
       CHATTERBOX_OFF: "1",
       CHATTERBOX_MOCK: "0",
@@ -403,8 +513,12 @@ function createKokoroManager({
       VOICECLONE_TOKEN: runtime.token,
       VOICECLONE_PROFILES_DIR: profilesDir,
       HF_HOME: path.join(cacheDir, "huggingface"),
+      HF_HUB_OFFLINE: assetsReady ? "1" : "0",
+      TRANSFORMERS_OFFLINE: assetsReady ? "1" : "0",
       HF_HUB_DISABLE_TELEMETRY: "1",
       HF_HUB_DOWNLOAD_TIMEOUT: "180",
+      KOKORO_SETUP_PROGRESS_FILE: setupProgressFile,
+      PIP_CACHE_DIR: path.join(cacheDir, "pip"),
       PYTHONUTF8: "1",
       PYTHONNOUSERSITE: "1",
       PYTHONDONTWRITEBYTECODE: "1",
@@ -424,22 +538,18 @@ function createKokoroManager({
     serviceExitError = null;
     runtime.pid = child.pid ?? null;
     atomicWriteJson(runtimeFile, runtime);
-    child.once("error", (error) => {
+    const recordServiceFailure = (error) => {
       serviceExitError = error;
       if (serviceProcess === child) serviceProcess = null;
-      if (!stopped && !cancelled) {
-        writeState("failed", "Kokoro could not start. Soundwave will retry the next time it starts.");
-        fs.rmSync(runtimeFile, { force: true });
+      if (stopped || cancelled) return;
+      if (state.phase === "ready") {
+        fs.rmSync(assetsMarker, { force: true });
+        writeState("failed", describeSetupFailure(error, readLogSince(serviceLogOffset)));
       }
-    });
-    child.once("exit", (code, signal) => {
-      serviceExitError = new Error(`Kokoro service exited (${code ?? signal ?? "unknown"}).`);
-      if (serviceProcess === child) serviceProcess = null;
-      if (!stopped && !cancelled) {
-        writeState("failed", "Kokoro stopped unexpectedly. Soundwave will try again the next time it starts.");
-        fs.rmSync(runtimeFile, { force: true });
-      }
-    });
+      fs.rmSync(runtimeFile, { force: true });
+    };
+    child.once("error", (error) => recordServiceFailure(error));
+    child.once("exit", (code, signal) => recordServiceFailure(new Error(`Kokoro service exited (${code ?? signal ?? "unknown"}).`)));
     return child;
   }
 
@@ -447,8 +557,18 @@ function createKokoroManager({
     const deadline = Date.now() + SERVICE_START_TIMEOUT_MS;
     while (!stopped && !cancelled && Date.now() < deadline) {
       if (serviceExitError || child.exitCode !== null || child.signalCode !== null) throw serviceExitError ?? new Error("Kokoro exited before it became ready.");
+      const progress = readJson(setupProgressFile);
+      if (progress?.phase === "loading-model" && typeof progress.message === "string") {
+        writeState(
+          "loading-model",
+          progress.message.slice(0, 400),
+          Number.isFinite(progress.progress) ? progress.progress : undefined,
+          typeof progress.progressLabel === "string" ? progress.progressLabel : undefined,
+        );
+      }
       const health = await fetchJson(`${runtime.url}/health`, runtime.token, 2_000, setupAbortController.signal);
       if (cancelled) throw new Error("Kokoro setup was cancelled.");
+      if (serviceExitError || child.exitCode !== null || child.signalCode !== null) throw serviceExitError ?? new Error("Kokoro exited before it became ready.");
       if (health?.ok === true && health?.engines?.kokoro?.enabled === true && health?.engines?.kokoro?.loaded === true) return;
       await delay(1_000);
     }
@@ -457,7 +577,7 @@ function createKokoroManager({
     throw new Error("Kokoro did not finish loading before the startup timeout.");
   }
 
-  async function start() {
+  async function runSetupAttempt() {
     if (runtime?.alreadyRunning) {
       writeState("ready", "On-device Kokoro is ready.");
       return;
@@ -474,13 +594,16 @@ function createKokoroManager({
       writeState("loading-model", "Downloading and warming the Kokoro voice model in the background. This happens only once.");
       const child = launchService();
       await waitForService(child);
-      if (!stopped && !cancelled) writeState("ready", "On-device Kokoro is ready.");
+      if (!stopped && !cancelled) {
+        atomicWriteJson(assetsMarker, { revision: RUNTIME_REVISION, readyAt: new Date().toISOString() });
+        writeState("ready", "On-device Kokoro is ready.");
+      }
     } catch (error) {
       if (stopped) return;
       if (cancelled) {
-        writeState("cancelled", "Kokoro setup was cancelled.");
+        writeState("cancelled", "Kokoro setup was cancelled. Soundwave voices are unaffected; choose Retry to continue later.");
         try {
-          fs.rmSync(pythonInstaller, { force: true });
+          if (!pythonInstallerVerified()) fs.rmSync(pythonInstaller, { force: true });
         } catch {
           /* the Windows installer can remain locked until its process exits */
         }
@@ -496,7 +619,8 @@ function createKokoroManager({
         return;
       }
       console.error("[soundwave-desktop] Kokoro setup failed:", error.message);
-      writeState("failed", "Kokoro could not finish its automatic setup. Soundwave will retry next time it starts.");
+      fs.rmSync(assetsMarker, { force: true });
+      writeState("failed", describeSetupFailure(error, readLogSince(setupLogOffset)));
       if (serviceProcess) {
         try {
           serviceProcess.kill();
@@ -507,6 +631,47 @@ function createKokoroManager({
       }
       fs.rmSync(runtimeFile, { force: true });
     }
+  }
+
+  function start() {
+    if (setupPromise) return setupPromise;
+    if (stopped || cancelled || state.phase === "ready") return Promise.resolve();
+    if (setupStarted && !["failed", "cancelled"].includes(state.phase)) return Promise.resolve();
+    try {
+      setupLogOffset = fs.statSync(logFile).size;
+    } catch {
+      setupLogOffset = 0;
+    }
+    const attempt = runSetupAttempt();
+    const tracked = attempt.finally(() => {
+      if (setupPromise === tracked) setupPromise = null;
+    });
+    setupPromise = tracked;
+    return tracked;
+  }
+
+  async function retrySetup() {
+    if (stopped || !["failed", "cancelled"].includes(state.phase)) return false;
+    if (setupPromise) await setupPromise.catch(() => {});
+    if (stopped || !["failed", "cancelled"].includes(state.phase)) return false;
+
+    try {
+      fs.rmSync(runtimeFile, { force: true });
+      fs.rmSync(setupProgressFile, { force: true });
+      if (!pythonInstallerVerified()) fs.rmSync(pythonInstaller, { force: true });
+      cleanIncompleteDownloads(cacheDir);
+    } catch (error) {
+      cancelled = false;
+      writeState("failed", describeSetupFailure(error));
+      return false;
+    }
+
+    cancelled = false;
+    setupStarted = false;
+    setupAbortController = new AbortController();
+    writeState("checking", "Repairing Kokoro setup. Verified runtime, packages, and downloads will be reused.");
+    void start();
+    return true;
   }
 
   function configure(nextRuntime) {
@@ -578,6 +743,7 @@ function createKokoroManager({
     runtimeDir,
     configure,
     start,
+    retrySetup,
     cancelSetup,
     stop,
     writeState,
@@ -595,7 +761,7 @@ async function createManagedKokoro(options) {
   const runtimeFile = path.join(runtimeDir, "managed-runtime.json");
   fs.mkdirSync(runtimeDir, { recursive: true });
   const previous = readJson(runtimeFile);
-  const revisionMatches = previous?.revision === SETUP_REVISION;
+  const revisionMatches = previous?.revision === RUNTIME_REVISION;
   if (revisionMatches && Number.isInteger(previous?.port) && previous.port > 0 && previous.port < 65536 && typeof previous.token === "string" && previous.token.length >= 32) {
     const url = `http://127.0.0.1:${previous.port}`;
     // /health is intentionally public on standalone installs. The voice list
@@ -603,13 +769,18 @@ async function createManagedKokoro(options) {
     const voices = await fetchJson(`${url}/tts/kokoro/voices`, previous.token, 1_500);
     if (voices?.available === true && Array.isArray(voices?.voices) && Number.isInteger(previous.pid) && previous.pid > 0) {
       manager.configure({ ...previous, url, alreadyRunning: true });
+      try {
+        atomicWriteJson(path.join(runtimeDir, "assets-ready.json"), { revision: RUNTIME_REVISION, readyAt: new Date().toISOString() });
+      } catch {
+        /* the running service remains usable; the next launch can verify online */
+      }
       manager.writeState("ready", "On-device Kokoro is ready.");
       return manager;
     }
   }
 
   const port = await getFreePort();
-  const runtime = { revision: SETUP_REVISION, port, token: crypto.randomBytes(32).toString("hex"), pid: null };
+  const runtime = { revision: RUNTIME_REVISION, port, token: crypto.randomBytes(32).toString("hex"), pid: null };
   runtime.url = `http://127.0.0.1:${port}`;
   atomicWriteJson(runtimeFile, runtime);
   manager.configure(runtime);
@@ -621,10 +792,14 @@ module.exports = {
   PYTHON_INSTALLER_SHA256,
   PYTHON_INSTALLER_URL,
   PYTHON_VERSION,
+  RUNTIME_REVISION,
   SETUP_REVISION,
   atomicWriteJson,
+  assertFreeSpace,
+  cleanIncompleteDownloads,
   createKokoroManager,
   createManagedKokoro,
+  describeSetupFailure,
   downloadHttps,
   readJson,
   shouldManageLocalVoice,

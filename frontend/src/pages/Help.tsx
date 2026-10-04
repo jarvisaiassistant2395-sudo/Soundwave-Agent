@@ -105,7 +105,7 @@ export function Help() {
         <Section icon={<Mic className="h-4 w-4" />} title="The Agent's Voice">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
             <li><strong className="text-white">Choose one voice for replies and shorts:</strong> pick it in the Command Center, Voice Library or Settings. Andrew, Brian, Emma and Ava are the newer Soundwave voices; Guy, Christopher, Ryan, Jenny, Ana and Sonia remain available.</li>
-            <li><strong className="text-white">On-device Kokoro voices:</strong> packaged Windows desktop installs prepare Kokoro automatically in the background on first run, then start it invisibly with Soundwave. Its 28 voices can narrate shorts locally; the first setup needs an internet connection, and the model stays on this PC.</li>
+            <li><strong className="text-white">On-device Kokoro voices:</strong> packaged Windows desktop caches the speech model, pronunciation assets and all 28 voices automatically on first run, then starts it invisibly with Soundwave. Setup needs internet and free disk space; progress and cancellation are shown, and you can retry or repair a failed setup in the same session. Later narration stays on this PC.</li>
             <li><strong className="text-white">Starts talking right away:</strong> Soundwave-voice replies are streamed while they're synthesized, so there's no wait for the whole answer.</li>
             <li><strong className="text-white">Clear fallback behavior:</strong> Microsoft voices need the internet; Kokoro runs on this PC after setup. If the selected engine is unavailable, the app explains why instead of silently changing the voice.</li>
           </ul>

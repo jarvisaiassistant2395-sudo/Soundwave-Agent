@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
   updateSettings: (patch) => ipcRenderer.invoke("soundwave:update-settings", patch),
   isAppFocused: () => ipcRenderer.invoke("soundwave:is-app-focused"),
   cancelKokoroSetup: () => ipcRenderer.invoke("soundwave:cancel-kokoro-setup"),
+  retryKokoroSetup: () => ipcRenderer.invoke("soundwave:retry-kokoro-setup"),
   onVoiceCommand: (callback) => {
     const off = subscribe("soundwave:voice", callback);
     // Tells the shell this window is ready for shortcut presses (queued until then).

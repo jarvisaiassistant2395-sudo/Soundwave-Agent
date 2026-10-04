@@ -37,13 +37,16 @@ export const EMPTY_LOCAL_VOICES: LocalVoiceStatus = { available: false, engine: 
 
 export function localVoiceSetupLabel(setup?: LocalVoiceSetupStatus): string {
   if (!setup) return "";
-  if (setup.phase === "failed") return "Kokoro setup will retry next launch";
-  if (setup.phase === "cancelled") return "Kokoro setup was cancelled";
+  if (setup.phase === "failed") return "Kokoro setup needs attention — choose Retry";
+  if (setup.phase === "cancelled") return "Kokoro setup was cancelled — choose Retry to continue";
   if (setup.phase === "cancelling") return "Cancelling Kokoro setup…";
-  if (typeof setup.progress === "number") return `Kokoro setup — ${Math.round(setup.progress)}%`;
+  if (typeof setup.progress === "number") {
+    const stage = setup.progressLabel ? ` · ${setup.progressLabel}` : "";
+    return `Kokoro setup — ${Math.round(setup.progress)}%${stage}`;
+  }
   if (setup.phase === "installing-python") return "Installing Kokoro's Python runtime…";
   if (setup.phase === "installing-packages") return "Installing Kokoro's speech engine…";
-  if (setup.phase === "loading-model") return "Downloading and preparing Kokoro…";
+  if (setup.phase === "loading-model") return setup.message || "Downloading and preparing Kokoro…";
   return "Kokoro is preparing in the background…";
 }
 
@@ -102,10 +105,14 @@ export function useLocalVoices(): {
   canCancelSetup: boolean;
   cancellingSetup: boolean;
   cancelSetup: () => Promise<boolean>;
+  canRetrySetup: boolean;
+  retryingSetup: boolean;
+  retrySetup: () => Promise<boolean>;
 } {
   const [status, setStatus] = useState<LocalVoiceStatus>(cached ?? EMPTY_LOCAL_VOICES);
   const [loading, setLoading] = useState(cached === null);
   const [cancellingSetup, setCancellingSetup] = useState(false);
+  const [retryingSetup, setRetryingSetup] = useState(false);
   useEffect(() => {
     let alive = true;
     let timer: number | undefined;
@@ -133,6 +140,12 @@ export function useLocalVoices(): {
       phase &&
       !["ready", "failed", "cancelled", "cancelling"].includes(phase),
   );
+  const canRetrySetup = Boolean(
+    getDesktop() &&
+      status.setup?.managed &&
+      !status.available &&
+      (phase === "failed" || phase === "cancelled"),
+  );
   const cancelSetup = async (): Promise<boolean> => {
     const desktop = getDesktop();
     if (!desktop || !canCancelSetup || cancellingSetup) return false;
@@ -150,6 +163,23 @@ export function useLocalVoices(): {
       setCancellingSetup(false);
     }
   };
+  const retrySetup = async (): Promise<boolean> => {
+    const desktop = getDesktop();
+    if (!desktop || !canRetrySetup || retryingSetup) return false;
+    setRetryingSetup(true);
+    try {
+      const accepted = await desktop.retryKokoroSetup();
+      if (!accepted) return false;
+      const next = await fetchLocalVoices({ fresh: true });
+      setStatus(next);
+      setLoading(false);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setRetryingSetup(false);
+    }
+  };
 
-  return { status, loading, canCancelSetup, cancellingSetup, cancelSetup };
+  return { status, loading, canCancelSetup, cancellingSetup, cancelSetup, canRetrySetup, retryingSetup, retrySetup };
 }

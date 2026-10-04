@@ -119,10 +119,9 @@ export async function getLocalVoiceStatus(options: { fresh?: boolean } = {}): Pr
   if (!localEngineConfigured()) {
     return setup ? { ...UNCONFIGURED, reason: setup.message, setup } : UNCONFIGURED;
   }
-  if (setup && setup.phase !== "ready" && setup.phase !== "failed") {
-    return { available: false, engine: "kokoro", reason: setup.message, setup, voices: [] };
-  }
-  if (setup?.phase === "failed") {
+  if (setup && setup.phase !== "ready") {
+    // Failed/cancelled installs stay actionable in the UI instead of falling
+    // through to a stale service cache or a second sidecar request.
     return { available: false, engine: "kokoro", reason: setup.message, setup, voices: [] };
   }
   if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.status;

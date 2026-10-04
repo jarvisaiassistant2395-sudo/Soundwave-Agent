@@ -90,10 +90,11 @@ GPL-3.0). We don't need either: `kokoro_engine.py` drives the model with
 `misaki.en` directly — Apache-2.0, dictionary plus misaki's own
 `FallbackNetwork` for out-of-dictionary words — and never imports the espeak
 path. (One caveat, recorded in `THIRD-PARTY-NOTICES.txt` too: that fallback
-loads a ~3 MB BART model from `PeterReid/graphemes_to_phonemes_en_us` whose
-Hugging Face card states no licence. It is misaki's own default and is
-downloaded to your machine, not bundled by us — but the gap is named rather
-than glossed over.) Installing with `--no-deps` keeps the GPL packages out of the environment
+loads a ~3 MB BART model from `PeterReid/graphemes_to_phonemes_en_us` or
+`PeterReid/graphemes_to_phonemes_en_gb` whose Hugging Face cards state no
+licence. They are misaki's own defaults and are downloaded to your machine, not
+bundled by us — but the gap is named rather than glossed over.) Installing with
+`--no-deps` keeps the GPL packages out of the environment
 altogether, and `KokoroEngine` refuses to start if they ever appear
 (`selftest.py` checks this too, statically and at runtime).
 
@@ -250,7 +251,7 @@ clear "offline" error otherwise. Zero cost either way.
 | `CHATTERBOX_EXAGGERATION` | `0.5` | emotion dial, 0 = flat, 1 = excited |
 | `CHATTERBOX_CFG_WEIGHT` | `0.5` | how strongly the reference clip is followed |
 | `KOKORO_OFF` | — | `1` = narration off (cloning still works) |
-| `KOKORO_PRELOAD` | — | `1` = load the model and default voice before uvicorn listens; used by packaged desktop |
+| `KOKORO_PRELOAD` | — | `1` = load the speech model, American/British pronunciation assets and every advertised voice pack before uvicorn listens; used by packaged desktop |
 | `KOKORO_SPEED` | `1.0` | narration speed; a request may override it |
 | `KOKORO_LANG` | `a` | default accent pipeline: `a` American, `b` British |
 | `VOICECLONE_TOKEN` | — (no auth) | REQUIRED on any non-localhost deployment; must match the Node API |

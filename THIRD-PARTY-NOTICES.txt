@@ -608,8 +608,8 @@ Local Python services and Kokoro runtime (not installer-bundled)
     Scrapling's fast fetcher: a real browser's TLS/HTTP-2 fingerprint, no browser involved.
 • FastAPI — MIT
     NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
-• graphemes_to_phonemes_en_us (G2P fallback model downloaded by misaki) — Not stated by the publisher
-    A ~3 MB BART model (PeterReid/graphemes_to_phonemes_en_us) that misaki's FallbackNetwork loads for out-of-dictionary words. Its Hugging Face card is empty and carries no licence tag (checked 2026-10-04). Nothing we ship conveys it — it is downloaded to the user's own machine when the voice service runs — but the licence gap is recorded here rather than papered over.
+• graphemes_to_phonemes_en_us and graphemes_to_phonemes_en_gb (G2P fallback models downloaded by misaki) — Not stated by the publisher
+    Each is a ~3 MB BART model (PeterReid/graphemes_to_phonemes_en_us and PeterReid/graphemes_to_phonemes_en_gb) that misaki's FallbackNetwork loads for out-of-dictionary words. Their Hugging Face cards are empty and carry no licence tag (checked 2026-10-04). Nothing we ship conveys them — they are downloaded to the user's own machine when the voice service runs — but the licence gap is recorded here rather than papered over.
 • huggingface-hub — Apache-2.0
     NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • kokoro (Kokoro-82M) — Apache-2.0

@@ -174,6 +174,19 @@ check(
 )
 check("that index is not trivially 0", len(model_input) - 1 != 0)
 
+# Managed desktop setup preloads every offered voice pack before reporting ready.
+fetches.clear()
+preload_progress = []
+preloaded = engine.preload_voice_packs(
+    ["af_heart", "bf_emma", "am_michael"],
+    lambda completed, total, voice: preload_progress.append((completed, total, voice)),
+)
+check("voice preloading reports all completed packs", preload_progress == [(1, 3, "af_heart"), (2, 3, "bf_emma"), (3, 3, "am_michael")], str(preload_progress))
+check("voice preloading caches each requested pack", preloaded == 3 and all(v in engine._voices for v in ("af_heart", "bf_emma", "am_michael")))
+check("already-cached packs are not fetched again", all("voices/af_heart.pt" not in fetch for fetch in fetches), str(fetches))
+engine.preload_text_assets()
+check("text-processor preloading exercises the fallback pronunciation model", g2p_inputs[-1] == "Soundwave Kokoro qzxvkp", str(g2p_inputs[-1:]))
+
 # A second call with different text must pick a different row: a constant row is
 # exactly what makes every sentence sound like the same drone.
 downloads.clear()

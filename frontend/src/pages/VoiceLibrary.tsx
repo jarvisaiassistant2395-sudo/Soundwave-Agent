@@ -24,7 +24,15 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
   // Kokoro (Apache-2.0) voices come from the local service. The packaged
   // Windows app prepares it automatically; other installs can point at one
   // themselves. While setup is running, show the real status rather than guess.
-  const { status: localVoices, canCancelSetup, cancellingSetup, cancelSetup } = useLocalVoices();
+  const {
+    status: localVoices,
+    canCancelSetup,
+    cancellingSetup,
+    cancelSetup,
+    canRetrySetup,
+    retryingSetup,
+    retrySetup,
+  } = useLocalVoices();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -108,6 +116,9 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
             canCancelSetup={canCancelSetup}
             cancellingSetup={cancellingSetup}
             cancelSetup={cancelSetup}
+            canRetrySetup={canRetrySetup}
+            retryingSetup={retryingSetup}
+            retrySetup={retrySetup}
           />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-800 pb-4">
             <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">

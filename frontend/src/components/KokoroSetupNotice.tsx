@@ -7,9 +7,21 @@ interface KokoroSetupNoticeProps {
   canCancelSetup: boolean;
   cancellingSetup: boolean;
   cancelSetup: () => Promise<boolean>;
+  canRetrySetup: boolean;
+  retryingSetup: boolean;
+  retrySetup: () => Promise<boolean>;
 }
 
-export function KokoroSetupNotice({ setup, available, canCancelSetup, cancellingSetup, cancelSetup }: KokoroSetupNoticeProps) {
+export function KokoroSetupNotice({
+  setup,
+  available,
+  canCancelSetup,
+  cancellingSetup,
+  cancelSetup,
+  canRetrySetup,
+  retryingSetup,
+  retrySetup,
+}: KokoroSetupNoticeProps) {
   if (!setup?.managed || available) return null;
 
   const active = !["ready", "failed", "cancelled"].includes(setup.phase);
@@ -30,6 +42,19 @@ export function KokoroSetupNotice({ setup, available, canCancelSetup, cancelling
             aria-label="Cancel Kokoro setup"
           >
             {cancellingSetup ? "Cancelling…" : "Cancel setup"}
+          </Button>
+        )}
+        {canRetrySetup && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-emerald-700 bg-emerald-950/40 text-emerald-100 hover:border-emerald-400 hover:bg-emerald-950/70 hover:text-white"
+            loading={retryingSetup}
+            onClick={() => void retrySetup()}
+            aria-label="Retry Kokoro setup"
+          >
+            {retryingSetup ? "Repairing…" : "Retry setup"}
           </Button>
         )}
       </div>
@@ -58,11 +83,8 @@ export function KokoroSetupNotice({ setup, available, canCancelSetup, cancelling
         </div>
       )}
 
-      {setup.phase === "failed" && (
-        <p className="mt-1 text-xs text-emerald-100/70">The setup log is saved with Soundwave&apos;s local app data; it will retry next time the app starts.</p>
-      )}
-      {setup.phase === "cancelled" && (
-        <p className="mt-1 text-xs text-emerald-100/70">Soundwave voices remain available. Kokoro setup can run again the next time the app starts.</p>
+      {(setup.phase === "failed" || setup.phase === "cancelled") && (
+        <p className="mt-1 text-xs text-emerald-100/70">Soundwave voices are unaffected. Verified runtime, packages, and downloads are kept for the next retry.</p>
       )}
     </div>
   );

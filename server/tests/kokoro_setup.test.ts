@@ -59,4 +59,14 @@ describe("desktop-managed Kokoro setup status", () => {
     expect(status.voices.map((voice) => voice.voiceId)).toEqual(["kokoro:af_heart"]);
     expect(voiceRequests).toBe(1);
   });
+
+  it.each(["failed", "cancelled"])("keeps %s setup actionable without probing a stale sidecar", async (phase) => {
+    const requestsBefore = voiceRequests;
+    fs.writeFileSync(statusFile, JSON.stringify({ managed: true, phase, message: `Kokoro setup ${phase}.` }));
+    const status = await getLocalVoiceStatus({ fresh: true });
+    expect(status.available).toBe(false);
+    expect(status.reason).toBe(`Kokoro setup ${phase}.`);
+    expect(status.setup?.phase).toBe(phase);
+    expect(voiceRequests).toBe(requestsBefore);
+  });
 });

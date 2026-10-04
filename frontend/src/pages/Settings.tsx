@@ -311,7 +311,15 @@ function PreferencesTab() {
   const [agentVoice, setAgentVoice] = useState(() => loadAgentVoice());
   // Soundwave voices first, then whatever the on-this-PC engine offers (empty
   // when the local voice service isn't running — nothing empty is rendered).
-  const { status: localVoices, canCancelSetup, cancellingSetup, cancelSetup } = useLocalVoices();
+  const {
+    status: localVoices,
+    canCancelSetup,
+    cancellingSetup,
+    cancelSetup,
+    canRetrySetup,
+    retryingSetup,
+    retrySetup,
+  } = useLocalVoices();
   const [orbMode, setOrbMode] = useState(() => localStorage.getItem("soundwave_orb_mode") ?? "auto");
 
   const savePrefs = () => {
@@ -354,6 +362,9 @@ function PreferencesTab() {
               canCancelSetup={canCancelSetup}
               cancellingSetup={cancellingSetup}
               cancelSetup={cancelSetup}
+              canRetrySetup={canRetrySetup}
+              retryingSetup={retryingSetup}
+              retrySetup={retrySetup}
             />
           </div>
           <div>
