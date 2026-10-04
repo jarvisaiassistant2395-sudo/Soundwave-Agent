@@ -8,8 +8,9 @@
 //
 // This is the same trick the Android job already plays for Gemini and Open-Meteo:
 // a local stand-in that speaks the service's own framing (the protocol is the
-// one server/tests/edge_tts.test.ts exercises) and answers with a real MP3 from
-// the bundled music, so the phone really decodes and plays it. The wire format:
+// one server/tests/edge_tts.test.ts exercises) and answers with one of the app's
+// own neural voice samples — real speech, real MP3, so the phone really decodes
+// and plays it (see the `track` lookup below). The wire format:
 //
 //   text frames    X-RequestId:…\r\nContent-Type:…\r\nPath:<path>\r\n\r\n<body>
 //   binary frames  2-byte big-endian header length, header text with "Path:audio",
@@ -27,20 +28,28 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const musicDir = path.join(here, "..", "..", "scripts", "assets", "music");
 
 const portArg = process.argv.indexOf("--port");
 const port = portArg >= 0 ? Number(process.argv[portArg + 1]) : 4200;
 const host = "0.0.0.0";
+const trackArg = process.argv.indexOf("--track");
 
-// The real service answers with MP3 at 24 kHz/48 kbps (OUTPUT_FORMAT). A bundled
-// music file is real, playable MPEG audio, so nothing about playback is faked.
-const track = fs
-  .readdirSync(musicDir)
-  .filter((f) => f.toLowerCase().endsWith(".mp3"))
-  .map((f) => path.join(musicDir, f))
-  .sort((a, b) => fs.statSync(a).size - fs.statSync(b).size)[0];
-if (!track) throw new Error(`no MP3 to answer with under ${musicDir}`);
+// The real service answers with MP3 at 24 kHz/48 kbps (OUTPUT_FORMAT). The
+// stand-in answers with one of the app's own voice samples — real speech, real
+// MPEG audio, already shipped with Soundwave, so nothing about decode or
+// playback is faked and no extra asset (or licence) is involved. (It used to
+// read scripts/assets/music/, which was deleted in the licence cleanup: those
+// MP3s had no provenance, and this file then threw at startup — the Android
+// job's "voice stand-in didn't start".) Point --track at any MP3 to override.
+const sampleDir = path.join(here, "..", "..", "frontend", "public", "voice-samples");
+const track =
+  (trackArg >= 0 ? process.argv[trackArg + 1] : undefined) ??
+  ["en-US-GuyNeural.mp3", "en-US-JennyNeural.mp3", "en-GB-RyanNeural.mp3"]
+    .map((name) => path.join(sampleDir, name))
+    .find((candidate) => fs.existsSync(candidate));
+if (!track || !fs.existsSync(track)) {
+  throw new Error(`no MP3 to answer with (looked for the app's voice samples under ${sampleDir}; pass --track FILE)`);
+}
 const AUDIO = fs.readFileSync(track);
 const AUDIO_CHUNK = 16 * 1024;
 // Only the first few seconds of the track per synthesis: the test needs the

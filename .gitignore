@@ -65,3 +65,6 @@ voiceclone/profiles/
 voiceclone/.venv/
 voiceclone/__pycache__/
 __pycache__/
+
+# selftest.py --real writes the clip it measured, for you to hear.
+voiceclone/selftest-output.wav

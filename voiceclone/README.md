@@ -52,8 +52,14 @@ pip install -r requirements.txt
 pip install --no-deps kokoro
 python -m spacy download en_core_web_sm
 
-# Check it without downloading a single model
-python selftest.py
+# Check it without downloading a single model (fast, no weights)
+python selftest.py           # 23 structural checks + the no-GPL guarantee
+python test_engine.py        # the phoneme/style-row path — the "hum instead of
+                             # a voice" failure, pinned without the model
+
+# …and once, for real (downloads the model + one voice, then measures the audio
+# and writes selftest-output.wav so you can hear it yourself)
+python selftest.py --real
 
 # Run it (first start downloads the weights from Hugging Face — one time only)
 uvicorn server:app --host 127.0.0.1 --port 8100
@@ -126,6 +132,19 @@ free and unmetered, and the media is produced by this machine.
 
 Kokoro has no word timings, so the Node API estimates them from text and
 duration (same as cloning) — the subtitle editor still auto-populates.
+
+### "It only hums" — how that is prevented, and how to prove it here
+
+A Kokoro integration that emits a drone almost never has a broken model. It is
+one of: raw **text** handed to the model instead of misaki's **phonemes**
+(letters aren't in its vocab, so it generates its prior — noise), the wrong
+**style row** (`ref_s` must be `pack[len(phonemes) - 1]`; `pack[0]` or the whole
+tensor gives a constant wrong style — the literal "brrrwmmrwbb"), or the wrong
+sample rate / PCM scaling on the way out. `test_engine.py` pins the first two
+with stand-ins for torch/misaki (runs anywhere, no downloads), `_encode_wav`
+handles the third, and `selftest.py --real` measures the real output — duration,
+speech-band energy versus a low drone, broadband-ness, clipping — and refuses to
+call a hum a voice.
 
 ## 4. Other hardware
 
