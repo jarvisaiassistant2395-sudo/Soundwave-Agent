@@ -5,9 +5,16 @@
 // read (no captions, a page that only exists in JavaScript) the caller gets a
 // sentence a person would understand rather than an empty result.
 //
-// The reader service (r.jina.ai by default) is only ever a fallback for pages
-// that hand back nothing usable: fetching a page directly keeps the request
-// between the person's PC and that site.
+// A fetched page is parsed here, on this PC, with the reader-mode machinery
+// Firefox uses (Mozilla's Readability) and turned into markdown (Turndown): the
+// article, not the menus — and nothing about the page leaves the machine. The
+// reader service (r.jina.ai by default) is only ever a fallback for pages that
+// hand back nothing usable (a JavaScript-only shell, a wall): fetching and
+// parsing directly keeps the request between the person's PC and that site.
+
+import { Readability } from "@mozilla/readability";
+import { JSDOM } from "jsdom";
+import TurndownService from "turndown";
 
 import { config } from "../config.js";
 import { fetchTranscript, parseYouTubeUrl, searchVideos, type YtSearchResult } from "./ytdlp.js";
@@ -33,8 +40,60 @@ export interface ReadPageResult {
   title: string;
   text: string;
   truncated: boolean;
-  /** "direct" = fetched from the site; "reader" = through the reader service. */
-  via: "direct" | "reader";
+  /**
+   * "readability" = the article pulled out of the page here (markdown),
+   * "direct" = the page/text as fetched, "reader" = through the reader service.
+   */
+  via: "readability" | "direct" | "reader";
+}
+
+/** Bigger than this and the page is not an article worth DOM-parsing (a dump, a feed). */
+export const MAX_ARTICLE_HTML = 4_000_000;
+
+/** Below this the extraction isn't worth calling "the article". */
+const MIN_ARTICLE_CHARS = 200;
+
+export interface ArticleText {
+  title: string;
+  /** Markdown: headings, lists, quotes, links — what the model reads best. */
+  text: string;
+}
+
+/**
+ * The article inside an HTML page, as markdown — Mozilla's Readability (the
+ * reader mode in Firefox, Apache-2.0) picks the article out of the page and
+ * Turndown (MIT) writes it as markdown. Both are pure JavaScript and run here:
+ * nothing is sent anywhere. Returns null when the page holds no article this
+ * long (a JavaScript-only shell, a wall, a list of links).
+ *
+ * Scripts never run (jsdom is created without `runScripts`) and nothing is
+ * fetched: parsing untrusted HTML must stay passive.
+ */
+export function articleMarkdown(html: string, url = "https://example.invalid/"): ArticleText | null {
+  if (!html || html.length > MAX_ARTICLE_HTML) return null;
+  try {
+    const dom = new JSDOM(html, { url });
+    const doc = dom.window.document;
+    const article = new Readability(doc).parse();
+    if (!article) return null;
+    const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-" });
+    // Images say nothing to a model, and off-site URLs in a summary are noise:
+    // keep the words, drop the pictures (their alt text stays in the page's own
+    // text, which the fallback below keeps when there is no article).
+    turndown.addRule("images", { filter: "img", replacement: () => "" });
+    const text = turndown
+      .turndown(article.content ?? "")
+      .replace(/[ \t]+$/gm, "")
+      // Turndown writes "-   item"; one space reads the same and costs fewer tokens.
+      .replace(/^(\s*)[-*+]\s{2,}/gm, "$1- ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (text.length < MIN_ARTICLE_CHARS) return null;
+    return { title: (article.title ?? "").trim() || htmlTitle(html), text };
+  } catch {
+    // Unparseable markup is not an error worth reporting: the caller falls back.
+    return null;
+  }
 }
 
 export interface Eyes {
@@ -118,10 +177,22 @@ export const defaultEyes: Eyes = {
       directError = (err as Error).message;
     }
     const isHtml = /html/i.test(direct.type) || /^\s*<(!doctype|html)/i.test(direct.body);
-    const directText = direct.status === 200 && direct.body && !/pdf/i.test(direct.type) ? (isHtml ? htmlToText(direct.body) : direct.body.trim()) : "";
-    if (directText.length >= 300) {
+    const fetched = direct.status === 200 && direct.body && !/pdf/i.test(direct.type);
+    // The article itself first (reader mode, here), then the page's plain text:
+    // a page too short to be an article (a definition, a quote, a changelog
+    // entry) is still worth reading, and the plain text is what those have.
+    const article = fetched && isHtml ? articleMarkdown(direct.body, url.toString()) : null;
+    const directText = fetched ? (isHtml ? (article?.text ?? htmlToText(direct.body)) : direct.body.trim()) : "";
+    if (directText.length >= MIN_ARTICLE_CHARS) {
       const { text, truncated } = capText(directText, READ_TEXT_MAX);
-      return { ok: true, url: url.toString(), title: isHtml ? htmlTitle(direct.body) : "", text, truncated, via: "direct" };
+      return {
+        ok: true,
+        url: url.toString(),
+        title: article?.title || (isHtml ? htmlTitle(direct.body) : ""),
+        text,
+        truncated,
+        via: article ? "readability" : "direct",
+      };
     }
 
     // Nothing usable directly (JS-only page, paywall wall, blocked bot, PDF, an

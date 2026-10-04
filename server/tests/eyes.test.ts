@@ -6,7 +6,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { capText, clock, decodeEntities, htmlTitle, htmlToText, vttToText } from "../src/lib/brain/core/transcript.js";
-import { defaultEyes, safePublicUrl } from "../src/lib/eyes.js";
+import { MAX_ARTICLE_HTML, articleMarkdown, defaultEyes, safePublicUrl } from "../src/lib/eyes.js";
 import { config } from "../src/config.js";
 import { toolsFor, type ToolContext } from "../src/lib/brain/tools.js";
 import type { Eyes } from "../src/lib/eyes.js";
@@ -150,6 +150,58 @@ describe("safePublicUrl", () => {
 // ── the reader fallback, over real HTTP ────────────────────────────────────
 // The sandbox and CI both have a stand-in reader on loopback (JINA_READER_URL):
 // a page that can't be read directly must come back through it, word for word.
+// A real page shape: chrome around an article, and a script that would fake
+// content if it ever ran.
+const ARTICLE_HTML = `<!doctype html><html lang="en"><head><title>Rocket Engines, Explained</title>
+<meta name="author" content="A. Writer"><script>document.body.innerHTML = "<p>" + "injected".repeat(40) + "</p>"</script></head>
+<body><nav><a href="/">Home</a><a href="/news">News</a></nav>
+<article><h1>How rocket engines work</h1>
+<p>An engine burns and pushes: fuel and oxidiser meet, and the result is <strong>thrust</strong>.</p>
+<p>There are two families of engines, and the difference is how the fuel is stored.</p>
+<ul><li>Solid motors: simple, once lit they burn.</li><li>Liquid engines: throttled, restartable.</li></ul>
+<blockquote>Every kilogram counts.</blockquote></article>
+<aside><p>Subscribe to our newsletter!</p></aside><footer><p>© 2026 Example</p></footer></body></html>`;
+
+describe("reading a page here (Readability + Turndown, no service)", () => {
+  it("pulls the article out of the page as markdown, not the chrome", () => {
+    const out = articleMarkdown(ARTICLE_HTML, "https://example.com/rockets")!;
+    expect(out).toBeTruthy();
+    expect(out.title).toMatch(/Rocket Engines/);
+    expect(out.text).toMatch(/^## How rocket engines work/m);
+    expect(out.text).toMatch(/\*\*thrust\*\*/);
+    expect(out.text).toMatch(/^- Solid motors: simple, once lit they burn\.$/m);
+    expect(out.text).toMatch(/^> Every kilogram counts\.$/m);
+    // The page's own furniture is not the article.
+    expect(out.text).not.toMatch(/Subscribe to our newsletter/);
+    expect(out.text).not.toMatch(/Home|News/);
+    expect(out.text).not.toMatch(/© 2026 Example/);
+    expect(out.text).not.toMatch(/<p>|<li>|<h1>/);
+  });
+
+  it("never runs the page's scripts (and refuses to fake content for them)", () => {
+    const out = articleMarkdown(ARTICLE_HTML, "https://example.com/rockets");
+    expect(out?.text ?? "").not.toMatch(/injected/);
+    // A shell whose text only exists in JavaScript has no article to read.
+    expect(articleMarkdown('<html><body><div id="root"></div><script>render()</script></body></html>', "https://example.com/app")).toBeNull();
+  });
+
+  it("returns nothing for markup it cannot parse or pages too big to be an article", () => {
+    expect(articleMarkdown("not html at all", "https://example.com/x")).toBeNull();
+    const huge = `<html><body><article><p>${"word ".repeat(MAX_ARTICLE_HTML / 4)}</p></article></body></html>`;
+    expect(articleMarkdown(huge, "https://example.com/huge")).toBeNull();
+  });
+
+  it("keeps links (with their addresses) and drops images", () => {
+    const filler = "<p>An engine burns and pushes, and the numbers decide whether the whole thing leaves the ground at all.</p>";
+    const out = articleMarkdown(
+      `<html><head><title>Test</title></head><body><article>${filler.repeat(5)}<p>Read <a href="https://example.org/two">the other one</a> next.</p><p><img src="https://tracker.example/pixel.gif" alt="a picture"></p>${filler.repeat(3)}</article></body></html>`,
+      "https://example.com/x",
+    )!;
+    expect(out.text).toMatch(/\[the other one\]\(https:\/\/example\.org\/two\)/);
+    expect(out.text).not.toMatch(/tracker\.example/);
+  });
+});
+
 describe("readPage", () => {
   let server: http.Server;
   let base: string;

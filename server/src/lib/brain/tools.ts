@@ -548,7 +548,7 @@ AGENT_TOOLS.push(
     declaration: {
       name: "read_web_page",
       description:
-        "Read a web page's actual text: give a link and get the article back as readable text (title and body, navigation and scripts stripped). Use it to summarize an article, pull ideas or facts out of it, or answer a question about its content — instead of opening the browser and leaving the person to read it themselves. It can't read pages behind a login or a paywall.",
+        "Read a web page's actual text: give a link and get the article back as markdown (title and body, with headings, lists and links kept; navigation, ads and scripts stripped). Use it to summarize an article, pull ideas or facts out of it, or answer a question about its content — instead of opening the browser and leaving the person to read it themselves. It can't read pages behind a login or a paywall.",
       parameters: {
         type: "OBJECT",
         properties: {

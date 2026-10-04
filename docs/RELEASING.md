@@ -366,6 +366,22 @@ dead sign-in, deltas, and the wording), the guide checks in
 labels as tooltips, still minimized after a reload) and proves a voice set on
 the PC's conversation reaches the open window.
 
+1.6.2 reads web pages here, the way Firefox's reader mode does. `read_web_page`
+now runs Mozilla's Readability (Apache-2.0) over the fetched HTML and Turndown
+(MIT) turns that article into markdown: headings, lists, quotes and links
+survive, navigation, ads, footers and scripts do not. Both are pure JavaScript
+in the bundled server (`server/src/lib/eyes.ts`, `articleMarkdown()`), so the
+page never leaves the person's PC on this path — and jsdom is created without
+`runScripts`, so parsing untrusted markup stays passive (content a page would
+only have after running its scripts is provably not in the output; the tests pin
+that). The reader service (`JINA_READER_URL`, r.jina.ai by default) is now only
+the fallback for pages that hand back nothing usable — a JavaScript-only shell,
+a wall — and pages behind a login are still refused rather than guessed at. A
+page too short to be an article (a definition, a changelog entry) keeps the old
+plain-text path, so nothing got worse for short pages. Four new tests in
+`server/tests/eyes.test.ts` (30 in the file) cover the chrome-stripping, the
+script rule, the size/parse refusals and link/image handling.
+
 1.6.1 is voice, hands-free:
 
 - **Push to talk** (`desktop/src/keywatch.cjs`, `desktop/src/wake.cjs`):
