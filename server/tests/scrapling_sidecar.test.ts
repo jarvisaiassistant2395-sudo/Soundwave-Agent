@@ -1,8 +1,9 @@
 // The local page reader (scrapling/) is a second user-installed service, and it
-// has to stay that way: nothing in the installer may ship Python, and the
-// sidecar's own checks must be runnable by whoever installs it. The Python side
-// is skipped honestly when this machine has no FastAPI (CI's Node job may not),
-// so a missing interpreter never turns into a red build.
+// has to stay that way. The desktop may download Kokoro's pinned Python runtime
+// on first launch, but neither that interpreter nor Scrapling is bundled in the
+// installer. The sidecar's own checks must be runnable by whoever installs it;
+// the Python test is skipped if this machine has no FastAPI, so a missing
+// interpreter never turns into a red build.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -33,14 +34,16 @@ describe("the local page reader sidecar", () => {
     expect(readme).toMatch(/SCRAPLING_URL/);
   });
 
-  it("never puts Python in the installer — the desktop app ships bin/ only", () => {
+  it("does not bundle a Python interpreter or Scrapling in the installer", () => {
     const builder = fs.readFileSync(path.join(repoRoot, "desktop", "electron-builder.yml"), "utf8");
     expect(builder).not.toMatch(/scrapling/i);
-    expect(builder).not.toMatch(/python/i);
-    // And the audit says so in the paper, in those words.
+    // Kokoro downloads a pinned runtime on first launch; the installer only
+    // includes source and requirements, never an interpreter or installer exe.
+    expect(builder).not.toMatch(/python(?:\.exe|\d+\.dll|-\d[^\s]*\.exe)/i);
     const notices = fs.readFileSync(path.join(repoRoot, "THIRD-PARTY-NOTICES.txt"), "utf8");
-    expect(notices).toMatch(/Scrapling — BSD-3-Clause/);
-    expect(notices).toMatch(/not part of the desktop installer or any Soundwave release/);
+    const scraplingNotice = notices.split("• Scrapling — BSD-3-Clause")[1]?.split("\n• ")[0] ?? "";
+    expect(scraplingNotice).toMatch(/NOT INCLUDED IN THE DESKTOP INSTALLER/);
+    expect(scraplingNotice).toMatch(/optional cloning and page-reader packages are installed separately/);
   });
 
   it.skipIf(!python)("passes its own address, cap and refusal checks", () => {
