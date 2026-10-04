@@ -456,7 +456,24 @@ try {
   ok(`Settings → Brain: key saved (${hint}) and tested — ${tested.trim()}`);
 
   await main.goto(`${appBase}/agent`);
-  await main.waitForSelector('[data-testid="brain-pill"]', { timeout: 30_000 });
+  // The pill renders only once the brain status has arrived, and the renderer
+  // polls it every 30 s — on a loaded runner (13fd3cb: whisper 4.8 s vs 1.8 s,
+  // voice 870 ms vs 470 ms) the first answer can be slower than the old 30 s
+  // wait. Wait longer, and if it still isn't there, say what the endpoint says
+  // instead of leaving a bare timeout.
+  try {
+    await main.waitForSelector('[data-testid="brain-pill"]', { timeout: 90_000 });
+  } catch {
+    const said = await main
+      .evaluate(async () => {
+        const pill = document.querySelector('[data-testid="brain-pill"]');
+        const res = await fetch("/api/v1/brain/status").catch(() => null);
+        const body = res ? await res.text().catch(() => "") : "";
+        return `the pill is ${pill ? "in the DOM" : "absent"}; /api/v1/brain/status → ${res ? res.status : "no answer"} ${body.replace(/\s+/g, " ").slice(0, 300)}`;
+      })
+      .catch(() => "the page couldn't be asked either");
+    await fail(`Command Center: the brain pill never appeared (${said})`);
+  }
   const pill = (await main.textContent('[data-testid="brain-pill"]'))?.trim();
   if (!/Gemini 3\.8 Flash/.test(pill ?? "")) await fail(`Command Center: the brain pill says "${pill}"`);
   const question = "hello from the end-to-end test";
@@ -754,6 +771,62 @@ try {
     return res.ok ? await res.json() : { error: res.status };
   });
   if (clipsOffered.available !== true) await fail(`the clips endpoint doesn't offer the card here: ${JSON.stringify(clipsOffered)}`);
+
+  // The other visible half: watching creators. Nothing that needs YouTube here —
+  // a handle that can't be a channel must be refused with a sentence a person
+  // can act on, right under the box, and the card must be reachable at all.
+  const watchCard = await main.evaluate(() => {
+    const card = document.querySelector('[data-testid="watch-card"]');
+    if (!card) return null;
+    return {
+      hasInput: !!card.querySelector('[data-testid="watch-add-input"]'),
+      hasAdd: !!card.querySelector('[data-testid="watch-add"]'),
+      hasInfo: !!card.querySelector('[data-testid="watch-info"]'),
+      empty: /Nothing watched yet/.test(card.textContent ?? ""),
+    };
+  });
+  if (!watchCard) await fail('the "Watching creators" card is missing from the Command Center');
+  else if (!watchCard.hasInput || !watchCard.hasAdd || !watchCard.hasInfo) await fail(`the "Watching creators" card is incomplete: ${JSON.stringify(watchCard)}`);
+  else ok(`the Command Center shows the "Watching creators" card (${watchCard.empty ? "nothing watched yet, as on a fresh install" : "with channels already watched"})`);
+
+  await main.click('[data-testid="watch-info"]');
+  const infoOpen = await main
+    .waitForFunction(() => !!document.querySelector('[data-testid="watch-info-text"]'), null, { timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!infoOpen) await fail('the “i” on the watching card doesn\'t explain the feature');
+  else {
+    const infoText = await main.evaluate(() => document.querySelector('[data-testid="watch-info-text"]')?.textContent ?? "");
+    if (!/every ~5 minutes/.test(infoText)) await fail(`the explanation doesn't say how often it checks: “${infoText.slice(0, 160)}”`);
+    else ok("the “i” explains watching in place (channel checks every ~5 minutes while Soundwave runs)");
+  }
+
+  const watchesBefore = await main.evaluate(async () => {
+    const res = await fetch("/api/v1/watch");
+    return res.ok ? ((await res.json()).watches ?? []).length : -1;
+  });
+  await main.fill('[data-testid="watch-add-input"]', "not a channel at all");
+  await main.click('[data-testid="watch-add"]');
+  const refused = await main
+    .waitForFunction(
+      () => /isn't a channel I can watch|has to be a channel/.test(document.querySelector('[data-testid="watch-note"]')?.textContent ?? ""),
+      null,
+      { timeout: 10_000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  if (!refused) {
+    const shown = await main.evaluate(() => document.querySelector('[data-testid="watch-note"]')?.textContent ?? "(nothing)");
+    await fail(`typing something that isn't a channel didn't get the sentence back (the card says: ${shown})`);
+  } else ok("a handle that isn't a channel is refused in the card, with the reason");
+  const watchList = await main.evaluate(async () => {
+    const res = await fetch("/api/v1/watch");
+    return res.ok ? await res.json() : { error: res.status };
+  });
+  if (watchList.available !== true) await fail(`the watch endpoint doesn't offer the card here: ${JSON.stringify(watchList)}`);
+  if (watchesBefore >= 0 && (watchList.watches ?? []).length !== watchesBefore) {
+    await fail(`a refused handle changed the watch list (${watchesBefore} → ${(watchList.watches ?? []).length}): ${JSON.stringify(watchList.watches).slice(0, 300)}`);
+  }
   await main.fill('input[placeholder="Message…"]', `cut 1 clip out of this video: ${clipSource}`);
   await main.press('input[placeholder="Message…"]', "Enter");
   // The clips pipeline starts in the background; if its first line never shows,

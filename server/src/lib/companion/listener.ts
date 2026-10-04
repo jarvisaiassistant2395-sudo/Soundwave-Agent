@@ -27,7 +27,7 @@ import { OPEN_METEO_FORECAST, OPEN_METEO_GEOCODING } from "../brain/core/morning
 import { MAX_NOTE_CHARS, type MemoryOp } from "../brain/core/memory.js";
 import { applyPhoneMemoryOps, memoryAvailable, memorySnapshot } from "../memory.js";
 import { loadMorningSettings, morningCity, runMorningSetup } from "../morning.js";
-import { briefingStatus, markBriefingHeard, prepareTodaysBriefing } from "../briefing.js";
+import { briefingReadiness, briefingStatus, markBriefingHeard, prepareTodaysBriefing } from "../briefing.js";
 import { sanitizeMessages } from "../chatMessages.js";
 import { getStore } from "../store.js";
 import { EnvelopeError, aad, deriveDeviceKeys, frame, open, seal, unframe } from "./crypto.js";
@@ -308,12 +308,16 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
     // phone opening by itself without `prepare`) still stay inside the window.
     // A PC with no key or no topics still refuses inside prepareTodaysBriefing:
     // a placeholder must not become "today's briefing" and eat the day.
+    let prepareRefused: string | null = null;
     if (args.prepare === true && !status.message) {
       await prepareTodaysBriefing("phone");
       status = briefingStatus();
+      // Still nothing? Say which ingredient is missing, so the phone can write
+      // its own briefing and tell the person the truth about why.
+      if (!status.message) prepareRefused = briefingReadiness().reason;
     }
     const snap = getConversation();
-    return { result: { ...status, epoch: snap.epoch, rev: snap.rev, messages: snap.messages } };
+    return { result: { ...status, prepareRefused, epoch: snap.epoch, rev: snap.rev, messages: snap.messages } };
   },
 
   // The phone spoke today's briefing: the Command Center won't speak it again.

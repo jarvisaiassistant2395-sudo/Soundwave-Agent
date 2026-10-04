@@ -203,6 +203,20 @@ Gemini's alarm branch and the phone E2E (sets one through the chat, checks
 Android's own alarm list, rings a 20-second alarm, turns it off on its screen
 and waits for the briefing to start talking).
 
+1.3.3 also made the PC *say why* it can't write a briefing. In the same run the
+phone was told "your PC has no briefing to read out yet" while the PC had a key,
+a topic and a briefing written seconds later by its own scheduler — so the phone
+could not tell "nothing to research here" from "still writing it". The listener
+now answers `prepareRefused` ("no-key" / "no-topics" / "no-memory") when a
+`prepare` produced nothing, the refusal is logged on the PC
+(`[briefing] not writing today's briefing (phone asked): no-key`), and the phone
+(a) keeps asking while the PC has neither handed one over nor named what is
+missing — up to a minute, which is the scheduler-race window — and (b) when the
+PC really can't, writes its own and names the missing piece in the message it
+leaves behind ("Your PC couldn't write today's briefing (no Gemini key on the PC
+yet), so it was researched and written on the phone."). One more server test in
+`companion_brain.test.ts` pins the three answers.
+
 1.3.3 (phone-only, with the PC's companion): the briefing after an alarm works
 before the planned time, too. The emulator run caught the real case a person
 would hit every morning: an alarm set for 06:30 with the briefing planned for
@@ -386,6 +400,37 @@ dead sign-in, deltas, and the wording), the guide checks in
 `memory_guide.test.ts`, and the desktop E2E drives the minimize button (rail,
 labels as tooltips, still minimized after a reload) and proves a voice set on
 the PC's conversation reaches the open window.
+
+1.6.3 makes the channels people post to — and the channels they *watch* —
+things you can see and press instead of sentences you have to remember.
+
+**Watching creators** is a new card on the Command Center: paste a creator's
+@handle and every watched channel gets a row saying how many shorts it cuts per
+video, what it looks for, how many videos it has clipped, when it last checked
+and — in amber — why the last check failed. Each row has three icon buttons:
+the scissors (cut the newest video now, even though it was already up when the
+watch started), a settings button (shorts per video, what to look for, saved in
+place) and the bin (stop watching). The header's “i” explains the whole thing in
+place. It is the same store, timer and render queue the agent's
+`watch_youtube_channel` tool uses — `server/src/routes/watch.ts` (new) over
+`lib/channelWatch.ts` (now with `watchViews`/`updateWatchById`/`removeWatchById`/
+`clipLatestNow`) — so the card and the chat can never disagree. “Cut the newest
+one now” answers honestly: it awaits the tick and says “next in line …” when
+something else is already rendering rather than claiming it started.
+
+**Connect another channel** is now a button. Once one channel was connected the
+YouTube & Shorts tab only said “Linked to …”, and the only way to add a second
+one was to know that signing in again does it — the exact thing the multi-channel
+feature is for. The button says what the second sign-in means (each Google
+account adds one channel with its own plan). The Channels card counts them
+(“3 channels · 2 on autopilot”) and a channel that is off says what to do about
+it instead of just “Off”.
+
+Covered by `server/tests/watch_routes.test.ts` (8 tests: add, refuse, edit,
+clear a focus, cut now — including the busy case — stop, hosted server) and a new
+stage in `desktop/e2e.mjs` that checks the card is on the Command Center, that
+the “i” explains the cadence, and that a handle which isn't a channel is refused
+with the reason and changes nothing.
 
 1.6.2 reads web pages here, the way Firefox's reader mode does. `read_web_page`
 now runs Mozilla's Readability (Apache-2.0) over the fetched HTML and Turndown

@@ -447,6 +447,30 @@ describe("the morning briefing on the phone", () => {
     expect(briefing.briefingStatus().message).toMatchObject({ briefingDate: day });
   });
 
+  it("when the PC can't write one, it names the missing ingredient instead of staying silent", async () => {
+    briefing.resetBriefingForTests();
+    memory.setBriefingPlan({ topics: [], time: minutesAgo(3), auto: true });
+    const client = await pairedClient();
+    // No key on the PC and nothing to research: the phone must hear which one
+    // it is, so it can write its own briefing and say the truth about why.
+    // Nothing at all: the key is the first thing missing.
+    let status = await client.briefingToday({ prepare: true });
+    expect(status.message).toBeNull();
+    expect(status.prepareRefused).toBe("no-key");
+
+    await saveKeyOnPc();
+    status = await client.briefingToday({ prepare: true });
+    expect(status.message).toBeNull();
+    expect(status.prepareRefused).toBe("no-topics");
+
+    // And when it can, there is no refusal to report — it just writes it.
+    memory.setBriefingPlan({ topics: ["new trending GitHub repositories"], time: minutesAgo(3), auto: true });
+    fake.queue.push(searchAnswer, text("Good morning! Ollama 1.0 is out."));
+    status = await client.briefingToday({ prepare: true });
+    expect(status.prepareRefused).toBeNull();
+    expect(status.message).toMatchObject({ text: "Good morning! Ollama 1.0 is out." });
+  });
+
   it("with the PC off the phone writes its own briefing; back online it counts as heard on the PC too", async () => {
     briefing.resetBriefingForTests();
     await saveKeyOnPc();

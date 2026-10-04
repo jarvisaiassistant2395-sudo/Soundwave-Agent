@@ -475,7 +475,7 @@ export function useCompanion(): Companion {
    * key of its own to write with.
    */
   const writeBriefingOnPhone = useCallback(
-    async (plan: BriefingPlan | null, why: "pc-off" | "pc-nothing"): Promise<ChatMessage | null> => {
+    async (plan: BriefingPlan | null, why: "pc-off" | "pc-nothing", whyNote?: string): Promise<ChatMessage | null> => {
       const kit = kitRef.current;
       if (!kit) return null;
       setBriefing({ kind: "preparing", by: "phone", topics: plan?.topics ?? [] });
@@ -495,7 +495,11 @@ export function useCompanion(): Companion {
         answeredBy: "phone",
         briefingDate: r.briefingDate,
         actionOutput: [
-          why === "pc-off" ? "Your PC is off: researched and written on the phone." : "Your PC had nothing ready for today, so it was researched and written on the phone.",
+          why === "pc-off"
+            ? "Your PC is off: researched and written on the phone."
+            : whyNote
+              ? `Your PC couldn't write today's briefing (${whyNote}), so it was researched and written on the phone.`
+              : "Your PC had nothing ready for today, so it was researched and written on the phone.",
           r.research,
           r.weatherNote ? `Weather: ${r.weatherNote}` : "",
         ]
@@ -514,6 +518,9 @@ export function useCompanion(): Companion {
    * phone researches and writes itself. Once per day per phone (and not if
    * it was already heard on the PC), unless `force`.
    */
+  /** Why the PC said it couldn't write one, for the sentence the person reads. */
+  const lastPrepareRefused = useRef<string | null>(null);
+
   const deliverBriefing = useCallback(
     async (opts: { force?: boolean } = {}) => {
       if (briefingBusy.current || !clientRef.current) return;
@@ -553,12 +560,39 @@ export function useCompanion(): Companion {
             // has nothing: giving up here told a person at 06:30 that "your PC
             // has no briefing" while the PC simply hadn't reached 07:00 yet.
             let answer = await c.briefingToday({ prepare: true });
-            for (let i = 0; i < 20 && !answer.message && answer.preparing && !briefingStop.current; i++) {
+            // Keep asking while the PC has neither handed a briefing over nor
+            // named what it is missing: it may still be writing it (the PC's own
+            // scheduler writes the briefing at its planned time, and that write
+            // can land right after this question — that race is exactly what a
+            // red CI run showed, with the phone giving up a second too early).
+            for (let i = 0; i < 20 && !answer.message && !answer.prepareRefused && !briefingStop.current; i++) {
               await new Promise((r) => setTimeout(r, 3000));
               answer = await c.briefingToday();
             }
             msg = answer.message;
-            if (!msg) msg = await writeBriefingOnPhone(plan, "pc-nothing");
+            lastPrepareRefused.current =
+              answer.prepareRefused === "no-key"
+                ? "no Gemini key on the PC"
+                : answer.prepareRefused === "no-topics"
+                  ? "nothing in the PC's Morning Setup to research"
+                  : answer.prepareRefused === "no-memory"
+                    ? "the PC's memory isn't available"
+                    : answer.prepareRefused
+                      ? answer.prepareRefused
+                      : "its research came back empty";
+            if (!msg) {
+              // The PC named what it is missing (no key there, no topics, no
+              // memory): write it here and say which piece was missing there.
+              const why =
+                answer.prepareRefused === "no-key"
+                  ? "no Gemini key on the PC yet"
+                  : answer.prepareRefused === "no-topics"
+                    ? "no topics in Morning Setup on the PC"
+                    : answer.prepareRefused === "no-memory"
+                      ? "the PC's memory isn't available"
+                      : undefined;
+              msg = await writeBriefingOnPhone(plan, "pc-nothing", why);
+            }
           }
         } else if (!msg && kitRef.current) {
           msg = await writeBriefingOnPhone(plan, "pc-off");
@@ -568,7 +602,9 @@ export function useCompanion(): Companion {
           // Nothing to read: say why instead of leaving the bar and going quiet.
           throw new Error(
             stateRef.current.kind === "online"
-              ? "your PC couldn't write today's briefing when this phone asked it just now (no topics in Settings → Morning Setup, no Gemini key there, or its research failed) and this phone has no key of its own — try again in a moment"
+              ? `your PC couldn't write today's briefing when this phone asked it just now${
+                  lastPrepareRefused.current ? ` (${lastPrepareRefused.current})` : ""
+                } and this phone has no key of its own — try again in a moment`
               : "the PC is off and this phone doesn't have a Gemini key of its own yet (it comes from the PC) — open Soundwave on the PC once, then ask again",
           );
         }

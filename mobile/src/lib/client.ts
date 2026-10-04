@@ -70,6 +70,13 @@ export interface BriefingToday {
   preparing: boolean;
   message: ChatMessage | null;
   heard: { at: number; on: "pc" | "phone" | null } | null;
+  /**
+   * Asked the PC to write one and it couldn't: which ingredient is missing
+   * there. "no-memory" = the PC has no memory store, "no-key" = no Gemini key,
+   * "no-topics" = nothing set in Morning Setup. Null when it wasn't asked, or
+   * when the PC handed a briefing over.
+   */
+  prepareRefused?: "no-memory" | "no-key" | "no-topics" | null;
 }
 
 export interface Conversation {

@@ -125,7 +125,11 @@ and, the moment something new is up, announces it in the chat and cuts the
 shorts out of it automatically (same pipeline as below). Only videos posted
 after you asked (or "clip the latest one too"); up to 10 channels; three videos
 per check at most, so a channel posting five videos doesn't swamp the PC; ask
-"what channels are you watching?" or "stop watching @MrBeast" any time.
+"what channels are you watching?" or "stop watching @MrBeast" any time. It also
+has a card of its own — **Watching creators** on the Command Center: paste a
+@handle and every watched channel gets a row with the scissors (cut the newest
+video now), the settings button (shorts per video, what to look for) and the bin
+(stop watching), so none of it needs a sentence.
 `lib/channelWatch.ts` + `brain/core/watch.ts` (pure rules: channel references,
 new-upload planning, status text). It lives on the PC: a video posted while it
 was off is picked up when it starts.

@@ -70,6 +70,24 @@ export function todaysBriefingMessage(day = localDay(new Date())): ChatMessage |
 
 let preparing: Promise<ChatMessage | null> | null = null;
 
+/** Why the PC can't write a briefing right now — the phone acts on this. */
+export type BriefingRefusal = "no-memory" | "no-key" | "no-topics";
+
+/**
+ * Whether the PC could write today's briefing this moment, and if not, which
+ * ingredient is missing. The phone asks for a briefing after an alarm: when the
+ * PC refuses, the phone has to know *why* — it writes its own briefing instead
+ * (and says so), and a run that fails has to name the missing piece rather than
+ * "your PC had nothing". Silence was the old behaviour, and it cost a CI run to
+ * find out which of the three it was.
+ */
+export function briefingReadiness(): { ready: boolean; reason: BriefingRefusal | null } {
+  if (!memoryAvailable()) return { ready: false, reason: "no-memory" };
+  if (!activeBrain()) return { ready: false, reason: "no-key" };
+  if (briefingPlan().topics.length === 0) return { ready: false, reason: "no-topics" };
+  return { ready: true, reason: null };
+}
+
 export function briefingStatus(now = new Date()) {
   const plan = briefingPlan();
   const day = localDay(now);
@@ -113,7 +131,13 @@ export function prepareTodaysBriefing(reason: "schedule" | "phone" | "app"): Pro
   const day = localDay(new Date());
   const existing = todaysBriefingMessage(day);
   if (existing) return Promise.resolve(existing);
-  if (!activeBrain() || briefingPlan().topics.length === 0) return Promise.resolve(null);
+  const ready = briefingReadiness();
+  if (!ready.ready) {
+    // Someone asked (the phone, the app) and can't get a briefing: leave the
+    // reason in the log. The scheduler is silent — it retries every minute.
+    if (reason !== "schedule") console.warn(`[briefing] not writing today's briefing (${reason} asked): ${ready.reason}`);
+    return Promise.resolve(null);
+  }
   if (preparing) return preparing;
   preparing = (async () => {
     try {

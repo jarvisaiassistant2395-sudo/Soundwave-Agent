@@ -102,7 +102,7 @@ What happens: the PC checks the channel every few minutes. When a new video appe
 
 It only clips videos posted **after** you asked, unless you also say "and clip the latest one". So following a channel with 900 videos does not start 900 renders. If a channel posts several videos at once, the agent takes them in small batches (up to 3 per check) so the PC isn't swamped, and says when more are waiting.
 
-It runs on the PC while Soundwave AI is running — if the PC was off when the video was posted, it's picked up the next time Soundwave AI starts (the checks are about what's been seen, not about the clock). Ask "what channels are you watching?" any time for the state, and "stop watching @MrBeast" (or "stop watching all") to stop.
+It runs on the PC while Soundwave AI is running — if the PC was off when the video was posted, it's picked up the next time Soundwave AI starts (the checks are about what's been seen, not about the clock). The Command Center has a **Watching creators** card for all of this without typing: paste a creator's @handle to follow them, and each row has the scissors (cut the newest video now), a settings button (how many shorts per video, what to look for) and a bin (stop watching). Ask "what channels are you watching?" any time for the state, and "stop watching @MrBeast" (or "stop watching all") to stop.
 
 One video renders at a time, clips and normal shorts together — that's why a queue can wait a few minutes. Up to 10 channels can be watched at once. The clips are the creator's own footage: keep them for yourself or use them where you have the right to (a repost of someone else's video needs their permission).`,
   },

@@ -119,6 +119,123 @@ export function watchStatuses(now = Date.now()): string[] {
   );
 }
 
+/**
+ * One watch, shaped for the card in the UI (Command Center → Watching): the
+ * names and numbers a person reads, never the internal seeding lists. The card
+ * is how someone sees and changes what's being watched without remembering a
+ * sentence for the chat, so this stays small and stable.
+ */
+export interface WatchView {
+  id: string;
+  /** The channel's real name once YouTube answers; the @handle until then. */
+  name: string;
+  input: string;
+  url: string;
+  clips: number;
+  focus: string | null;
+  queued: number;
+  clippedCount: number;
+  /** The last video this watch cut shorts out of — what "did it work?" looks like. */
+  lastClipped: { title: string; at: number } | null;
+  addedAt: number;
+  lastCheckedAt: number | null;
+  lastError: string | null;
+}
+
+const asView = (w: ChannelWatch): WatchView => {
+  const last = w.clipped[w.clipped.length - 1];
+  return {
+    id: w.id,
+    name: w.channelName || watchSlug(w),
+    input: w.input,
+    url: w.tabUrl,
+    clips: w.clips,
+    focus: w.focus ?? null,
+    queued: w.queue.length,
+    clippedCount: w.clipped.length,
+    lastClipped: last ? { title: last.title, at: last.at } : null,
+    addedAt: w.addedAt,
+    lastCheckedAt: w.lastCheckedAt,
+    lastError: w.lastError,
+  };
+};
+
+export function watchViews(): WatchView[] {
+  return load().watches.map(asView);
+}
+
+/** Change one watch's plan (the card edits clips/focus in place). */
+export function updateWatchById(id: string, patch: { clips?: number; focus?: string | null }): ChannelWatch | null {
+  const state = load();
+  const watch = state.watches.find((w) => w.id === id);
+  if (!watch) return null;
+  if (patch.clips !== undefined) watch.clips = clampWatchClips(patch.clips);
+  if (patch.focus !== undefined) {
+    const focus = (patch.focus ?? "").trim().slice(0, 300);
+    // undefined, not "": what's absent is what the tool and the status text check.
+    if (focus) watch.focus = focus;
+    else delete watch.focus;
+  }
+  save(state);
+  return watch;
+}
+
+/** Stop watching one channel by its id (the card's bin). */
+export function removeWatchById(id: string): boolean {
+  const state = load();
+  const before = state.watches.length;
+  state.watches = state.watches.filter((w) => w.id !== id);
+  if (state.watches.length === before) return false;
+  save(state);
+  return true;
+}
+
+/**
+ * "Cut this one now": queue the newest video on a watched channel ahead of
+ * everything else, even though it was already skipped (it was up when the watch
+ * started, or it has been waiting). The person pressed a button for it, so it
+ * doesn't need the scheduler's blessing — the queue and the render pipeline are
+ * the same ones a new upload goes through.
+ */
+export async function clipLatestNow(
+  id: string,
+): Promise<{ ok: boolean; title?: string; started?: boolean; reason?: string }> {
+  const state = load();
+  const watch = state.watches.find((w) => w.id === id);
+  if (!watch) return { ok: false, reason: "That channel isn't being watched any more." };
+  let listing: Awaited<ReturnType<typeof listChannelVideos>>;
+  try {
+    listing = await listChannelVideos(watch.tabUrl, { limit: LISTING_LIMIT });
+  } catch (err) {
+    return { ok: false, reason: `Couldn't read that channel: ${(err as Error).message}` };
+  }
+  if (listing.channelName && listing.channelName !== watch.channelName) watch.channelName = listing.channelName;
+  const newest = listing.videos?.[0];
+  if (!newest) return { ok: false, reason: "That channel has no videos I can see." };
+  const already = knownIds(watch).includes(newest.id);
+  if (!already) {
+    // A video the checks haven't taken on yet: it's already coming — move it up.
+    const at = watch.queue.findIndex((q) => q.id === newest.id);
+    if (at > 0) watch.queue.splice(at, 1);
+    if (at !== 0) watch.queue.unshift({ id: newest.id, title: newest.title, url: newest.url, announce: false, attempts: 0 });
+  } else {
+    // Already handled or skipped when the watch started: do it because they asked.
+    watch.seen = watch.seen.filter((s) => s !== newest.id);
+    watch.queue.unshift({ id: newest.id, title: newest.title, url: newest.url, announce: false, attempts: 0 });
+  }
+  watch.lastCheckedAt = Date.now();
+  watch.lastError = null;
+  save(state);
+  // Do it now, and say truthfully whether it started: the tick is what cuts,
+  // and one video renders at a time — behind a running render the honest answer
+  // is "queued", not "cutting".
+  await tickWatches().catch(() => undefined);
+  const started = load()
+    .watches.find((w) => w.id === id)
+    ?.clipped.some((c) => c.id === newest.id);
+  return { ok: true, title: newest.title, started: Boolean(started) };
+}
+
 const say = (text: string): void => {
   const at = Date.now();
   appendToConversation({ id: newMessageId(at), sender: "assistant", text, time: chatTime(new Date(at)), at, tag: "SYS" });

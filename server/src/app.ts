@@ -23,6 +23,7 @@ import creatorRoutes from "./routes/creator.js";
 import ghostRoutes from "./routes/ghost.js";
 import youtubeRoutes from "./routes/youtube.js";
 import { clipsRoutes } from "./routes/clips.js";
+import { watchRoutes } from "./routes/watch.js";
 import companionRoutes from "./routes/companion.js";
 import brainRoutes from "./routes/brain.js";
 import memoryRoutes from "./routes/memory.js";
@@ -87,6 +88,9 @@ export function createApp() {
   // Cutting Shorts out of a long video, started from the Command Center or the
   // agent's make_shorts_from_video tool — the same job either way.
   app.use("/api/v1/clips", clipsRoutes);
+  // Watching channels (watch a creator → clip every new video), from the card
+  // in the Command Center — the same store and queue as the agent's tool.
+  app.use("/api/v1/watch", watchRoutes);
   // Phone companion: Settings → Phone + the conversation the phone shares (desktop app only).
   app.use("/api/v1/companion", companionRoutes);
   // The agent's brain (Gemini): status + Settings → Brain.
