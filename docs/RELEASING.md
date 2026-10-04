@@ -203,6 +203,27 @@ Gemini's alarm branch and the phone E2E (sets one through the chat, checks
 Android's own alarm list, rings a 20-second alarm, turns it off on its screen
 and waits for the briefing to start talking).
 
+1.3.3 (phone-only, with the PC's companion): the briefing after an alarm works
+before the planned time, too. The emulator run caught the real case a person
+would hit every morning: an alarm set for 06:30 with the briefing planned for
+07:00. The PC refused to write one because 07:00 had not arrived (`briefing.today`
+with `prepare` consulted the 10-hour window, like the automatic paths do), so the
+phone was told the PC "has no briefing to read out yet" — and minutes later the
+PC wrote it on its own schedule, far too late to be heard. Asking to prepare is
+the person asking, so that path (like `/api/v1/morning/run` and the 🌅 chip) no
+longer consults the window: the PC writes today's briefing when the phone asks,
+even before the planned time, and still refuses without a key or without topics,
+so no placeholder becomes "today's briefing". On the phone, two things: if the PC
+answers that it is still writing, `deliverBriefing` waits and asks again (up to a
+minute) instead of concluding it has nothing, and the failure sentence now says
+what actually happened ("couldn't write today's briefing when this phone asked it
+just now") rather than blaming a PC that may well have topics and a key. Pinned
+by a test in `server/tests/companion_brain.test.ts` that plans the briefing for
+later today and checks the automatic path hands nothing over while `prepare`
+writes it anyway. The same run also taught the tool table a rule it already
+followed elsewhere: `set_phone_alarm` needs the desktop app (that is where a
+phone can be paired at all), so a hosted server no longer offers it.
+
 1.3.2 (phone-only): the briefing after an alarm is never left unspoken. Turning
 an alarm off is the user asking to be briefed, so when the PC hands over nothing
 — no topics or no key there yet, its 10-hour morning window long past, or today's

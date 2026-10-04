@@ -423,6 +423,30 @@ describe("the morning briefing on the phone", () => {
     expect(briefing.briefingStatus().heard).toMatchObject({ on: "phone" });
   });
 
+  it("asked to prepare before its time (an alarm was turned off at 06:30, the briefing planned for 07:00): the PC writes it anyway", async () => {
+    briefing.resetBriefingForTests();
+    await saveKeyOnPc();
+    morning.saveMorningSettings({ items: [] });
+    // A time later today: the window (and `due`) are false, so the automatic
+    // path rightly hands nothing over — but the phone asking is the person
+    // asking, so `prepare` must still write it. This is the CI failure that
+    // said "your PC has no briefing to read out yet" while the PC had topics
+    // and a key and wrote it minutes later, on its own schedule.
+    const later = new Date(Date.now() + 30 * 60_000);
+    const time = `${String(later.getHours()).padStart(2, "0")}:${String(later.getMinutes()).padStart(2, "0")}`;
+    memory.setBriefingPlan({ topics: ["new trending GitHub repositories"], time, auto: true });
+    const client = await pairedClient();
+
+    const before = await client.briefingToday();
+    expect(before).toMatchObject({ inWindow: false, message: null });
+
+    fake.queue.push(searchAnswer, text("Good morning early! On GitHub: agent-lab is trending."));
+    const after = await client.briefingToday({ prepare: true });
+    const day = coreMorning.localDay(new Date());
+    expect(after.message).toMatchObject({ briefingDate: day, text: "Good morning early! On GitHub: agent-lab is trending." });
+    expect(briefing.briefingStatus().message).toMatchObject({ briefingDate: day });
+  });
+
   it("with the PC off the phone writes its own briefing; back online it counts as heard on the PC too", async () => {
     briefing.resetBriefingForTests();
     await saveKeyOnPc();

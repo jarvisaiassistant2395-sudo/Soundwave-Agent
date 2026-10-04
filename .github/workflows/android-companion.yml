@@ -293,7 +293,7 @@ jobs:
           tail -n 80 "$RUNNER_TEMP/server.log" || true
           tail -n 5 "$RUNNER_TEMP/fake-gemini.log" || true
           # The phone-related lines as annotations too (readable without the log download).
-          grep -E "\[(companion|brain)\]" "$RUNNER_TEMP/server.log" | tail -n 8 | sed 's/^/::notice title=PC server log::/' || true
+          grep -E "\[(companion|brain|briefing)\]" "$RUNNER_TEMP/server.log" | tail -n 8 | sed 's/^/::notice title=PC server log::/' || true
 
       - name: Upload emulator screenshots
         if: always()

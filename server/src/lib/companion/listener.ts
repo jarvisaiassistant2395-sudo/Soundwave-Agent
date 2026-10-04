@@ -299,7 +299,16 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
   // Opened in the morning: today's briefing (written when it was due) — or written now when asked.
   async "briefing.today"(args) {
     let status = briefingStatus();
-    if (args.prepare === true && status.inWindow && !status.message) {
+    // `prepare` is the phone asking on the person's behalf — an alarm was just
+    // turned off, or the bar was tapped — so the planned time isn't consulted:
+    // turning off a 06:30 alarm with the briefing planned for 07:00 must still
+    // speak, and the window check here once made that answer "nothing" while
+    // the PC had topics and a key (the PC's scheduler wrote it at 07:00, too
+    // late to be heard). The automatic paths (the PC's own scheduler, the
+    // phone opening by itself without `prepare`) still stay inside the window.
+    // A PC with no key or no topics still refuses inside prepareTodaysBriefing:
+    // a placeholder must not become "today's briefing" and eat the day.
+    if (args.prepare === true && !status.message) {
       await prepareTodaysBriefing("phone");
       status = briefingStatus();
     }

@@ -775,7 +775,11 @@ AGENT_TOOLS.push(
   {
     declaration: PHONE_ALARM_DECLARATION,
     // Only when a real phone is paired: a browser pairing has nothing to ring.
-    available: () => pairedPhones().some((p) => p.platform !== "web"),
+    // And only on the desktop app, where the phone companion lives at all — a
+    // hosted server has no phone to ring, whatever a leftover pairing file
+    // says, so it must not offer the tool (that is the "PC tools stay off
+    // hosted servers" rule, and a test pins it).
+    available: (ctx) => ctx.desktop && pairedPhones().some((p) => p.platform !== "web"),
     sideEffect: true,
     async run(args, ctx) {
       const phones = pairedPhones().filter((p) => p.platform !== "web");

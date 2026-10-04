@@ -546,10 +546,18 @@ export function useCompanion(): Companion {
           msg = status.message ?? msg;
           if (!msg) {
             setBriefing({ kind: "preparing", by: "pc", topics: plan?.topics ?? [] });
-            msg = (await c.briefingToday({ prepare: true })).message;
-            // The PC had nothing to hand over (no topics or no key there yet,
-            // or its morning window is long past). An alarm was just turned
-            // off — that person asked to be briefed, so write it here instead.
+            // `prepare` is this phone asking the PC to write today's briefing
+            // now — it answers with the briefing (an alarm was turned off, so
+            // this has to work even before the planned time). If the PC answers
+            // that it is still writing, wait for it instead of concluding it
+            // has nothing: giving up here told a person at 06:30 that "your PC
+            // has no briefing" while the PC simply hadn't reached 07:00 yet.
+            let answer = await c.briefingToday({ prepare: true });
+            for (let i = 0; i < 20 && !answer.message && answer.preparing && !briefingStop.current; i++) {
+              await new Promise((r) => setTimeout(r, 3000));
+              answer = await c.briefingToday();
+            }
+            msg = answer.message;
             if (!msg) msg = await writeBriefingOnPhone(plan, "pc-nothing");
           }
         } else if (!msg && kitRef.current) {
@@ -560,7 +568,7 @@ export function useCompanion(): Companion {
           // Nothing to read: say why instead of leaving the bar and going quiet.
           throw new Error(
             stateRef.current.kind === "online"
-              ? "your PC has no briefing to read out yet (no topics in Settings → Morning Setup, or no Gemini key there) and this phone has no key of its own — try again in a moment"
+              ? "your PC couldn't write today's briefing when this phone asked it just now (no topics in Settings → Morning Setup, no Gemini key there, or its research failed) and this phone has no key of its own — try again in a moment"
               : "the PC is off and this phone doesn't have a Gemini key of its own yet (it comes from the PC) — open Soundwave on the PC once, then ask again",
           );
         }
