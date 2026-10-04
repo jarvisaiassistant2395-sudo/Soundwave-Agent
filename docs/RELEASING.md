@@ -449,6 +449,23 @@ program and **refuses the build** if `bin/fonts` holds the font but not its
 app already drew its interface in Inter, so a short now looks like the product
 that made it.
 
+**The briefing no longer waits for the phone to make up its mind (1.3.5).** The
+phone's job with the PC away is to research and write the morning briefing with
+the key it keeps from the PC. `deliverBriefing` only did that in the exact state
+`offline`; any other state — `connecting` (knocking on the address it was paired
+with) or `searching` (sweeping the known /24s when that address moved), both of
+which can take seconds right after the app opens — fell through to a sentence
+that blamed a missing key, and no briefing. A CI run showed exactly that: the
+app force-stopped and reopened at the briefing time, the phone-mode banner on
+screen (which only renders when the phone *holds* the key), and an error saying
+it didn't. The rule is now "can this phone write it?" — true whenever it is not
+forgotten and holds the key — so the app starts the briefing straight away
+instead of waiting for a verdict it doesn't need; `ensureKit()` likewise asks
+for the key in any state but `forgotten`. The failure sentence is built from
+what was actually true (`mobile/src/lib/briefingSource.ts`, tested): a phone
+holding the key is never told it has none, and a PC that never answered is
+called unreachable rather than off.
+
 **One microphone at a time.** The wake word ("Hey Soundwave", 1.6.0) put a
 hidden window on the PC that listens and transcribes what it hears in the
 background. That window and the person both want the same thing: this PC's

@@ -179,17 +179,26 @@ describe("what the agent gets back", () => {
     expect(String(made.reason)).toMatch(/can't read a time/i);
   });
 
-  it("asks the sound for its real level — and never invents one", async () => {
-    // Read-only on purpose: running the tests on a Windows dev machine must not
-    // turn that machine's volume down. CI (Linux) has no PowerShell at all, and
-    // the honest refusal is the answer there.
-    const result = await tool("set_volume").run({}, ctx() as never);
-    if (process.platform === "win32") {
-      if (result.ok) expect(typeof result.level).toBe("number");
-      else expect(String(result.reason).length).toBeGreaterThan(5);
-    } else {
-      expect(result.ok).toBe(false);
-      expect(String(result.reason).length).toBeGreaterThan(5);
-    }
-  });
+  // 30 s, not vitest's default 5: on Windows this really runs PowerShell (that
+  // is the point — the level it reports has to be the machine's own), and a
+  // cold powershell.exe on a loaded CI runner takes longer than 5 s to answer.
+  // The two runs that went red here called it a timeout, which said nothing
+  // about the code; the engine's own budget is 20 s, so this test's is 30.
+  it(
+    "asks the sound for its real level — and never invents one",
+    async () => {
+      // Read-only on purpose: running the tests on a Windows dev machine must not
+      // turn that machine's volume down. CI (Linux) has no PowerShell at all, and
+      // the honest refusal is the answer there.
+      const result = await tool("set_volume").run({}, ctx() as never);
+      if (process.platform === "win32") {
+        if (result.ok) expect(typeof result.level).toBe("number");
+        else expect(String(result.reason).length).toBeGreaterThan(5);
+      } else {
+        expect(result.ok).toBe(false);
+        expect(String(result.reason).length).toBeGreaterThan(5);
+      }
+    },
+    30_000,
+  );
 });

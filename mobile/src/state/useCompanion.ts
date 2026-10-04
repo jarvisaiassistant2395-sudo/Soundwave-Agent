@@ -55,6 +55,7 @@ import { alarmLabel, alarmTarget, DEFAULT_BRIEFING_AFTER_ALARM_SECONDS, clockLab
 import { phoneFetchText } from "../lib/phoneFetch";
 import { toast } from "../lib/toast";
 import { inBriefingWindow, localDay } from "../../../server/src/lib/brain/core/morning";
+import { briefingFailureNote, canWriteBriefingOnPhone, type CompanionPhase } from "../lib/briefingSource";
 
 export type PairingPhase = { kind: "idle" } | { kind: "working"; pcName: string } | { kind: "failed"; message: string; code: string };
 
@@ -553,7 +554,12 @@ export function useCompanion(): Companion {
         /** The kit — fetched from the PC if this session hasn't got it yet. */
         const ensureKit = async (): Promise<PhoneKit | null> => {
           if (kitRef.current) return kitRef.current;
-          if (stateRef.current.kind !== "online") return null;
+          // Not a state check beyond "this phone still belongs to that PC":
+          // while the connection is still being decided (""connecting"",
+          // ""searching"") the PC may well answer, and a fetch with no
+          // connection fails at once. Only a PC that removed this phone stops
+          // the question being asked at all.
+          if (stateRef.current.kind === "forgotten") return null;
           await refreshKitRef.current?.().catch(() => undefined);
           return kitRef.current;
         };
@@ -614,18 +620,23 @@ export function useCompanion(): Companion {
               msg = await writeBriefingOnPhone(plan, "pc-nothing", why);
             }
           }
-        } else if (!msg && stateRef.current.kind === "offline" && (await ensureKit())) {
+        } else if (!msg && canWriteBriefingOnPhone(stateRef.current.kind as CompanionPhase, Boolean(await ensureKit()))) {
+          // The PC is not answering — or has not finished being decided about
+          // ("connecting"/"searching" take seconds after the app opens). The
+          // phone holds the PC's key, which is all it needs to research and
+          // write today's briefing itself; waiting for a definitive "offline"
+          // told a person at 06:30 that there would be no briefing, and blamed
+          // a key they had.
           msg = await writeBriefingOnPhone(plan, "pc-off");
         }
         if (briefingStop.current) return;
         if (!msg) {
           // Nothing to read: say why instead of leaving the bar and going quiet.
+          // The sentence is built from what was actually true (lib/briefingSource):
+          // a phone holding the key is never told it has none, and a PC that never
+          // answered is described as unreachable rather than off.
           throw new Error(
-            stateRef.current.kind === "online"
-              ? `your PC couldn't write today's briefing when this phone asked it just now${
-                  lastPrepareRefused.current ? ` (${lastPrepareRefused.current})` : ""
-                } and this phone has no key of its own — try again in a moment`
-              : "the PC is off and this phone doesn't have a Gemini key of its own yet (it comes from the PC) — open Soundwave on the PC once, then ask again",
+            briefingFailureNote(stateRef.current.kind as CompanionPhase, { pcRefusedNote: lastPrepareRefused.current }),
           );
         }
         markHeard(day, msg);

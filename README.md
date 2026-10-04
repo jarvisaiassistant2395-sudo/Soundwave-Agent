@@ -142,6 +142,12 @@ weight is written into the ASS rather than dropped. The licence travels with it
 and the audit refuses a bundle that drops it. Proof, not a promise: a test
 renders a frame and reads libass' `fontselect:` line back out.
 
+The phone's morning briefing got the same treatment: with the PC off, the phone
+writes the briefing itself (that is the point of the key it keeps), and it now
+does so whether the app has decided the PC is away yet or not — opening the app
+at 06:30 used to fail if the phone was still trying to reach the PC, with a
+message blaming a key the phone was holding.
+
 The same release settles who the microphone belongs to. "Hey Soundwave" listens
 in a hidden window; the Command Center's mic and the voice bar now tell the
 desktop shell when they are recording, so the listener stays quiet instead of
