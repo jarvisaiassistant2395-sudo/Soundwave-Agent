@@ -20,6 +20,9 @@ on:
       - "server/**"
       - "frontend/**"
       - "desktop/**"
+      - "scripts/**"
+      - "THIRD-PARTY-NOTICES.txt"
+      - "voiceclone/**"
       - ".github/workflows/release-desktop.yml"
   workflow_dispatch:
 
@@ -141,6 +144,10 @@ jobs:
           }
           if (-not $gotYtDlp) { throw "could not download yt-dlp.exe" }
           Write-Host "yt-dlp $(& desktop/bin/yt-dlp.exe --version)"
+          # ffmpeg is GPLv3: its licence text and a written offer of source must
+          # ship with it. Written here, immediately, so the licence audit step
+          # below (and the packaged app) never sees the binary without its paper.
+          node scripts/write-binary-licenses.mjs
           Get-ChildItem desktop/bin | Format-Table Name, Length
 
       # Voice input: whisper.cpp's official Windows build (it picks the best

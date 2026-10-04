@@ -48,6 +48,7 @@ export function toVoiceInfo(v: VoiceMeta): VoiceInfo {
 export const DEFAULT_VOICES: VoiceInfo[] = VOICE_META.map(toVoiceInfo);
 
 export function displayNameFor(voiceId: string): string {
+  if (isLocalVoiceId(voiceId)) return localVoiceName(voiceId);
   return VOICE_BY_ID[voiceId]?.displayName ?? voiceId;
 }
 
@@ -70,14 +71,42 @@ export const SAMPLE_SENTENCE =
 export const AGENT_VOICE_STORAGE_KEY = "soundwave_voice";
 export const DEFAULT_AGENT_VOICE_ID = "en-US-GuyNeural";
 
+/**
+ * A Soundwave voice: one of Microsoft's neural voices, which is what the app
+ * speaks with by default. Deliberately NOT true for the on-this-PC engine — use
+ * `isKnownVoice` when the question is "can the app speak this?", and this when
+ * the question is "is this one of ours?".
+ */
 export function isSoundwaveVoice(voiceId: string | null | undefined): voiceId is string {
   return typeof voiceId === "string" && voiceId in VOICE_BY_ID;
+}
+
+// ── On-this-PC voices (Kokoro-82M, Apache-2.0) ──────────────────────────────
+// Same idea as the cloned voices: namespaced ids, so nothing can be confused
+// with a Soundwave voice. They exist only when the local voice service is
+// running (lib/localVoices.ts asks the server), and they are never the default.
+export const LOCAL_VOICE_PREFIX = "kokoro:";
+
+export function isLocalVoiceId(voiceId: string | null | undefined): voiceId is string {
+  return typeof voiceId === "string" && voiceId.toLowerCase().startsWith(LOCAL_VOICE_PREFIX);
+}
+
+/** Any voice this app can speak: a Soundwave voice or an on-this-PC one. */
+export function isKnownVoice(voiceId: string | null | undefined): voiceId is string {
+  return isSoundwaveVoice(voiceId) || isLocalVoiceId(voiceId);
+}
+
+/** "kokoro:af_heart" → "Heart" (the name Kokoro itself gives that voice). */
+export function localVoiceName(voiceId: string): string {
+  const short = voiceId.slice(LOCAL_VOICE_PREFIX.length);
+  const name = short.split("_")[1] ?? short;
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 export function loadAgentVoice(): string {
   try {
     const saved = localStorage.getItem(AGENT_VOICE_STORAGE_KEY);
-    if (isSoundwaveVoice(saved)) return saved;
+    if (isKnownVoice(saved)) return saved;
   } catch {
     /* storage unavailable */
   }
@@ -85,7 +114,7 @@ export function loadAgentVoice(): string {
 }
 
 export function saveAgentVoice(voiceId: string): void {
-  if (!isSoundwaveVoice(voiceId)) return;
+  if (!isKnownVoice(voiceId)) return;
   try {
     localStorage.setItem(AGENT_VOICE_STORAGE_KEY, voiceId);
   } catch {
@@ -95,6 +124,7 @@ export function saveAgentVoice(voiceId: string): void {
 
 /** "Guy — US male" */
 export function agentVoiceLabel(voiceId: string): string {
+  if (isLocalVoiceId(voiceId)) return `${localVoiceName(voiceId)} — on this PC (free, offline)`;
   const v = VOICE_BY_ID[voiceId];
   if (!v) return voiceId;
   return `${v.displayName} — ${v.accent === "British" ? "UK" : "US"} ${v.gender.toLowerCase()}`;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { 
   Sparkles, 
@@ -39,7 +39,8 @@ import { Button } from "../components/ui/Button";
 import { toast } from "../store/toast";
 import { ThinkingOrbVisualizer, ALL_ORB_STATES } from "../components/agent/ThinkingOrbVisualizer";
 import type { OrbState } from "thinking-orbs";
-import { AGENT_VOICES, agentVoiceLabel, displayNameFor, isSoundwaveVoice, loadAgentVoice, saveAgentVoice } from "../lib/voices";
+import { AGENT_VOICES, agentVoiceLabel, displayNameFor, isKnownVoice, loadAgentVoice, saveAgentVoice } from "../lib/voices";
+import { useLocalVoices } from "../lib/localVoices";
 import {
   CHAT_STORAGE_KEY,
   CHAT_SYNCED_EVENT,
@@ -286,9 +287,16 @@ export function AgentHub() {
   const [customTopic, setCustomTopic] = useState("");
   // The agent's Soundwave voice: replies AND shorts (shared with Settings / Voice Library).
   const [selectedVoice, setSelectedVoice] = useState<string>(() => loadAgentVoice());
+  // The on-this-PC voices (Kokoro) appear in the same pickers, after the
+  // Soundwave ones, only while the local voice service is running.
+  const { status: localVoiceStatus } = useLocalVoices();
+  const voiceChoices = useMemo(
+    () => [...AGENT_VOICES, ...localVoiceStatus.voices],
+    [localVoiceStatus],
+  );
 
   const handleVoiceChange = (v: string) => {
-    if (!isSoundwaveVoice(v)) return;
+    if (!isKnownVoice(v)) return;
     setSelectedVoice(v);
     saveAgentVoice(v);
   };
@@ -634,7 +642,7 @@ export function AgentHub() {
   const speakText = (text: string, voiceOverride?: string) => {
     if (!voiceFeedbackRef.current && !voiceOverride) return;
     const current = selectedVoiceRef.current;
-    const voice = isSoundwaveVoice(voiceOverride) ? voiceOverride : isSoundwaveVoice(current) ? current : loadAgentVoice();
+    const voice = isKnownVoice(voiceOverride) ? voiceOverride : isKnownVoice(current) ? current : loadAgentVoice();
     speak(text, voice, {
       onStart: () => setAssistantState("SPEAKING"),
       onEnd: () => setAssistantState(idleState()),
@@ -652,7 +660,7 @@ export function AgentHub() {
   /** The morning briefing, spoken in full (it can be several minutes long). */
   const speakBriefing = (text: string) => {
     const current = selectedVoiceRef.current;
-    const voice = isSoundwaveVoice(current) ? current : loadAgentVoice();
+    const voice = isKnownVoice(current) ? current : loadAgentVoice();
     speakLong(text, voice, {
       onStart: () => setAssistantState("SPEAKING"),
       onEnd: () => setAssistantState(idleState()),
@@ -700,7 +708,7 @@ export function AgentHub() {
     // React's dev double-run of effects must not toast twice.
     if (handledSearchRef.current === searchParams.toString()) return;
     handledSearchRef.current = searchParams.toString();
-    if (isSoundwaveVoice(voice)) {
+    if (isKnownVoice(voice)) {
       handleVoiceChange(voice);
       toast.success("Voice selected", `${displayNameFor(voice)} now speaks for the agent and narrates your shorts.`);
     }
@@ -1575,7 +1583,7 @@ export function AgentHub() {
               title="The agent's Soundwave voice — used for replies and for the shorts it makes"
               aria-label="Agent voice"
             >
-              {AGENT_VOICES.map((v) => (
+              {voiceChoices.map((v) => (
                 <option key={v.id} value={v.id} className="bg-[#0A1224] text-white">
                   {agentVoiceLabel(v.id)}
                 </option>
@@ -2329,7 +2337,7 @@ export function AgentHub() {
                   onChange={(e) => handleVoiceChange(e.target.value)}
                   className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
-                  {AGENT_VOICES.map((v) => (
+                  {voiceChoices.map((v) => (
                     <option key={v.id} value={v.id}>
                       {agentVoiceLabel(v.id)}
                     </option>
@@ -2734,7 +2742,7 @@ export function AgentHub() {
                     onChange={(e) => handleVoiceChange(e.target.value)}
                     className="w-full rounded-lg border border-[#172A4A] bg-[#0C172E] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                   >
-                    {AGENT_VOICES.map((v) => (
+                    {voiceChoices.map((v) => (
                       <option key={v.id} value={v.id}>
                         {agentVoiceLabel(v.id)}
                       </option>

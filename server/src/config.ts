@@ -52,7 +52,11 @@ export const config = {
   // writable user-data copy; the Windows launcher updates the vendored exe
   // itself. Empty/"off" = never self-update.
   ytDlpAutoUpdate: str("YTDLP_AUTO_UPDATE", ""),
-  // Voice cloning (Chatterbox sidecar — see voiceclone/). Empty = feature off.
+  // The local voice service (voiceclone/): cloned voices (Chatterbox, MIT) and
+  // narration voices (Kokoro-82M, Apache-2.0). LOCAL_VOICE_URL is the name that
+  // says what it now is; VOICECLONE_URL still works, so existing installs keep
+  // running. Empty = both local features are off.
+  localVoiceUrl: str("LOCAL_VOICE_URL", "") || str("VOICECLONE_URL", ""),
   voiceCloneUrl: str("VOICECLONE_URL", ""),
   elevenLabsApiKey: str("ELEVENLABS_API_KEY", ""),
   // Shared secret for the sidecar — REQUIRED when VOICECLONE_URL is a public

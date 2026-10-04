@@ -1,26 +1,32 @@
-# Voice-clone sidecar (Chatterbox)
+# Local voice service (Chatterbox + Kokoro)
 
-A small FastAPI service that runs [Chatterbox](https://github.com/resemble-ai/chatterbox)
-— Resemble AI's zero-shot voice-cloning model, **MIT-licensed including the
-pre-trained weights**, so voices cloned here can lawfully be sold — next to the
-Soundwave AI backend.
+A small FastAPI service with two jobs, both of them running on **your own
+machine** — nothing metered, nothing sent to a paid provider:
 
-The model this replaced (OmniVoice) has Apache-2.0 code but **CC-BY-NC weights**:
-the maintainers state on the model card that the pre-trained model "can't be used
-commercially". Anything paid that used it was a licence violation waiting to be
-noticed, so it is gone. Do not swap in XTTS v2 (Coqui CPML), F5-TTS
+| Engine | What it does | Licence (code **and** weights) |
+| --- | --- | --- |
+| [Chatterbox](https://github.com/resemble-ai/chatterbox) | Clones a voice from a 5-s reference clip | **MIT** |
+| [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) | Narration for videos in 28 voices, on CPU | **Apache-2.0** |
+
+Both licences allow commercial use, which matters: Soundwave sells access, and
+the model this replaced (OmniVoice) has Apache-2.0 code but **CC-BY-NC weights**
+— the maintainers state on the model card that the pre-trained model "can't be
+used commercially". Anything paid that used it was a licence violation waiting
+to be noticed, so it is gone. Do not swap in XTTS v2 (Coqui CPML), F5-TTS
 (CC-BY-NC-4.0), Higgs Audio or Piper's current GPL-3.0 fork for the same reason.
-The Node API proxies to it (`POST /api/v1/tts/clone`, `/clone/profiles`); you
-never call this service directly from the browser.
 
-It holds the model in memory and is **stateless**: each generation request
+The Node API proxies to this service (`POST /api/v1/tts/clone`,
+`/clone/profiles`, `/api/v1/tts/synthesize`, `/api/v1/voices`); the browser
+never calls it directly.
+
+It holds the models in memory and is **stateless**: each generation request
 carries the reference clip with it (`POST /clone/ephemeral`), so cloned voices
 are owned per-user by the Node API and can survive this service restarting on
 free/ephemeral hosting. (A standalone `/profiles` + `/clone` CRUD API still
 exists for direct, non-Soundwave use.)
 
 When `VOICECLONE_URL` points at anything other than localhost, set
-`VOICECLONE_TOKEN` **on both sides** — the sidecar then requires
+`VOICECLONE_TOKEN` **on both sides** — the service then requires
 `Authorization: Bearer <token>` on every endpoint except `/health`.
 
 ---
@@ -28,28 +34,55 @@ When `VOICECLONE_URL` points at anything other than localhost, set
 ## 1. Install & run (Windows)
 
 > This guide targets Windows with an **AMD GPU** (e.g. RX 6650 XT). PyTorch
-> does not ship AMD support on Windows, so the model runs on your **CPU** —
-> perfectly workable (RTF ≈ 0.3–1×, i.e. a 10 s voiceover takes ~3–10 s plus a
-> one-time model load of a minute or two). NVIDIA GPU or Linux? See
+> does not ship AMD support on Windows, so the models run on your **CPU** —
+> perfectly workable (Chatterbox RTF ≈ 0.3–1×; Kokoro is far lighter and
+> narrates about as fast as it plays). NVIDIA GPU or Linux? See
 > [Other hardware](#3-other-hardware).
 
 ```powershell
 cd voiceclone
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
 
-# PyTorch — CPU wheels (correct choice on Windows with an AMD GPU)
+# CPU PyTorch first, so the model packages reuse it instead of pulling CUDA wheels
 pip install torch torchaudio
 
-# Chatterbox + the sidecar (weights are MIT too — no licence trap here)
+# Everything else, then Kokoro's model code (see "Why --no-deps" below)
 pip install -r requirements.txt
+pip install --no-deps kokoro
+python -m spacy download en_core_web_sm
 
-# Run it (first start downloads the model weights from Hugging Face — several GB, one time only)
+# Check it without downloading a single model
+python selftest.py
+
+# Run it (first start downloads the weights from Hugging Face — one time only)
 uvicorn server:app --host 127.0.0.1 --port 8100
 ```
 
-Leave this terminal open. Health check: http://localhost:8100/health
+Leave this terminal open. Health check: http://localhost:8100/health — it lists
+both engines and their licences.
+
+### Why `pip install --no-deps kokoro`
+
+`kokoro` declares `misaki[en]` as a requirement, and that extra is
+`phonemizer-fork` (**GPL-3.0**) plus `espeakng-loader` (which ships espeak-ng,
+GPL-3.0). We don't need either: `kokoro_engine.py` drives the model with
+`misaki.en` directly — Apache-2.0, dictionary plus misaki's own
+`FallbackNetwork` for out-of-dictionary words — and never imports the espeak
+path. (One caveat, recorded in `THIRD-PARTY-NOTICES.txt` too: that fallback
+loads a ~3 MB BART model from `PeterReid/graphemes_to_phonemes_en_us` whose
+Hugging Face card states no licence. It is misaki's own default and is
+downloaded to your machine, not bundled by us — but the gap is named rather
+than glossed over.) Installing with `--no-deps` keeps the GPL packages out of the environment
+altogether, and `KokoroEngine` refuses to start if they ever appear
+(`selftest.py` checks this too, statically and at runtime).
+
+`num2words` (LGPL-2.1) comes along with misaki and is used to speak digits; it
+is installed separately, unmodified, and its licence text ships with it. No
+GPL-3.0 code is installed or linked anywhere in this service.
+
+*Linux/macOS:* run `./install.sh` (same steps, plus `TORCH=cu124 ./install.sh`
+if you want CUDA).
 
 ## 2. Point Soundwave AI at it
 
@@ -68,7 +101,33 @@ has a voiceover page: the agent is the only thing that makes videos, and it
 speaks and narrates with the Soundwave (Microsoft neural) voices. Unset
 `VOICECLONE_URL` to turn the feature off.
 
-## 3. Other hardware
+`LOCAL_VOICE_URL` (defaults to `VOICECLONE_URL`) points at the same service for
+narration; leaving it unset is the normal case.
+
+## 3. Narration on this PC (Kokoro)
+
+Once this service is reachable, the app offers its voices wherever a voice is
+picked — **Voice Library → "On this PC"**, Settings → Voice & Desktop, and the
+Command Center — as `kokoro:af_heart` and friends. Picking one narrates locally,
+free and unmetered, and the media is produced by this machine.
+
+- 28 real voices: 11 American female, 9 American male, 4 British female,
+  4 British male. The first letter of a voice id picks the pipeline
+  (`a`/`b` = American/British), which is why the accent is part of the id.
+- `af_heart` is the default. `GET /tts/kokoro/voices` lists them all.
+- A `kokoro:` voice is used **only when it was chosen** — it is never
+  substituted for a Microsoft voice, so a failing Edge request can't quietly
+  turn into a different-sounding video.
+- Style: write pronunciation with markdown link syntax —
+  `[Kokoro](/kˈOkəɹO/)` — and stress with `ˈ`/`ˌ` or `(+1)`/`(-1)` if a word
+  comes out wrong. It is documented in Kokoro's own demo.
+- `KOKORO_OFF=1` (or a missing install) hides the voices and leaves cloning
+  working; the app falls back to the Microsoft voices, never to silence.
+
+Kokoro has no word timings, so the Node API estimates them from text and
+duration (same as cloning) — the subtitle editor still auto-populates.
+
+## 4. Other hardware
 
 - **NVIDIA GPU (much faster):** install CUDA torch first, then the rest, and
   set the device:
@@ -76,6 +135,8 @@ speaks and narrates with the Soundwave (Microsoft neural) voices. Unset
   ```powershell
   pip install torch==2.8.0+cu128 torchaudio==2.8.0+cu128 --extra-index-url https://download.pytorch.org/whl/cu128
   pip install -r requirements.txt
+  pip install --no-deps kokoro
+  python -m spacy download en_core_web_sm
   $env:CHATTERBOX_DEVICE="cuda:0"
   uvicorn server:app --host 127.0.0.1 --port 8100
   ```
@@ -84,15 +145,14 @@ speaks and narrates with the Soundwave (Microsoft neural) voices. Unset
   torch + `HSA_OVERRIDE_GFX_VERSION=10.3.0`. Inside WSL2-Ubuntu:
 
   ```bash
-  pip install torch torchaudio --index-url https://download.pytorch.org/whl/rocm6.2
-  pip install -r requirements.txt
+  TORCH=rocm6.2 ./install.sh
   export CHATTERBOX_DEVICE=cuda:0 HSA_OVERRIDE_GFX_VERSION=10.3.0
   uvicorn server:app --host 127.0.0.1 --port 8100
   ```
 
 - **Apple Silicon:** default torch wheels + `CHATTERBOX_DEVICE=mps`.
 
-## 4. Free hosting (no home PC required)
+## 5. Free hosting (no home PC required)
 
 You built this on your own PC — but you don't need your PC on 24/7 to offer
 cloning on the live site. Free options, in order of practicality:
@@ -100,7 +160,7 @@ cloning on the live site. Free options, in order of practicality:
 ### A) Hugging Face Spaces — free CPU, sleeps when idle
 
 A Docker Space runs this folder as-is on a free 2-vCPU / 16 GB machine.
-Expect ~1–3 min cold start when it has been idle (the model is baked into
+Expect ~1–3 min cold start when it has been idle (the models are baked into
 the image, so no re-download) and several seconds per generation — fine for
 a personal site.
 
@@ -132,7 +192,7 @@ port isn't internet-facing at all.
 ### C) Your home PC, when it's on — Cloudflare Tunnel (free)
 
 The app already **hides the cloned voices automatically** whenever the
-sidecar is unreachable, so this "sometimes available" pattern works fine:
+service is unreachable, so this "sometimes available" pattern works fine:
 
 ```powershell
 winget install cloudflare.cloudflared
@@ -142,37 +202,40 @@ Set `VOICECLONE_URL` to the `trycloudflare.com` URL it prints (+ token) on
 your deployed API. Cloning works while your PC runs; the API answers with a
 clear "offline" error otherwise. Zero cost either way.
 
-## 5. Environment variables
+## 6. Environment variables
 
 | Var | Default | Purpose |
 | --- | --- | --- |
-| `CHATTERBOX_DEVICE` | `cpu` | `cpu`, `cuda:0`, `mps`, `xpu` |
+| `CHATTERBOX_DEVICE` | `cpu` | `cpu`, `cuda:0`, `mps`, `xpu` — used by both engines |
 | `CHATTERBOX_NANO` | — | `1` = the smaller Turbo/Nano model, built for CPU |
 | `CHATTERBOX_EXAGGERATION` | `0.5` | emotion dial, 0 = flat, 1 = excited |
 | `CHATTERBOX_CFG_WEIGHT` | `0.5` | how strongly the reference clip is followed |
+| `KOKORO_OFF` | — | `1` = narration off (cloning still works) |
+| `KOKORO_SPEED` | `1.0` | narration speed; a request may override it |
+| `KOKORO_LANG` | `a` | default accent pipeline: `a` American, `b` British |
 | `VOICECLONE_TOKEN` | — (no auth) | REQUIRED on any non-localhost deployment; must match the Node API |
 | `VOICECLONE_HOST` / `VOICECLONE_PORT` | `127.0.0.1` / `8100` | bind address (main.py path; the Dockerfile uses `$PORT`) |
 | `VOICECLONE_PROFILES_DIR` | `./profiles` | standalone `/profiles` CRUD storage (not used by the Node API) |
 | `CHATTERBOX_MOCK` | — | `1` = no model, sine-wave output (dev/tests, no downloads) |
 
-Node API side (`.env`): `VOICECLONE_URL`, `VOICECLONE_TOKEN`,
+Node API side (`.env`): `VOICECLONE_URL`, `LOCAL_VOICE_URL`, `VOICECLONE_TOKEN`,
 `VOICECLONE_TIMEOUT_MS`, and `VOICECLONE_MIN_PLAN` (`FREE` default — set `PRO`
 to reserve cloning for paying users if the GPU costs you money).
 
-## 6. Notes & tips
+## 7. Notes & tips
 
 - **Reference clip:** 3–10 s of clean, single-speaker speech, same language as
   your target text. Longer clips slow inference and can hurt quality.
 - **Per request cost:** because the service is stateless, each generation
   conditions on the reference clip — a few seconds of audio, small next to the
   synthesis itself.
-- **Word timings:** Chatterbox returns audio only. The Node API derives evenly
-  weighted word timings from the text + duration so the subtitle editor still
+- **Word timings:** neither engine returns them. The Node API derives evenly
+  weighted timings from the text + duration so the subtitle editor still
   auto-populates cues; nudge cue boundaries by hand for perfect sync.
-- **Speed:** Chatterbox has no speed control (OmniVoice did). A request with a
-  speed other than 1.0 is refused with a sentence saying where speed does work
-  (the narration voice), rather than silently ignored.
-- **Concurrency:** one generation at a time per sidecar (the model is held on
+- **Speed:** Chatterbox has no speed control (OmniVoice did). A clone request
+  with a speed other than 1.0 is refused with a sentence saying where speed does
+  work (the narration voice), rather than silently ignored. Kokoro does have it.
+- **Concurrency:** one generation at a time per engine (the models are held on
   one device under a lock). Run more replicas for parallel traffic.
 - The service binds to `127.0.0.1` by default — only local processes can use
   your GPU/CPU time. Expose it beyond localhost **only with `VOICECLONE_TOKEN`
@@ -180,8 +243,9 @@ to reserve cloning for paying users if the GPU costs you money).
 
 ### Testing without a GPU/model
 
-```
-OMNIVOICE_MOCK=1 uvicorn server:app --port 8100
+```bash
+CHATTERBOX_MOCK=1 KOKORO_OFF=1 uvicorn server:app --port 8100
+python selftest.py     # the same checks the Docker build runs
 ```
 
 The mock returns valid WAV output, so the whole Node ⇄ Python pipeline can be

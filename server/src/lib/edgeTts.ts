@@ -278,6 +278,17 @@ export function getVoiceHealth(): VoiceHealth & { ok: boolean } {
   return { ...health, ok: health.lastError === null };
 }
 
+/**
+ * Record a speech failure that did not come from Microsoft — the on-this-PC
+ * engine (Kokoro). The app asks /speak/status for "why couldn't it speak?", and
+ * without this the answer would blame Microsoft's service for a local problem
+ * (a sidecar that isn't running, a model that failed to load), which is exactly
+ * the kind of wrong sentence that sends someone debugging the wrong thing.
+ */
+export function noteVoiceFailure(err: unknown): void {
+  noteFailure(err);
+}
+
 // ── One request over the Edge WebSocket protocol ────────────────────────────
 interface Prosody {
   rate: string;

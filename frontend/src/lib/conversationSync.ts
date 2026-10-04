@@ -21,7 +21,7 @@ import {
   saveChatHistory,
   type ChatMessage,
 } from "./agentChat";
-import { AGENT_VOICE_STORAGE_KEY, isSoundwaveVoice, loadAgentVoice, saveAgentVoice } from "./voices";
+import { AGENT_VOICE_STORAGE_KEY, isKnownVoice, loadAgentVoice, saveAgentVoice } from "./voices";
 
 interface Snapshot {
   epoch: string;
@@ -50,7 +50,7 @@ function apply(snap: Snapshot): void {
   // The voice the agent chose in chat lives on the PC's copy — the phone speaks
   // with it too. Adopt it here (storage events carry it to the other windows,
   // e.g. the voice bar) so the next reply really is spoken in that voice.
-  if (isSoundwaveVoice(snap.voice) && snap.voice !== loadAgentVoice()) saveAgentVoice(snap.voice);
+  if (isKnownVoice(snap.voice) && snap.voice !== loadAgentVoice()) saveAgentVoice(snap.voice);
   const local = loadChatHistory() ?? [];
   const next = newConversation ? snap.messages : mergeChat(local, snap.messages);
   if (!sameConversation(next, local)) {
@@ -136,7 +136,7 @@ export function startConversationSync(): () => void {
         epoch = snap.epoch;
         // What the PC's copy holds, so the first push doesn't overwrite the
         // agent's own choice with whatever this window had saved.
-        lastVoice = isSoundwaveVoice(snap.voice) ? snap.voice : "";
+        lastVoice = isKnownVoice(snap.voice) ? snap.voice : "";
         apply(snap);
       }
     } catch {
@@ -150,7 +150,7 @@ export function startConversationSync(): () => void {
         if (res.status === 404) return stop();
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const snap = (await res.json()) as Snapshot;
-        lastVoice = isSoundwaveVoice(snap.voice) ? snap.voice : "";
+        lastVoice = isKnownVoice(snap.voice) ? snap.voice : "";
         apply(snap);
         if (loadAgentVoice() !== lastVoice) schedulePush();
       } catch {

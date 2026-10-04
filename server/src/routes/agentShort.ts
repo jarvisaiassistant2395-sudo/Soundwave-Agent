@@ -8,6 +8,7 @@ import { optionalAuth } from "../middleware/auth.js";
 import { getStore } from "../lib/store.js";
 import { dimensionsFor } from "../lib/plans.js";
 import { synthesizeEdgeTTS } from "../lib/edgeTts.js";
+import { isLocalVoiceId, localVoiceLabel, synthesizeLocalVoice } from "../lib/kokoro.js";
 import { runFfmpegExport, type ExportSettings, type SubtitleCueInput, type SubtitleStyleInput } from "../lib/ffmpeg.js";
 import { config } from "../config.js";
 import {
@@ -92,6 +93,22 @@ export async function synthesizeNarration(
   duration: number;
   wordTimings: { word: string; start: number; end: number }[];
 }> {
+  // On-this-PC narration (Kokoro): generated locally and free. If it fails, that
+  // is *this voice* failing — the person chose it, so say so rather than
+  // recording the short in a different voice.
+  if (isLocalVoiceId(voice)) {
+    try {
+      const local = await synthesizeLocalVoice({ text, voiceId: voice, speed: 0.95 });
+      if (!local.audioBase64 || local.duration < 0.5) throw new Error("the local voice returned an empty recording");
+      return local;
+    } catch (err) {
+      throw new Error(
+        `Couldn't record the voiceover with the on-this-PC voice "${localVoiceLabel(voice)}" — ${(err as Error).message}. ` +
+          "Start the local voice service (voiceclone/) or pick a Soundwave voice.",
+      );
+    }
+  }
+
   const selectedVoice = voice && !voice.startsWith("clone:") ? voice : NARRATOR_FALLBACK_VOICE;
   try {
     const result = await synthesizeEdgeTTS({ text, voice: selectedVoice, speed: 0.95 }, { attempts: 3 });

@@ -6,11 +6,13 @@
 // writes both into desktop/bin/, where electron-builder's extraResources pick
 // them up, so the installed app always carries them.
 //
-//   node scripts/write-binary-licenses.mjs [--bin <dir>]
+//   node scripts/write-binary-licenses.mjs              # → desktop/bin/
+//   node scripts/write-binary-licenses.mjs --bin <dir>  # → somewhere else (tests)
 //
-// Called by desktop/assemble.mjs on every packaging run; also called by the CI
-// step that fetches ffmpeg, so a build that only fetches the binary still ends
-// up compliant. Safe to run repeatedly.
+// Called by desktop/assemble.mjs on every packaging run, so however the binary
+// got into bin/ (the CI download step, a local build) the paper is there with
+// it. Safe to run repeatedly; the licence text itself is committed, so this
+// never needs the network.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -20,16 +22,18 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const argBin = process.argv.indexOf("--bin");
 const binDir = argBin >= 0 && process.argv[argBin + 1] ? path.resolve(process.argv[argBin + 1]) : path.join(repoRoot, "desktop", "bin");
 
+/** Writes FFMPEG-LICENSE.txt + FFMPEG-SOURCE-OFFER.txt into `bin`. Returns their paths. */
 export function writeBinaryLicenses(bin = binDir) {
   const gplSource = path.join(repoRoot, "scripts", "licenses", "GPL-3.0-or-later.txt");
-  if (!fs.existsSync(gplSource)) {
-    throw new Error(`the GPLv3 text is missing from scripts/licenses/ — the installer would ship ffmpeg without it`);
+  if (!fs.existsSync(gplSource) || fs.statSync(gplSource).size < 30_000) {
+    throw new Error(`the GPLv3 text is missing or truncated (${gplSource}) — an installer with ffmpeg but no licence text is not compliant`);
   }
   fs.mkdirSync(bin, { recursive: true });
   fs.copyFileSync(gplSource, path.join(bin, "FFMPEG-LICENSE.txt"));
+
   const offer = [
     "SOUNDWAVE AI — WRITTEN OFFER OF CORRESPONDING SOURCE (FFmpeg)",
-    "".padEnd(72, "="),
+    "=".repeat(72),
     "",
     "This product includes FFmpeg (ffmpeg.exe), a separate program distributed",
     "under the GNU General Public License, version 3 or later. It is included",
@@ -60,10 +64,15 @@ export function writeBinaryLicenses(bin = binDir) {
     "",
   ].join("\n");
   fs.writeFileSync(path.join(bin, "FFMPEG-SOURCE-OFFER.txt"), offer);
+
   return ["FFMPEG-LICENSE.txt", "FFMPEG-SOURCE-OFFER.txt"].map((f) => path.join(bin, f));
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  const written = writeBinaryLicenses();
-  for (const file of written) console.log(`[licences] wrote ${path.relative(repoRoot, file)}`);
+/** The two files a bundled ffmpeg must ship with. */
+export const FFMPEG_NOTICE_FILES = ["FFMPEG-LICENSE.txt", "FFMPEG-SOURCE-OFFER.txt"];
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  for (const file of writeBinaryLicenses()) {
+    console.log(`[licences] wrote ${path.relative(repoRoot, file)}`);
+  }
 }

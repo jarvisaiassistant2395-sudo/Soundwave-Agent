@@ -4,8 +4,12 @@
 // which the desktop app's CSP allows (media-src 'self'). There is no
 // robotic browser/OS fallback: when the voice service is down, callers show
 // why (voiceProblemReason).
+//
+// An on-this-PC voice ("kokoro:…") goes through the same route and comes back
+// as one WAV generated locally — the person chose it, so it is never swapped
+// for a Soundwave voice behind their back.
 
-import { isSoundwaveVoice, loadAgentVoice } from "./voices";
+import { isKnownVoice, isLocalVoiceId, loadAgentVoice } from "./voices";
 
 /** What the agent reads aloud: no links or markdown, and cut at a sentence end. */
 export function speechTextFor(text: string, max = 1200): string {
@@ -61,7 +65,7 @@ function speakPiece(text: string, voice: string | undefined, handlers: SpeakHand
   stopSpeaking();
   const mine = ++token;
   const current = () => token === mine;
-  const chosen = isSoundwaveVoice(voice) ? voice : loadAgentVoice();
+  const chosen = isKnownVoice(voice) ? voice : loadAgentVoice();
 
   const audio = new Audio(`/api/v1/agent/speak/stream?voice=${encodeURIComponent(chosen)}&text=${encodeURIComponent(clean)}`);
   audio.preload = "auto";
@@ -174,7 +178,12 @@ export function speakLong(text: string, voice?: string, handlers: SpeakHandlers 
 
 /** Why the last reply couldn't be spoken, in words for a toast. */
 export async function voiceProblemReason(): Promise<string> {
-  let reason = "Couldn't reach Microsoft's neural voice service. Check the internet connection and try again.";
+  // The generic sentence must not blame Microsoft for a local problem: if the
+  // chosen voice runs on this PC, the local service is the thing to check.
+  const local = isLocalVoiceId(loadAgentVoice());
+  let reason = local
+    ? "Couldn't generate speech on this PC. Make sure the local voice service is running (voiceclone/ — see its log), or pick a Soundwave voice in Settings."
+    : "Couldn't reach Microsoft's neural voice service. Check the internet connection and try again.";
   try {
     const res = await fetch("/api/v1/agent/speak/status");
     const health = await res.json();

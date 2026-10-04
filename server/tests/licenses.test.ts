@@ -38,8 +38,20 @@ describe("the ship-licence audit", () => {
     expect(notices).toMatch(/FFmpeg .* — GPL-3\.0-or-later/);
     expect(notices).toMatch(/yt-dlp — Unlicense/);
     expect(notices).toMatch(/whisper\.cpp .* — MIT/);
-    // And the voice-clone sidecar, whose licence was the whole OmniVoice problem.
+    // And the local voice service, whose licence was the whole OmniVoice problem.
     expect(notices).toMatch(/chatterbox-tts .* — MIT/);
+    expect(notices).toMatch(/kokoro \(Kokoro-82M\) — Apache-2\.0/);
+    // LGPL-2.1 (num2words, via misaki) is the one copyleft licence we accept, and
+    // only because nothing we ship conveys it. That reason must be in the paper,
+    // next to the component — an exemption without its reasoning is how these
+    // things rot.
+    expect(notices).toMatch(/num2words — LGPL-2\.1/);
+    expect(notices).toMatch(/NOT BUNDLED — the voice service is installed by the user/);
+    // The one licence we could NOT verify: misaki's G2P fallback model. It must
+    // appear by name with the gap stated, and must stay off the "we can ship
+    // this" list until someone confirms its terms.
+    expect(notices).toMatch(/graphemes_to_phonemes_en_us/);
+    expect(notices).toMatch(/Not stated by the publisher/);
     fs.rmSync(out, { force: true });
     // OmniVoice may be *mentioned* in a note (it is why cloning moved), but it
     // must never appear as a component we ship.
@@ -65,9 +77,10 @@ describe("the ship-licence audit", () => {
     pkg(path.join(modules, "left-pad"), "left-pad", "1.3.0", "MIT");
     pkg(path.join(modules, "naughty-copyleft"), "naughty-copyleft", "2.0.0", "GPL-3.0-or-later");
     pkg(path.join(modules, "naughty-nc"), "naughty-nc", "1.0.0", "CC-BY-NC-4.0");
+    pkg(path.join(modules, "naughty-lgpl"), "naughty-lgpl", "1.0.0", "LGPL-2.1");
     fs.writeFileSync(
       path.join(fixture, "server", "package.json"),
-      JSON.stringify({ name: "fixture", dependencies: { "left-pad": "^1.3.0", "naughty-copyleft": "^2.0.0", "naughty-nc": "^1.0.0" } }),
+      JSON.stringify({ name: "fixture", dependencies: { "left-pad": "^1.3.0", "naughty-copyleft": "^2.0.0", "naughty-nc": "^1.0.0", "naughty-lgpl": "^1.0.0" } }),
     );
     fs.writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ name: "fixture-root", private: true }));
 
@@ -84,12 +97,14 @@ describe("the ship-licence audit", () => {
     expect(result.status, "the audit must fail the build on copyleft").toBe(1);
     expect(result.stderr).toMatch(/naughty-copyleft .* GPL/);
     expect(result.stderr).toMatch(/naughty-nc/);
+    expect(result.stderr, "an LGPL npm dependency is still refused — the Python list's exemption is not a general one").toMatch(/naughty-lgpl/);
     expect(result.stderr).toMatch(/REFUSING/);
 
     // …and a clean tree of the same shape passes, so the failure above is the
     // licence and not the fixture.
     fs.rmSync(path.join(modules, "naughty-copyleft"), { recursive: true, force: true });
     fs.rmSync(path.join(modules, "naughty-nc"), { recursive: true, force: true });
+    fs.rmSync(path.join(modules, "naughty-lgpl"), { recursive: true, force: true });
     const clean = run([path.join(fixture, "scripts", "license-audit.mjs"), "--write"], { cwd: fixture });
     expect(clean.status, clean.stderr).toBe(0);
     const cleanNotices = fs.readFileSync(path.join(fixture, "THIRD-PARTY-NOTICES.txt"), "utf8");

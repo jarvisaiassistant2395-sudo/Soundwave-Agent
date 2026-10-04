@@ -9,7 +9,8 @@ import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../lib
 import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, startShortJob } from "./agentShort.js";
 import { nicheCatalog } from "../lib/brain/core/viral.js";
 import { TREND_REFRESH_DAYS, refreshTrends, trendsStatus } from "../lib/trends.js";
-import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
+import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, noteVoiceFailure, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
+import { isLocalVoiceId, synthesizeLocalVoice } from "../lib/kokoro.js";
 import { getConversation } from "../lib/conversation.js";
 import { SttError, getSttStatus, transcribe } from "../lib/stt.js";
 import type { ChatReply } from "../lib/chatMessages.js";
@@ -44,7 +45,10 @@ router.post("/speak", optionalAuth, validate({ body: speakSchema }), async (req,
   try {
     const { text, voice } = req.body as z.infer<typeof speakSchema>;
     try {
-      const result = await synthesizeEdgeTTS({ text, voice: normalizeVoiceId(voice), speed: 1 }, { attempts: 2 });
+      // A "kokoro:" voice is generated on this machine, not by Microsoft.
+      const result = isLocalVoiceId(voice)
+        ? await synthesizeLocalVoice({ text, voiceId: voice })
+        : await synthesizeEdgeTTS({ text, voice: normalizeVoiceId(voice), speed: 1 }, { attempts: 2 });
       return res.json({
         success: true,
         audioBase64: result.audioBase64,
@@ -73,7 +77,32 @@ router.get("/speak/stream", optionalAuth, async (req, res) => {
     // piece and the person would hear a reply stop early — say so in the log.
     console.warn(`[voice] text longer than ${MAX_SPOKEN_CHARS} characters (${asked.length}) — speaking only the first part; the caller should split it`);
   }
-  const voice = normalizeVoiceId(req.query.voice);
+  const askedVoice = typeof req.query.voice === "string" ? req.query.voice : "";
+
+  // Local voice: generated on the person's own machine. Kokoro returns a whole
+  // clip rather than a stream, so this answers with one WAV — the app plays it
+  // the moment it arrives (nothing is sent anywhere).
+  if (isLocalVoiceId(askedVoice)) {
+    try {
+      const local = await synthesizeLocalVoice({ text, voiceId: askedVoice });
+      const audio = Buffer.from(local.audioBase64, "base64");
+      res.status(200);
+      res.setHeader("Content-Type", local.mimeType || "audio/wav");
+      res.setHeader("Content-Length", String(audio.length));
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Soundwave-Voice", askedVoice);
+      res.setHeader("X-Soundwave-Engine", "kokoro");
+      return res.end(audio);
+    } catch (err) {
+      // So /speak/status explains the real reason: this failure is local, not
+      // Microsoft's service being down (the app shows that sentence verbatim).
+      noteVoiceFailure(err);
+      console.warn(`[voice] ${askedVoice}: ${(err as Error).message}`);
+      return res.status(502).json({ error: { code: "LOCAL_VOICE_UNAVAILABLE", message: (err as Error).message } });
+    }
+  }
+
+  const voice = normalizeVoiceId(askedVoice);
 
   const controller = new AbortController();
   // A new reply (or leaving the page) closes this request: stop synthesizing.

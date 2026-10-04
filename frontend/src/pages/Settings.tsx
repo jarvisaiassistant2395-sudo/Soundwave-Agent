@@ -31,6 +31,7 @@ import { Select } from "../components/ui/Select";
 import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { AGENT_VOICES, agentVoiceLabel, loadAgentVoice, saveAgentVoice } from "../lib/voices";
+import { useLocalVoices } from "../lib/localVoices";
 import { Toggle } from "../components/ui/Toggle";
 import {
   fetchVoiceInputStatus,
@@ -307,6 +308,9 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 function PreferencesTab() {
   // Same setting as the Command Center's voice picker.
   const [agentVoice, setAgentVoice] = useState(() => loadAgentVoice());
+  // Soundwave voices first, then whatever the on-this-PC engine offers (empty
+  // when the local voice service isn't running — nothing empty is rendered).
+  const { status: localVoices } = useLocalVoices();
   const [orbMode, setOrbMode] = useState(() => localStorage.getItem("soundwave_orb_mode") ?? "auto");
 
   const savePrefs = () => {
@@ -340,7 +344,7 @@ function PreferencesTab() {
             <Select
               value={agentVoice}
               onChange={setAgentVoice}
-              options={AGENT_VOICES.map((v) => ({ value: v.id, label: agentVoiceLabel(v.id) }))}
+              options={[...AGENT_VOICES, ...localVoices.voices].map((v) => ({ value: v.id, label: agentVoiceLabel(v.id) }))}
               ariaLabel="Agent voice"
             />
           </div>

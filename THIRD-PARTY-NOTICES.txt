@@ -12,11 +12,11 @@ licence, without affecting the terms of the others.
 Programs bundled next to the app (not libraries — they are run as separate programs)
 ------------------------------------------------------------
 • FFmpeg (Windows static build, gyan.dev 'release essentials') — GPL-3.0-or-later
-    Bundled as a separate program (mere aggregation): it does not affect our licence, but GPLv3 requires the licence text and a written source offer to ship with it — see desktop/bin/FFMPEG-LICENSE.txt and desktop/bin/FFMPEG-SOURCE-OFFER.txt.
+    Mere aggregation: does not affect our licence, but GPLv3 requires its licence text and a written source offer to travel with it — desktop/bin/FFMPEG-LICENSE.txt + FFMPEG-SOURCE-OFFER.txt, written by scripts/write-binary-licenses.mjs on every build.
 • whisper.cpp + ggml — MIT
-    The local speech engine (voice input, the wake word). Its licence ships as desktop/bin/whisper/LICENSE-whisper.cpp.txt.
+    The local speech engine (voice input, the wake word). Its own licence text ships inside desktop/bin/whisper/.
 • yt-dlp — Unlicense
-    Public domain. Used for the YouTube paths the user asks for.
+    Public domain — no obligations. Used for the YouTube paths the user asks for.
 
 Backend (server/) — production dependencies
 ------------------------------------------------------------
@@ -581,14 +581,39 @@ Phone app (mobile/) — everything in the APK
 • yauzl 2.10.0 — MIT
 • zod 4.1.11 — MIT
 
-Voice-clone sidecar (voiceclone/) — Python
+Local voice service (voiceclone/) — Python (installed separately, not bundled)
 ------------------------------------------------------------
 • chatterbox-tts (Resemble AI Chatterbox) — MIT
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
     Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights).
 • FastAPI — MIT
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+• graphemes_to_phonemes_en_us (G2P fallback model downloaded by misaki) — Not stated by the publisher
+    A ~3 MB BART model (PeterReid/graphemes_to_phonemes_en_us) that misaki's FallbackNetwork loads for out-of-dictionary words. Its Hugging Face card is empty and carries no licence tag (checked 2026-10-04). Nothing we ship conveys it — it is downloaded to the user's own machine when the voice service runs — but the licence gap is recorded here rather than papered over.
+• huggingface-hub — Apache-2.0
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+• kokoro (Kokoro-82M) — Apache-2.0
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them.
+• misaki — Apache-2.0
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is.
+• num2words — LGPL-2.1
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    Used by misaki to speak digits. LGPL-2.1 is acceptable here for three reasons, all of them checkable: nothing is bundled (see above), the module is unmodified, and a pure-Python module is trivially replaceable, so our own code's licence is unaffected. The audit still refuses an LGPL *npm* dependency in our trees.
 • numpy — BSD-3-Clause
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
 • python-multipart — Apache-2.0
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
 • PyTorch — BSD-3-Clause
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
 • soundfile — BSD-3-Clause
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+• spacy (with en_core_web_sm) — MIT
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    Tokenizer/tagger misaki drives. en_core_web_sm is MIT as well.
+• transformers — Apache-2.0
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
 • Uvicorn — BSD-3-Clause
+    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
 

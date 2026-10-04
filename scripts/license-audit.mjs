@@ -21,6 +21,11 @@
 // Exit code 1 on any denied licence; unknown licences are reported loudly but do
 // not fail the build, so a new dependency can't slip in silently and can't block
 // a release for a missing convenience field either.
+//
+// Two hand-verified exemptions exist, and nothing automatic can claim them: a
+// `separateProgram` (mere aggregation) and a Python dependency that is
+// `notBundled` (the user pip-installs the voice service themselves). Both are
+// printed in the notices, so a reader sees the reason, not just the verdict.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -69,37 +74,66 @@ const DENIED = [
   { test: /\b(UNLICENSED|SEE LICENCE IN|SEE LICENSE IN)/i, why: "no licence granted — check before shipping" },
 ];
 
-/** Binaries and other non-npm payloads, with the licence facts behind them. */
+/**
+ * Binaries we run, not libraries we link.
+ *
+ * That distinction is the whole point of this list: a copyleft *library* inside
+ * our code would force our source open, but a copyleft *program* we invoke as a
+ * separate process does not. What such a program does need is its licence text
+ * (and, for GPL, a written offer of corresponding source) shipping with it —
+ * `paper` names those files, and this script verifies they are present whenever
+ * the binary is.
+ */
 const BINARIES = [
   {
     name: "FFmpeg (Windows static build, gyan.dev 'release essentials')",
     licence: "GPL-3.0-or-later",
-    note: "Bundled as a separate program (mere aggregation): it does not affect our licence, but GPLv3 requires the licence text and a written source offer to ship with it — see desktop/bin/FFMPEG-LICENSE.txt and desktop/bin/FFMPEG-SOURCE-OFFER.txt.",
-    allowed: true,
+    separateProgram: true,
+    note: "Mere aggregation: does not affect our licence, but GPLv3 requires its licence text and a written source offer to travel with it — desktop/bin/FFMPEG-LICENSE.txt + FFMPEG-SOURCE-OFFER.txt, written by scripts/write-binary-licenses.mjs on every build.",
+    paper: { binary: "ffmpeg.exe", files: ["FFMPEG-LICENSE.txt", "FFMPEG-SOURCE-OFFER.txt"] },
   },
   {
     name: "yt-dlp",
     licence: "Unlicense",
-    note: "Public domain. Used for the YouTube paths the user asks for.",
-    allowed: true,
+    separateProgram: true,
+    note: "Public domain — no obligations. Used for the YouTube paths the user asks for.",
   },
   {
     name: "whisper.cpp + ggml",
     licence: "MIT",
-    note: "The local speech engine (voice input, the wake word). Its licence ships as desktop/bin/whisper/LICENSE-whisper.cpp.txt.",
-    allowed: true,
+    separateProgram: true,
+    note: "The local speech engine (voice input, the wake word). Its own licence text ships inside desktop/bin/whisper/.",
+    paper: { binary: "whisper", files: ["LICENSE-whisper.cpp.txt"] },
   },
 ];
 
-/** The Python sidecar. Not an npm tree, so its direct dependencies are listed. */
+/**
+ * The local voice service's Python dependencies. Not an npm tree, so they are
+ * listed by hand — and none of them is bundled: the voice service is installed
+ * by whoever wants it, from PyPI, on their own machine (see `notBundled`). The
+ * desktop installer ships no Python at all — electron-builder.yml copies only
+ * desktop/{src,app,bin}, and bin/ holds ffmpeg, yt-dlp and whisper.cpp.
+ */
+const NOT_BUNDLED =
+  "NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.";
 const PYTHON = [
-  { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", note: "Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights)." },
-  { name: "FastAPI", licence: "MIT" },
-  { name: "Uvicorn", licence: "BSD-3-Clause" },
-  { name: "python-multipart", licence: "Apache-2.0" },
-  { name: "soundfile", licence: "BSD-3-Clause" },
-  { name: "numpy", licence: "BSD-3-Clause" },
-  { name: "PyTorch", licence: "BSD-3-Clause" },
+  { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", notBundled: true, note: "Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights)." },
+  { name: "kokoro (Kokoro-82M)", licence: "Apache-2.0", notBundled: true, note: "On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them." },
+  { name: "misaki", licence: "Apache-2.0", notBundled: true, note: "Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is." },
+  // Deliberately NOT given `notBundled`: its licence is unverified, so it stays
+  // on the unknown list and is reported on every build rather than being waved
+  // through by an exemption. If a licence is ever confirmed, add it to ALLOWED.
+  { name: "graphemes_to_phonemes_en_us (G2P fallback model downloaded by misaki)", licence: "Not stated by the publisher", note: "A ~3 MB BART model (PeterReid/graphemes_to_phonemes_en_us) that misaki's FallbackNetwork loads for out-of-dictionary words. Its Hugging Face card is empty and carries no licence tag (checked 2026-10-04). Nothing we ship conveys it — it is downloaded to the user's own machine when the voice service runs — but the licence gap is recorded here rather than papered over." },
+  { name: "spacy (with en_core_web_sm)", licence: "MIT", notBundled: true, note: "Tokenizer/tagger misaki drives. en_core_web_sm is MIT as well." },
+  { name: "num2words", licence: "LGPL-2.1", notBundled: true, note: "Used by misaki to speak digits. LGPL-2.1 is acceptable here for three reasons, all of them checkable: nothing is bundled (see above), the module is unmodified, and a pure-Python module is trivially replaceable, so our own code's licence is unaffected. The audit still refuses an LGPL *npm* dependency in our trees." },
+  { name: "transformers", licence: "Apache-2.0", notBundled: true },
+  { name: "huggingface-hub", licence: "Apache-2.0", notBundled: true },
+  { name: "FastAPI", licence: "MIT", notBundled: true },
+  { name: "Uvicorn", licence: "BSD-3-Clause", notBundled: true },
+  { name: "python-multipart", licence: "Apache-2.0", notBundled: true },
+  { name: "soundfile", licence: "BSD-3-Clause", notBundled: true },
+  { name: "numpy", licence: "BSD-3-Clause", notBundled: true },
+  { name: "PyTorch", licence: "BSD-3-Clause", notBundled: true },
 ];
 
 function licenceOf(pkg) {
@@ -198,8 +232,8 @@ const sections = [
     entries: collectAppDeps(path.join(repoRoot, "mobile"), false).map((p) => ({ ...p, note: "" })),
   },
   {
-    title: "Voice-clone sidecar (voiceclone/) — Python",
-    entries: PYTHON.map((p) => ({ name: p.name, version: "", licence: p.licence, note: p.note ?? "" })),
+    title: "Local voice service (voiceclone/) — Python (installed separately, not bundled)",
+    entries: PYTHON.map((p) => ({ name: p.name, version: "", licence: p.licence, note: p.note ?? "", notBundled: p.notBundled === true })),
   },
 ];
 
@@ -214,32 +248,57 @@ for (const section of sections) {
     // A separate program with its own licence text + written offer is not the
     // same thing as a copyleft *library* inside our code: skip the deny rule,
     // but still list it, and check the paper trail below.
-    const check = entry.separateProgram ? { level: "ok", why: "separate program" } : verdict(entry.licence);
+    // Two hand-verified exemptions from the deny rule, both narrow and both
+    // printed in the notices so the reason travels with the claim:
+    //   • separateProgram — mere aggregation, plus its own paper trail below.
+    //   • notBundled — nothing we ship conveys it; the user installs it from
+    //     PyPI themselves (only used for the voice service's Python list).
+    const check = entry.separateProgram
+      ? { level: "ok", why: "separate program" }
+      : entry.notBundled
+        ? { level: "ok", why: "not bundled" }
+        : verdict(entry.licence);
     if (check.level === "denied") denied.push({ ...entry, why: check.why });
     else if (check.level === "unknown") unknown.push({ ...entry, why: check.why });
     const label = entry.version ? `${entry.name} ${entry.version}` : entry.name;
     lines.push(`• ${label} — ${entry.licence ?? "licence not stated"}${entry.devOnly ? " (development only)" : ""}`);
+    if (entry.notBundled) lines.push(`    ${NOT_BUNDLED}`);
     if (entry.note) lines.push(`    ${entry.note}`);
   }
   lines.push("");
 }
 
-// ── The paper that has to travel with a bundled GPL program ─────────────────
+// ── Does the paper travel with each bundled program? ───────────────────────
+// This is the check that would have caught ffmpeg shipping with no licence text
+// and no source offer. Only enforced when the binary is actually present, so a
+// source checkout (and the test step, which runs before ffmpeg is fetched)
+// doesn't fail.
 const binDir = path.join(repoRoot, "desktop", "bin");
-const hasFfmpegBinary = ["ffmpeg.exe", "ffmpeg"].some((f) => fs.existsSync(path.join(binDir, f)));
-const requiredWithBinary = ["FFMPEG-LICENSE.txt", "FFMPEG-SOURCE-OFFER.txt"];
-if (hasFfmpegBinary) {
-  const missing = requiredWithBinary.filter((f) => !fs.existsSync(path.join(binDir, f)));
-  if (missing.length) {
-    console.error(`[licences] REFUSING: ffmpeg is in desktop/bin but ${missing.join(", ")} is missing there.`);
-    console.error("  GPLv3 requires the licence text and a written source offer to ship with the binary.");
-    console.error("  Run `node desktop/assemble.mjs` (it writes both) or the packaging step that fetches ffmpeg.");
-    process.exit(1);
+const paperProblems = [];
+let bundledProgramsChecked = 0;
+for (const program of BINARIES) {
+  if (!program.paper) continue;
+  const base = path.join(binDir, program.paper.binary);
+  const present = fs.existsSync(base) || fs.existsSync(`${base}.exe`) || fs.existsSync(path.join(base, program.paper.files[0]));
+  if (!present) continue;
+  bundledProgramsChecked++;
+  for (const file of program.paper.files) {
+    const candidate = fs.existsSync(path.join(binDir, file)) ? path.join(binDir, file) : path.join(base, file);
+    if (!fs.existsSync(candidate)) paperProblems.push(`${program.name}: ${file} is missing`);
   }
-  console.log("[licences] ffmpeg ships with its licence text and written source offer");
-} else {
-  console.log("[licences] no ffmpeg in desktop/bin yet (source checkout) — the packaging step writes its licence files");
 }
+if (paperProblems.length) {
+  console.error(`[licences] REFUSING: ${paperProblems.length} bundled program(s) without the notices they must ship with:`);
+  for (const problem of paperProblems) console.error(`  - ${problem}`);
+  console.error("  GPLv3 (and common sense) requires them to accompany the binary in desktop/bin/.");
+  console.error("  Run `node scripts/write-binary-licenses.mjs` — desktop/assemble.mjs calls it on every build.");
+  process.exit(1);
+}
+console.log(
+  bundledProgramsChecked
+    ? `[licences] ${bundledProgramsChecked} bundled program(s) carry their licence text and source offer`
+    : "[licences] no bundled binaries in this checkout yet — the packaging step writes their notices",
+);
 
 const noticesPath = outPath ?? path.join(repoRoot, "THIRD-PARTY-NOTICES.txt");
 if (write) {

@@ -11,6 +11,7 @@ import { PLANS, type Plan } from "../lib/plans.js";
 import { config } from "../config.js";
 import { getVoice } from "../lib/voices.js";
 import { synthesizeEdgeTTS } from "../lib/edgeTts.js";
+import { isLocalVoiceId, localVoiceShortId, synthesizeLocalVoice } from "../lib/kokoro.js";
 import {
   assertConfigured,
   createCloneProfile,
@@ -72,6 +73,31 @@ const synthesizeSchema = z.object({
 router.post("/synthesize", requireAuth, usageLimiter, validate({ body: synthesizeSchema }), async (req, res, next) => {
   try {
     const { text, voice, speed, pitch, volume } = req.body as z.infer<typeof synthesizeSchema>;
+
+    // ── On-this-PC voice (Kokoro) ────────────────────────────────────────────
+    // Generated locally, so there is nothing to meter: no Microsoft characters
+    // are used and no quota is charged. Pitch/volume belong to the Edge engine;
+    // a request that asks for them here is refused rather than quietly ignored.
+    if (isLocalVoiceId(voice)) {
+      if (pitch !== undefined || volume !== undefined) {
+        throw new ApiError(400, "INVALID_VOICE_OPTION", "Pitch and volume aren't available on the on-this-PC voices — use a Soundwave voice, or drop them.");
+      }
+      const local = await synthesizeLocalVoice({ text, voiceId: voice, speed });
+      const quota = await getQuotaFor(req.user!.id);
+      return res.json({
+        audioBase64: local.audioBase64,
+        mimeType: local.mimeType,
+        duration: local.duration,
+        wordTimings: local.wordTimings,
+        voiceId: voice,
+        voiceShortId: localVoiceShortId(voice),
+        engine: "kokoro",
+        used: quota.used,
+        limit: quota.limit,
+        resetDate: quota.resetDate,
+      });
+    }
+
     const voiceMeta = getVoice(voice);
     if (!voiceMeta) throw new ApiError(400, "INVALID_VOICE", "Unknown voice. Choose one of the supported Microsoft Neural voices.");
 

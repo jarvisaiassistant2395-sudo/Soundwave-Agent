@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
-Chatterbox voice-clone sidecar for Soundwave AI.
+Soundwave's local voice service: cloned voices (Chatterbox) and a fully
+on-device narration voice (Kokoro), behind one small JSON API the Node backend
+proxies to.
 
-Loads Resemble AI's Chatterbox voice-cloning model once and exposes a small JSON
-API the Node backend proxies to.
+Both engines were chosen for their licences first and their sound second:
+
+  • Chatterbox (cloned voices) — MIT for code **and** weights.
+  • Kokoro-82M (narration) — Apache-2.0 for code and weights, 82M parameters,
+    runs on a CPU. It is driven by kokoro_engine.py, our own thin pipeline, and
+    NOT by upstream's `kokoro.KPipeline`: that one imports `misaki.espeak`, which
+    links the GPL-3.0 `phonemizer` + espeak-ng into this process. Ours imports
+    only `misaki.en` (Apache-2.0, dictionary + misaki's own FallbackNetwork), so
+    the whole service stays permissively licensed and the GPL extras are never
+    even installed (kokoro is installed with --no-deps; see requirements.txt).
+
+Loads the models once and exposes a small JSON API the Node backend proxies to.
 
 Why this model and not the obvious alternatives: Chatterbox is MIT-licensed
 **including the pre-trained weights** (github.com/resemble-ai/chatterbox,
@@ -23,8 +35,14 @@ this paragraph changing first.
     POST /clone                   → { text, profileId, speed? } → WAV
                                     (+ X-Audio-Duration header, seconds)
 
-Set CHATTERBOX_MOCK=1 to run without the model (sine-wave output) — used for
+    GET  /tts/kokoro/voices       → the narration voices this install can use
+    POST /tts/kokoro              → { text, voice?, speed? } → WAV
+                                    (+ X-Audio-Duration header, seconds)
+
+Set CHATTERBOX_MOCK=1 to run without the models (sine-wave output) — used for
 development/testing the plumbing without downloading multi-GB weights.
+Set KOKORO_OFF=1 to skip loading the narration model entirely (a
+cloning-only deployment).
 """
 
 import io
@@ -78,6 +96,93 @@ if not MOCK:
 
 SAMPLE_RATE = int(getattr(model, "sr", DEFAULT_SAMPLE_RATE)) if not MOCK else DEFAULT_SAMPLE_RATE
 
+# ── Kokoro narration (Apache-2.0 code and weights) ──────────────────────────
+# A second engine in the same service: no reference clip, fixed voices, CPU-fast
+# (~82M parameters). Kokoro's own default pipeline is used; see the module
+# docstring for why espeak-ng is deliberately absent.
+KOKORO_OFF = os.environ.get("KOKORO_OFF", "").lower() in ("1", "true", "yes")
+KOKORO_SPEED_DEFAULT = float(os.environ.get("KOKORO_SPEED", "1.0"))
+# 'a' American, 'b' British (Kokoro's own lang codes). The voice id picks the
+# pipeline, so this is only the fallback/default.
+KOKORO_LANG = "b" if os.environ.get("KOKORO_LANG", "a").lower().startswith("b") else "a"
+
+# The real voice ids shipped with Kokoro-82M v1.0, straight from the project's
+# own demo (hexgrad/kokoro demo/app.py). Nothing here is invented; the id's first
+# letter is the language (a/b) and the second the gender (f/m).
+KOKORO_VOICES: list[dict] = [
+    {"id": "af_heart", "name": "Heart", "gender": "Female", "accent": "American", "default": True},
+    {"id": "af_bella", "name": "Bella", "gender": "Female", "accent": "American"},
+    {"id": "af_nicole", "name": "Nicole", "gender": "Female", "accent": "American"},
+    {"id": "af_aoede", "name": "Aoede", "gender": "Female", "accent": "American"},
+    {"id": "af_kore", "name": "Kore", "gender": "Female", "accent": "American"},
+    {"id": "af_sarah", "name": "Sarah", "gender": "Female", "accent": "American"},
+    {"id": "af_nova", "name": "Nova", "gender": "Female", "accent": "American"},
+    {"id": "af_sky", "name": "Sky", "gender": "Female", "accent": "American"},
+    {"id": "af_alloy", "name": "Alloy", "gender": "Female", "accent": "American"},
+    {"id": "af_jessica", "name": "Jessica", "gender": "Female", "accent": "American"},
+    {"id": "af_river", "name": "River", "gender": "Female", "accent": "American"},
+    {"id": "am_michael", "name": "Michael", "gender": "Male", "accent": "American"},
+    {"id": "am_fenrir", "name": "Fenrir", "gender": "Male", "accent": "American"},
+    {"id": "am_puck", "name": "Puck", "gender": "Male", "accent": "American"},
+    {"id": "am_echo", "name": "Echo", "gender": "Male", "accent": "American"},
+    {"id": "am_eric", "name": "Eric", "gender": "Male", "accent": "American"},
+    {"id": "am_liam", "name": "Liam", "gender": "Male", "accent": "American"},
+    {"id": "am_onyx", "name": "Onyx", "gender": "Male", "accent": "American"},
+    {"id": "am_santa", "name": "Santa", "gender": "Male", "accent": "American"},
+    {"id": "am_adam", "name": "Adam", "gender": "Male", "accent": "American"},
+    {"id": "bf_emma", "name": "Emma", "gender": "Female", "accent": "British"},
+    {"id": "bf_isabella", "name": "Isabella", "gender": "Female", "accent": "British"},
+    {"id": "bf_alice", "name": "Alice", "gender": "Female", "accent": "British"},
+    {"id": "bf_lily", "name": "Lily", "gender": "Female", "accent": "British"},
+    {"id": "bm_george", "name": "George", "gender": "Male", "accent": "British"},
+    {"id": "bm_fable", "name": "Fable", "gender": "Male", "accent": "British"},
+    {"id": "bm_lewis", "name": "Lewis", "gender": "Male", "accent": "British"},
+    {"id": "bm_daniel", "name": "Daniel", "gender": "Male", "accent": "British"},
+]
+KOKORO_IDS = {v["id"] for v in KOKORO_VOICES}
+
+# One KokoroEngine per accent flavour (American 'a' / British 'b'), sharing a
+# single KModel — upstream's own recommendation, and it keeps memory flat.
+kokoro_engines: dict[str, object] = {}
+kokoro_lock = threading.Lock()
+
+
+def _kokoro_pipeline(lang_code: str):
+    """The narration engine for one language, built once.
+
+    Raises the underlying error rather than swallowing it — the caller turns it
+    into a 500 with the reason, so a broken install says so.
+    """
+    if lang_code in kokoro_engines:
+        return kokoro_engines[lang_code]
+    with kokoro_lock:
+        if lang_code in kokoro_engines:
+            return kokoro_engines[lang_code]
+        from kokoro_engine import KokoroEngine
+
+        shared = next(iter(kokoro_engines.values()), None)
+        engine = KokoroEngine(
+            device=DEVICE,
+            british=lang_code == "b",
+            model=getattr(shared, "model", None),
+        )
+        kokoro_engines[lang_code] = engine
+        return engine
+
+
+KOKORO_READY = False
+if not KOKORO_OFF and not MOCK:
+    print(f"[voiceclone] loading Kokoro (narration, lang '{KOKORO_LANG}') — Apache-2.0, CPU…", flush=True)
+    try:
+        _kokoro_pipeline(KOKORO_LANG)
+        KOKORO_READY = True
+        print(f"[voiceclone] Kokoro ready ({len(KOKORO_VOICES)} voices)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        # Chatterbox cloning can still work without Kokoro; say so and carry on.
+        print(f"[voiceclone] Kokoro unavailable ({e}) — narration voices are off, cloning still works", flush=True)
+elif MOCK:
+    KOKORO_READY = True
+
 
 def _reference_audio_ok(ref_path: Path) -> None:
     """Refuse a clip the model can't read, now rather than at first synthesis.
@@ -121,6 +226,35 @@ def _render(req: "CloneRequest", ref_path: Path) -> "tuple[bytes, float]":
 
     sf.write(buf, samples, SAMPLE_RATE, format="WAV", subtype="PCM_16")
     return buf.getvalue(), duration
+
+
+def _render_kokoro(req: "KokoroRequest") -> "tuple[bytes, float]":
+    """One narration clip. No reference clip: the voice IS the model's tensor."""
+    voice = (req.voice or "af_heart").strip()
+    if voice not in KOKORO_IDS:
+        known = ", ".join(sorted(KOKORO_IDS))
+        raise HTTPException(400, f"Unknown narration voice \"{voice}\". Available: {known}")
+    speed = KOKORO_SPEED_DEFAULT if req.speed is None else req.speed
+    if not 0.5 <= speed <= 2.0:
+        raise HTTPException(400, "Speed must be between 0.5 and 2.0.")
+    if MOCK:
+        return _mock_wav(req.text, 24_000)
+    if not KOKORO_READY:
+        raise HTTPException(503, "The narration model isn't loaded on this service (KOKORO_OFF or a failed load).")
+    lang = "b" if voice.startswith("b") else "a"
+    import numpy as np
+
+    try:
+        engine = _kokoro_pipeline(lang)
+        with kokoro_lock:
+            chunks = list(engine.generate(req.text, voice=voice, speed=speed))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Kokoro failed to generate speech: {e}") from e
+    if not chunks:
+        raise HTTPException(500, "Kokoro returned no audio for that text.")
+    samples = np.concatenate([np.asarray(c, dtype="float32").reshape(-1) for c in chunks])
+    sample_rate = 24_000  # Kokoro-82M v1.0
+    return _encode_wav(samples, sample_rate), len(samples) / sample_rate
 
 
 # ── API-token guard (set VOICECLONE_TOKEN when the service is on a public URL) ─
@@ -169,13 +303,54 @@ def _get_profile(profile_id: str) -> dict | None:
     return next((p for p in _read_index() if p["id"] == profile_id), None)
 
 
+# ── Request models ───────────────────────────────────────────────────────────
+# Defined before the app: FastAPI resolves annotations when a route is
+# decorated, so a model defined further down the file would be read as a query
+# parameter (which is how /tts/kokoro answered 422 the first time).
+class KokoroRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    # Kokoro-82M v1.0 voice id (af_heart, bm_george, …). Defaults to the model's
+    # own default voice.
+    voice: str | None = Field(default=None, max_length=32)
+    speed: float | None = Field(default=None, ge=0.5, le=2.0)
+
+
+class CloneRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    profileId: str = Field(min_length=1, max_length=64)
+    # Kept in the schema because the Node API's contract has it; only 1.0 is
+    # accepted (see _render).
+    speed: float | None = Field(default=None, ge=0.5, le=2.0)
+
+
 # ── App ──────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Soundwave AI voice-clone sidecar", docs_url=None, redoc_url=None)
+app = FastAPI(title="Soundwave AI local voice service", docs_url=None, redoc_url=None)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "model_loaded": MOCK or model is not None, "device": "mock" if MOCK else DEVICE, "mock": MOCK}
+    return {
+        "ok": True,
+        "model_loaded": MOCK or model is not None,
+        "device": "mock" if MOCK else DEVICE,
+        "mock": MOCK,
+        # Two engines, one service — the Node side reports each separately.
+        "engines": {
+            "chatterbox": {"loaded": MOCK or model is not None, "code": "MIT", "weights": "MIT"},
+            "kokoro": {"loaded": KOKORO_READY, "code": "Apache-2.0", "weights": "Apache-2.0", "voices": len(KOKORO_VOICES)},
+        },
+    }
+
+
+@app.get("/tts/kokoro/voices", dependencies=[Depends(require_token)])
+def kokoro_voices() -> dict:
+    return {"engine": "kokoro", "available": KOKORO_READY, "voices": KOKORO_VOICES}
+
+
+@app.post("/tts/kokoro", dependencies=[Depends(require_token)])
+def kokoro_tts(req: KokoroRequest) -> Response:
+    wav, duration = _render_kokoro(req)
+    return _wav_response(wav, duration)
 
 
 @app.get("/profiles", dependencies=[Depends(require_token)])
@@ -238,13 +413,6 @@ def delete_profile(profile_id: str) -> dict:
         (PROFILES_DIR / f"{profile_id}{suffix}").unlink(missing_ok=True)
     return {"ok": True}
 
-
-class CloneRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=10_000)
-    profileId: str = Field(min_length=1, max_length=64)
-    # Kept in the schema because the Node API's contract has it; only 1.0 is
-    # accepted (see _render).
-    speed: float | None = Field(default=None, ge=0.5, le=2.0)
 
 
 @app.post("/clone", dependencies=[Depends(require_token)])
@@ -312,22 +480,42 @@ def _wav_response(wav: bytes, duration: float) -> Response:
     )
 
 
-# ── Mock output (no model) ───────────────────────────────────────────────────
-def _mock_wav(text: str) -> tuple[bytes, float]:
-    import numpy as np
-    import soundfile as sf
+# ── WAV encoding (stdlib) ────────────────────────────────────────────────────
+def _encode_wav(samples, sample_rate: int) -> bytes:
+    """Float samples → 16-bit mono WAV.
 
-    duration = max(1.0, min(60.0, len(text.split()) / 2.6))
-    n = int(duration * SAMPLE_RATE)
-    t = np.arange(n) / SAMPLE_RATE
-    # Two-tone warble so it obviously isn't silence.
-    wave = (0.20 * np.sin(2 * math.pi * 220 * t) + 0.12 * np.sin(2 * math.pi * 330 * t)).astype("float32")
-    fade = int(0.03 * SAMPLE_RATE)
-    wave[:fade] *= np.linspace(0, 1, fade)
-    wave[-fade:] *= np.linspace(1, 0, fade)
+    Deliberately the standard library, not soundfile: the narration engine and
+    the mock output then need nothing but numpy, which keeps a light install
+    light (and CI does not need libsndfile present).
+    """
+    import numpy as np
+    import wave
+
+    clipped = np.clip(np.asarray(samples, dtype="float32").reshape(-1), -1.0, 1.0)
+    pcm = (clipped * 32767.0).astype("<i2")
     buf = io.BytesIO()
-    sf.write(buf, wave, SAMPLE_RATE, format="WAV", subtype="PCM_16")
-    return buf.getvalue(), duration
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(int(sample_rate))
+        w.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+# ── Mock output (no model) ───────────────────────────────────────────────────
+def _mock_wav(text: str, sample_rate: int | None = None) -> tuple[bytes, float]:
+    import numpy as np
+
+    rate = sample_rate or SAMPLE_RATE
+    duration = max(1.0, min(60.0, len(text.split()) / 2.6))
+    n = int(duration * rate)
+    t = np.arange(n) / rate
+    # Two-tone warble so it obviously isn't silence.
+    wave_out = (0.20 * np.sin(2 * math.pi * 220 * t) + 0.12 * np.sin(2 * math.pi * 330 * t)).astype("float32")
+    fade = int(0.03 * rate)
+    wave_out[:fade] *= np.linspace(0, 1, fade)
+    wave_out[-fade:] *= np.linspace(1, 0, fade)
+    return _encode_wav(wave_out, rate), duration
 
 
 def _ext_for(filename: str | None) -> str:
