@@ -5,7 +5,6 @@ import {
   Download, 
   RefreshCw, 
   Film, 
-  CheckCircle2, 
   Volume2, 
   Cpu, 
   Clock, 
@@ -30,8 +29,11 @@ import {
   Sunrise,
   Search,
   HeartPulse,
+  Trash,
+  Info,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
+import { IconButton, IconLink } from "../components/ui/IconButton";
 import { Button } from "../components/ui/Button";
 import { toast } from "../store/toast";
 import { ThinkingOrbVisualizer, ALL_ORB_STATES } from "../components/agent/ThinkingOrbVisualizer";
@@ -278,6 +280,8 @@ export function AgentHub() {
 
   // Shorts Generator State
   const [selectedNiche, setSelectedNiche] = useState<string>("psychology");
+  // Which niche's "i" is open: the button grows and shows its description.
+  const [nicheInfo, setNicheInfo] = useState<string | null>(null);
   const [customTopic, setCustomTopic] = useState("");
   // The agent's Soundwave voice: replies AND shorts (shared with Settings / Voice Library).
   const [selectedVoice, setSelectedVoice] = useState<string>(() => loadAgentVoice());
@@ -1588,8 +1592,7 @@ export function AgentHub() {
             title="Orbital NCG videos the agent hasn't used yet"
           >
             <Youtube className="h-3.5 w-3.5 text-red-500" />
-            <span className="text-white font-semibold">{orbitalStatus?.available ?? "—"}</span>
-            <span className="hidden xl:inline text-gray-400">unused Orbital videos</span>
+            <span className="font-semibold text-white">{orbitalStatus?.available ?? "—"}</span>
           </button>
 
           <button
@@ -1618,7 +1621,7 @@ export function AgentHub() {
             <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-                System Stats
+                System
               </span>
               <button
                 onClick={() => void refreshStats()}
@@ -1627,34 +1630,6 @@ export function AgentHub() {
               >
                 <RefreshCw className="h-3 w-3" />
               </button>
-            </div>
-
-            {/* CPU Usage Bar */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-gray-300">
-                <span>CPU Usage</span>
-                <span className="text-cyan-400 font-bold">{stats.cpuUsage != null ? `${stats.cpuUsage}%` : "—"}</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#070D18]">
-                <div
-                  className="h-full bg-cyan-400 transition-all duration-300"
-                  style={{ width: `${stats.cpuUsage ?? 0}%` }}
-                />
-              </div>
-            </div>
-
-            {/* RAM Usage Bar */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-gray-300">
-                <span>RAM Usage</span>
-                <span className="text-cyan-400 font-bold">{stats.ramUsageGB != null ? `${stats.ramUsageGB} / ${stats.ramTotalGB} GB` : "—"}</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#070D18]">
-                <div
-                  className="h-full bg-cyan-400 transition-all duration-300"
-                  style={{ width: `${stats.memoryPercent ?? 0}%` }}
-                />
-              </div>
             </div>
 
             {/* 3 Metric Tiles */}
@@ -1688,7 +1663,7 @@ export function AgentHub() {
             <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Film className="h-3.5 w-3.5 text-cyan-400" />
-                Orbital NCG Backgrounds
+                Backgrounds
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -1716,24 +1691,22 @@ export function AgentHub() {
 
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-2xl font-bold text-white tracking-tight">{orbitalStatus?.available ?? "—"}</span>
-                <span className="text-xs text-gray-400 ml-1.5">unused videos</span>
-                <p className="text-[11px] text-cyan-400/90 mt-0.5">
-                  {orbitalStatus?.catalogSize != null
-                    ? `of ${orbitalStatus.catalogSize} on the channel`
-                    : "Channel gets listed on the first Generate"}
-                </p>
+                <span className="text-2xl font-bold tracking-tight text-white">{orbitalStatus?.available ?? "—"}</span>
+                <span className="ml-1.5 text-xs text-gray-400">
+                  {orbitalStatus?.catalogSize != null ? `/ ${orbitalStatus.catalogSize}` : "unused"}
+                </span>
               </div>
               <div className="text-right">
-                <span className="rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold block">
-                  {orbitalStatus?.usedCount ?? 0} USED
+                <span
+                  className="block rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400"
+                  title="Backgrounds already used — never reused"
+                >
+                  {orbitalStatus?.usedCount ?? 0}
                 </span>
-                <span className="text-[9px] text-gray-400 mt-1 block">Never reused</span>
               </div>
             </div>
 
-            <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-2 space-y-0.5">
-              <span className="text-[10px] text-gray-400 block">Last imported background</span>
+            <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-2 space-y-0.5" title="Last imported background">
               {orbitalStatus?.lastUsed ? (
                 <a
                   href={orbitalStatus.lastUsed.url}
@@ -1746,7 +1719,7 @@ export function AgentHub() {
                   <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                 </a>
               ) : (
-                <span className="text-[11px] text-gray-500 block">None yet</span>
+                <span className="block text-[11px] text-gray-500">None yet</span>
               )}
             </div>
 
@@ -1757,13 +1730,9 @@ export function AgentHub() {
               className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 px-2.5 py-1.5 text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shadow-cyan-950/40"
             >
               <Youtube className="h-3.5 w-3.5 text-red-500" />
-              youtube.com/@OrbitalNCG
+              @OrbitalNCG
               <ExternalLink className="h-3 w-3" />
             </a>
-
-            <p className="text-[10px] text-gray-400 italic">
-              *On every Generate (button or chat) the agent picks an Orbital NCG video it hasn't used before, pastes its link into the YouTube link importer, and uses the imported gameplay as the background.
-            </p>
           </div>
 
           {/* YouTube Shorts Studio & Automation Card */}
@@ -1771,19 +1740,19 @@ export function AgentHub() {
             <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Youtube className="h-3.5 w-3.5 text-red-500" />
-                YouTube Automation
+                YouTube
               </span>
               <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
                 ytStatus.connected
                   ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                   : "bg-gray-800 text-gray-400 border border-gray-700"
               }`}>
-                {ytStatus.connected ? (ytStatus.channelTitle || "CONNECTED") : "NOT LINKED"}
+                {ytStatus.connected ? (ytStatus.channelTitle || "LINKED") : "NOT LINKED"}
               </span>
             </div>
 
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">Auto-Post Shorts:</span>
+              <span className="text-gray-400">Auto-post</span>
               <button
                 type="button"
                 onClick={() => {
@@ -1799,36 +1768,36 @@ export function AgentHub() {
                   ytAutoPublish ? "bg-red-600 text-white shadow-sm shadow-red-500/40" : "bg-gray-800 text-gray-400"
                 }`}
               >
-                {ytAutoPublish ? "ENABLED" : "DISABLED"}
+                {ytAutoPublish ? "ON" : "OFF"}
               </button>
             </div>
 
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">Default Visibility:</span>
-              <span className="font-bold uppercase text-white text-[11px]">{ytPrivacy}</span>
+              <span className="text-gray-400">Privacy</span>
+              <span className="text-[11px] font-bold uppercase text-white">{ytPrivacy}</span>
             </div>
 
             {/* The agent's own marketing: which channel, what goes there, next one when. */}
             {ytChannels.length > 0 && (
               <div className="space-y-1 rounded border border-[#14233D] bg-[#070D18] px-2 py-1.5" data-testid="yt-marketing">
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-gray-400">Marketing channel:</span>
+                  <span className="text-gray-400">Marketing</span>
                   <span className="truncate font-bold text-gray-200">{marketingChannel?.name ?? ""}</span>
                 </div>
                 <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-gray-400">Next video:</span>
-                  <span className="truncate text-cyan-300">
-                    {marketingPlan ? (marketingPlan.due ? "due now" : `in ${marketingPlan.everyDays} day(s): ${marketingPlan.what}`) : "not scheduled — set it in Setup"}
+                  <span className="text-gray-400">Next</span>
+                  <span className="truncate text-cyan-300" title={marketingPlan?.what}>
+                    {marketingPlan ? (marketingPlan.due ? "due now" : `in ${marketingPlan.everyDays}d`) : "not set"}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => marketingChannel && void recordDemo(marketingChannel.id)}
                   disabled={isRecordingDemo}
-                  className="flex w-full items-center justify-center gap-1.5 rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 text-red-200 py-1 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-1.5 rounded border border-red-500/40 bg-red-600/20 py-1 text-[10px] font-bold text-red-200 transition-all hover:bg-red-600/30 cursor-pointer disabled:opacity-50"
+                  title="Record a demo of my own window working — the app has to be on screen"
                 >
                   {isRecordingDemo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Film className="h-3 w-3" />}
-                  {isRecordingDemo ? "Filming my own window…" : "Record a demo of myself now"}
                 </button>
               </div>
             )}
@@ -1839,10 +1808,10 @@ export function AgentHub() {
                   type="button"
                   onClick={() => handleManualUploadYt(completedVideoUrl, generatedScript)}
                   disabled={isUploadingToYt}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold py-1.5 text-[11px] transition-all shadow-md shadow-red-600/30 cursor-pointer disabled:opacity-50"
+                  className="flex flex-1 items-center justify-center rounded-lg bg-red-600 py-1.5 text-white shadow-md shadow-red-600/30 transition-all hover:bg-red-500 cursor-pointer disabled:opacity-50"
+                  title="Post this short to YouTube"
                 >
-                  <Youtube className="h-3 w-3" />
-                  {isUploadingToYt ? "Posting..." : "Post to YouTube"}
+                  {isUploadingToYt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Youtube className="h-3 w-3" />}
                 </button>
               )}
               {uploadedYoutubeUrl && (
@@ -1850,21 +1819,20 @@ export function AgentHub() {
                   href={uploadedYoutubeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-600/20 border border-red-500/40 hover:bg-red-600/30 text-red-300 font-bold py-1.5 text-[11px] transition-all cursor-pointer"
+                  className="flex flex-1 items-center justify-center rounded-lg border border-red-500/40 bg-red-600/20 py-1.5 text-red-300 transition-all hover:bg-red-600/30 cursor-pointer"
+                  title="Open it on YouTube"
                 >
                   <Youtube className="h-3 w-3 text-red-400" />
-                  View on YouTube
-                  <ExternalLink className="h-2.5 w-2.5" />
                 </a>
               )}
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className="rounded-lg border border-[#14233D] bg-[#070D18] hover:border-cyan-400 text-gray-300 hover:text-white px-2 py-1 text-[11px] transition-all cursor-pointer flex items-center gap-1"
-                title="Connect YouTube"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-[#14233D] bg-[#070D18] text-gray-300 transition-all hover:border-cyan-400 hover:text-white cursor-pointer"
+                title="YouTube setup"
+                aria-label="YouTube setup"
               >
                 <SettingsIcon className="h-3 w-3" />
-                Setup
               </button>
             </div>
           </div>
@@ -1875,10 +1843,7 @@ export function AgentHub() {
               <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
                 <span className="flex items-center gap-1.5 font-semibold text-cyan-300">
                   <Film className="h-3.5 w-3.5 text-cyan-400" />
-                  Latest Rendered Video
-                </span>
-                <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-[9px] font-bold">
-                  READY
+                  Latest short
                 </span>
               </div>
               <div className="relative aspect-[9/16] max-h-44 w-full rounded-lg border border-[#14233D] bg-black overflow-hidden flex items-center justify-center mx-auto">
@@ -1898,43 +1863,45 @@ export function AgentHub() {
                   title={`Imported via the YouTube link importer: ${lastBackground.url}`}
                 >
                   <Youtube className="h-3 w-3 shrink-0 text-red-500" />
-                  <span className="truncate">
-                    Background: {lastBackground.title} · Orbital NCG · {describeSection(lastBackground.section)}
-                  </span>
+                  <span className="truncate">{lastBackground.title}</span>
                   <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                 </a>
               )}
               <div className="space-y-1.5">
-                <a
-                  href={completedVideoUrl}
-                  download="soundwave_viral_short.mp4"
-                  className="flex items-center justify-center gap-1.5 w-full rounded-lg bg-cyan-500 hover:bg-cyan-400 text-[#070B14] font-bold py-1.5 text-xs transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Download Short (MP4)
-                </a>
-                {uploadedYoutubeUrl ? (
-                  <a
-                    href={uploadedYoutubeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 w-full rounded-lg bg-red-950/50 border border-red-500/40 text-red-300 hover:bg-red-900/60 font-bold py-1.5 text-xs transition-all cursor-pointer"
+                <div className="flex items-center gap-1.5">
+                  <IconLink
+                    label="Download the MP4"
+                    href={completedVideoUrl}
+                    download="soundwave_viral_short.mp4"
+                    tone="cyan"
+                    size="lg"
+                    className="flex-1"
                   >
-                    <Youtube className="h-3.5 w-3.5 text-red-500" />
-                    Live on YouTube Shorts
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleManualUploadYt(completedVideoUrl, generatedScript)}
-                    disabled={isUploadingToYt}
-                    className="flex items-center justify-center gap-1.5 w-full rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold py-1.5 text-xs transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Youtube className="h-3.5 w-3.5 text-red-500" />
-                    {isUploadingToYt ? "Posting..." : "1-Click Post to YouTube Shorts"}
-                  </button>
-                )}
+                    <Download />
+                  </IconLink>
+                  {uploadedYoutubeUrl ? (
+                    <IconLink
+                      label="Open it on YouTube"
+                      href={uploadedYoutubeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      tone="plain"
+                      size="lg"
+                    >
+                      <Youtube className="text-red-500" />
+                    </IconLink>
+                  ) : (
+                    <IconButton
+                      label="Post it to YouTube Shorts"
+                      onClick={() => handleManualUploadYt(completedVideoUrl, generatedScript)}
+                      disabled={isUploadingToYt}
+                      tone="red"
+                      size="lg"
+                    >
+                      {isUploadingToYt ? <Loader2 className="animate-spin" /> : <Youtube />}
+                    </IconButton>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1944,14 +1911,9 @@ export function AgentHub() {
             <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Activity className="h-3.5 w-3.5 text-cyan-400" />
-                System Uptime
+                Uptime
               </span>
               <span className="text-[11px] text-cyan-400">{formatUptime(uptimeSeconds)}</span>
-            </div>
-
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-gray-400">System Running For:</span>
-              <span className="font-bold text-white">{formatUptime(uptimeSeconds)}</span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-center">
@@ -1968,7 +1930,7 @@ export function AgentHub() {
             {/* System Load */}
             <div className="space-y-1 pt-1">
               <div className="flex justify-between text-[10px] text-gray-400">
-                <span>System Load</span>
+                <span>Load</span>
                 <span>{stats.loadPercent != null ? `${stats.loadPercent}%` : "—"}</span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#070D18]">
@@ -2004,20 +1966,20 @@ export function AgentHub() {
               <span className="inline-flex items-center gap-2 rounded-full border border-[#172A4A] bg-[#0C172E] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
                 <span className={`h-2 w-2 rounded-full animate-pulse ${isMicActive ? "bg-emerald-400" : micPhase === "transcribing" ? "bg-cyan-400" : "bg-emerald-400"}`} />
                 {micPhase === "starting"
-                  ? "Starting microphone..."
+                  ? "Starting mic…"
                   : isMicActive
-                  ? "Listening... pause or tap the mic to send"
+                  ? "Listening…"
                   : micPhase === "transcribing"
-                  ? "Transcribing your voice..."
+                  ? "Transcribing…"
                   : assistantState === "THINKING"
-                  ? "Neural processing..."
+                  ? "Thinking…"
                   : assistantState === "SPEAKING"
-                  ? `Speaking as ${displayNameFor(selectedVoice)}...`
+                  ? `Speaking (${displayNameFor(selectedVoice)})`
                   : assistantState === "GENERATING" || isGenerating
-                  ? `Rendering short (${progressPercent}%)...`
+                  ? `Rendering ${progressPercent}%`
                   : voiceHotkey
-                  ? `Tap the mic or press ${hotkeyLabel(voiceHotkey)} to talk`
-                  : "Tap the mic to talk"}
+                  ? hotkeyLabel(voiceHotkey)
+                  : "Tap the mic"}
               </span>
             </div>
           </div>
@@ -2097,7 +2059,7 @@ export function AgentHub() {
         <div className="lg:col-span-4 rounded-xl border border-[#14233D] bg-[#0A1224] p-4 flex flex-col h-[640px] lg:h-auto lg:min-h-0 font-mono">
           {/* Header */}
           <div className="flex shrink-0 items-center justify-between border-b border-[#14233D] pb-3">
-            <h3 className="text-sm font-semibold text-white">Conversation</h3>
+            <h3 className="text-sm font-semibold text-white">Chat</h3>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
@@ -2114,22 +2076,20 @@ export function AgentHub() {
                   void clearSharedConversation([cleared]);
                   toast.info("Log Cleared", "Message buffer reset.");
                 }}
-                className="flex items-center gap-1 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-400 hover:text-cyan-400 transition-colors"
-                title="Clear conversation"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#172A4A] bg-[#070D18] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                title="Clear the conversation"
+                aria-label="Clear the conversation"
               >
                 <Trash2 className="h-3 w-3" />
-                {/* Icon-only while the chat column is narrow (lg, below xl). */}
-                <span className="lg:hidden xl:inline">Clear</span>
               </button>
 
               <button
                 onClick={handleExtractConversation}
-                className="flex items-center gap-1 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-400 hover:text-cyan-400 transition-colors"
-                title="Extract and download conversation"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#172A4A] bg-[#070D18] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                title="Export the conversation as a .txt"
+                aria-label="Export the conversation"
               >
                 <Download className="h-3 w-3" />
-                <span className="hidden xl:inline 2xl:hidden">Export</span>
-                <span className="lg:hidden 2xl:inline">Extract Conversation</span>
               </button>
             </div>
           </div>
@@ -2153,10 +2113,7 @@ export function AgentHub() {
                     <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-[#14233D] pb-1">
                       <span className="flex items-center gap-1.5">
                         <Film className="h-3.5 w-3.5 text-cyan-400" />
-                        9:16 Viral Short Video
-                      </span>
-                      <span className="rounded bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 text-[9px] font-bold">
-                        READY
+                        Short
                       </span>
                     </div>
 
@@ -2178,44 +2135,40 @@ export function AgentHub() {
                         title={`Imported via the YouTube link importer: ${msg.background.url}`}
                       >
                         <Youtube className="h-3 w-3 shrink-0 text-red-500" />
-                        <span className="truncate">
-                          Background: {msg.background.title} · Orbital NCG · {describeSection(msg.background.section)}
-                        </span>
+                        <span className="truncate">{msg.background.title}</span>
                         <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                       </a>
                     )}
 
                     <div className="flex items-center gap-2 pt-1">
-                      <a
-                        href={msg.downloadUrl || msg.videoUrl}
+                      <IconLink
+                        label="Download the MP4"
+                        href={(msg.downloadUrl || msg.videoUrl)!}
                         download="soundwave_viral_short.mp4"
-                        className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-[#070B14] font-bold py-1.5 px-3 text-xs transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+                        tone="cyan"
+                        className="flex-1"
                       >
-                        <Download className="h-3.5 w-3.5" />
-                        Download Video (MP4)
-                      </a>
+                        <Download />
+                      </IconLink>
                       {msg.youtubeUrl ? (
-                        <a
+                        <IconLink
+                          label="Open it on YouTube"
                           href={msg.youtubeUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/80 border border-red-500/50 text-red-300 font-bold py-1.5 px-3 text-xs transition-all cursor-pointer"
+                          tone="ghost"
                         >
-                          <Youtube className="h-3.5 w-3.5 text-red-500" />
-                          Shorts Link
-                          <ExternalLink className="h-2.5 w-2.5" />
-                        </a>
+                          <Youtube className="text-red-500" />
+                        </IconLink>
                       ) : (
-                        <button
-                          type="button"
+                        <IconButton
+                          label="Post it to YouTube Shorts"
                           onClick={() => handleManualUploadYt(msg.videoUrl || msg.downloadUrl!, msg.text)}
                           disabled={isUploadingToYt}
-                          className="flex items-center gap-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 font-bold py-1.5 px-3 text-xs transition-all cursor-pointer disabled:opacity-50"
-                          title="Post this video to YouTube Shorts"
+                          tone="red"
                         >
-                          <Youtube className="h-3.5 w-3.5 text-red-500" />
-                          {isUploadingToYt ? "Posting..." : "Post to YouTube"}
-                        </button>
+                          {isUploadingToYt ? <Loader2 className="animate-spin" /> : <Youtube />}
+                        </IconButton>
                       )}
                     </div>
                   </div>
@@ -2245,8 +2198,9 @@ export function AgentHub() {
                     {msg.sender === "assistant" && (
                       <button
                         onClick={() => speakText(msg.text, selectedVoice)}
-                        title="Replay Voice Speech"
-                        className="text-gray-400 hover:text-cyan-400 transition-colors"
+                        title="Say it again"
+                        aria-label="Say it again"
+                        className="text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
                       >
                         <Volume2 className="h-3 w-3" />
                       </button>
@@ -2291,20 +2245,22 @@ export function AgentHub() {
                 title="Opens your morning websites and apps and gives you today's briefing (Settings → Morning Setup)"
                 className="shrink-0 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-0.5 hover:text-cyan-300 transition-colors disabled:opacity-60"
               >
-                {isRunningMorning ? "🌅 Setting up…" : "🌅 Morning Setup"}
+                <Sunrise className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setGeneratorModalOpen(true)}
-                className="shrink-0 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-0.5 hover:text-cyan-300 transition-colors"
+                className="shrink-0 rounded-md border border-[#172A4A] bg-[#070D18] p-1.5 hover:text-cyan-300 transition-colors cursor-pointer"
+                title="Make a short"
+                aria-label="Make a short"
               >
-                🎬 Make Short
+                <Film className="h-3.5 w-3.5" />
               </button>
             </div>
 
             <form onSubmit={handleUserSubmit} className="flex gap-2">
               <input
                 type="text"
-                placeholder="Type a message..."
+                placeholder="Message…"
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 className="flex-1 rounded-xl border border-[#172A4A] bg-[#070D18] px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none transition-colors"
@@ -2312,7 +2268,7 @@ export function AgentHub() {
               <button
                 type="submit"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-[#070B14] font-bold shadow-lg shadow-cyan-500/30 transition-all cursor-pointer"
-                title="Send Command"
+                title="Send"
               >
                 <Send className="h-4 w-4" />
               </button>
@@ -2326,44 +2282,30 @@ export function AgentHub() {
         <Modal
           open={generatorModalOpen}
           onClose={() => setGeneratorModalOpen(false)}
-          title="1-Click Viral Short Generator"
+          title="New short"
           size="lg"
         >
           <div className="space-y-4 font-mono text-xs">
-            <p className="text-gray-400 text-[11px]">
-              Soundwave crafts high-retention curiosity hooks, synthesizes 24kHz Edge TTS narration, renders word-by-word TikTok subtitles, and composes 9:16 vertical video at 60fps.
-            </p>
-
             {/* Niche Grid */}
             <div className="space-y-1.5">
-              <label className="text-gray-300 font-semibold">Select Topic Niche</label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <label className="font-semibold text-gray-300">Topic</label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {NICHES.map((n) => (
-                  <button
+                  <NicheButton
                     key={n.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedNiche(n.id);
-                    }}
-                    className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                      selectedNiche === n.id
-                        ? "border-cyan-400 bg-cyan-500/10 text-white"
-                        : "border-[#172A4A] bg-[#070D18] text-gray-400 hover:text-white"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      {getNicheIcon(n.iconName)}
-                      <span className="font-bold text-[11px] text-white">{n.name}</span>
-                    </div>
-                    <span className="text-[10px] text-gray-500 line-clamp-1">{n.desc}</span>
-                  </button>
+                    niche={n}
+                    selected={selectedNiche === n.id}
+                    expanded={nicheInfo === n.id}
+                    onSelect={() => setSelectedNiche(n.id)}
+                    onToggleInfo={() => setNicheInfo((was) => (was === n.id ? null : n.id))}
+                  />
                 ))}
               </div>
             </div>
 
             {/* Custom Topic Input */}
             <div className="space-y-1">
-              <label className="text-gray-300 font-semibold">Custom Hook or Topic (Optional)</label>
+              <label className="font-semibold text-gray-300">Or a topic of your own</label>
               <input
                 type="text"
                 placeholder="e.g. Why Intelligent People Procrastinate More"
@@ -2376,7 +2318,7 @@ export function AgentHub() {
             {/* Voice & Resolution */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-gray-300 font-semibold">Narrator (Soundwave voice)</label>
+                <label className="font-semibold text-gray-300">Voice</label>
                 <select
                   value={selectedVoice}
                   onChange={(e) => handleVoiceChange(e.target.value)}
@@ -2397,8 +2339,8 @@ export function AgentHub() {
                   onChange={(e) => pickResolution(e.target.value as "720p" | "1080p")}
                   className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
-                  <option value="1080p">1080p · 60fps — publish quality</option>
-                  <option value="720p">720p · 60fps — fast draft</option>
+                  <option value="1080p">1080p · 60fps</option>
+                  <option value="720p">720p · 60fps</option>
                 </select>
               </div>
 
@@ -2409,47 +2351,36 @@ export function AgentHub() {
                   onChange={(e) => pickSeconds(Number(e.target.value))}
                   className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
-                  <option value={30}>30 seconds — quick hit</option>
-                  <option value={60}>60 seconds — recommended</option>
-                  <option value={90}>90 seconds — deep dive</option>
+                  <option value={30}>30s</option>
+                  <option value={60}>60s</option>
+                  <option value={90}>90s</option>
                 </select>
               </div>
             </div>
-
-            <p className="text-[10px] text-gray-500 leading-normal">
-              The script is written to hold: a hook in the first line, a turn in the middle, the payoff and a
-              looping ending — {Math.round(seconds * 2.4)} words for {seconds} seconds. 1080p 60fps takes a few
-              minutes longer to render than 720p. Without a Gemini key (Settings → Brain) I use my built-in
-              60-second scripts.
-            </p>
 
             {/* What's viral right now: the agent re-searches the web every few days
                 and writes the scripts to it; this is where it can be checked/forced. */}
             <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-1.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-gray-300 flex items-center gap-1.5">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-300">
                   <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
-                  What's viral right now
+                  Trends
                 </span>
                 <button
                   onClick={refreshTrends}
                   disabled={trendRefreshing || trendStatus?.refreshing || trendStatus?.needsKey}
-                  className="rounded-md border border-[#172A4A] px-2 py-0.5 text-[10px] font-semibold text-gray-300 hover:text-white hover:border-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex h-6 w-6 items-center justify-center rounded-md border border-[#172A4A] text-gray-300 transition-colors hover:border-cyan-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                   title={trendStatus?.needsKey ? "Needs a Gemini API key (Settings → Brain)" : "Search again now"}
+                  aria-label="Search again now"
                 >
-                  {trendRefreshing || trendStatus?.refreshing ? "Searching…" : "Search again"}
+                  <RefreshCw className={`h-3 w-3 ${trendRefreshing || trendStatus?.refreshing ? "animate-spin" : ""}`} />
                 </button>
               </div>
               {trendStatus?.available ? (
                 <>
                   <p className="text-[10px] text-gray-400">
-                    Researched{" "}
-                    {trendStatus.ageDays === 0
-                      ? "today"
-                      : trendStatus.ageDays === 1
-                        ? "yesterday"
-                        : `${trendStatus.ageDays} days ago`}
-                    {trendStatus.due ? " — refreshing in the background" : " · the agent looks again every few days"}.
+                    {trendStatus.ageDays === 0 ? "today" : trendStatus.ageDays === 1 ? "yesterday" : `${trendStatus.ageDays}d ago`}
+                    {trendStatus.due ? " · refreshing" : ""}
                   </p>
                   <ul className="space-y-0.5">
                     {trendStatus.findings.slice(0, 3).map((f, i) => (
@@ -2460,10 +2391,8 @@ export function AgentHub() {
                   </ul>
                 </>
               ) : (
-                <p className="text-[10px] text-gray-500 leading-normal">
-                  {trendStatus?.needsKey
-                    ? "I need a Gemini API key (Settings → Brain) so I can search what's working on Shorts — until then I write from the standing research."
-                    : "I haven't researched what's working on Shorts yet. I do it by myself every few days while the PC is on."}
+                <p className="text-[10px] text-gray-500">
+                  {trendStatus?.needsKey ? "Needs a Gemini key." : "Not researched yet — happens by itself every few days."}
                 </p>
               )}
               {trendNote && <p className="text-[10px] text-amber-400/80 leading-normal">{trendNote}</p>}
@@ -2472,40 +2401,31 @@ export function AgentHub() {
             {/* Background Footage Source: Orbital NCG via the YouTube link importer */}
             <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-2">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-gray-300">Background Footage Source</span>
-                <span className="text-cyan-400 font-bold">
-                  {orbitalStatus?.available != null ? `${orbitalStatus.available} unused Orbital videos` : "Orbital NCG"}
+                <span className="font-semibold text-gray-300" title="From youtube.com/@OrbitalNCG, never reused">Background</span>
+                <span className="font-bold text-cyan-400">
+                  {orbitalStatus?.available != null ? `${orbitalStatus.available} unused` : "Orbital NCG"}
                 </span>
               </div>
-              <p className="text-[10px] text-gray-400 leading-normal">
-                The agent picks a video from{" "}
-                <a href={ORBITAL_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline hover:text-cyan-200">
-                  youtube.com/@OrbitalNCG
-                </a>{" "}
-                that it hasn't used before, pastes its link into the YouTube link importer, and composites the imported gameplay behind your captions.
-              </p>
-              <div className="pt-1 flex items-center gap-2">
-                <a
+              <div className="flex items-center gap-1.5 pt-1">
+                <IconLink
+                  label="Open youtube.com/@OrbitalNCG"
                   href={ORBITAL_CHANNEL_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 px-2.5 py-1.5 text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  tone="cyan"
+                  className="flex-1"
                 >
-                  <Youtube className="h-3 w-3 text-red-500" />
-                  Open Orbital NCG
-                </a>
-                <button
-                  type="button"
+                  <Youtube />
+                </IconLink>
+                <IconButton
+                  label={`Backgrounds already used (${orbitalStatus?.usedCount ?? 0})`}
                   onClick={() => {
                     setOrbitalHistoryOpen(true);
                     fetchOrbitalStatus();
                   }}
-                  className="rounded-lg border border-[#172A4A] bg-[#070D18] hover:border-cyan-400/50 hover:bg-cyan-500/10 text-gray-300 hover:text-cyan-300 px-2.5 py-1.5 text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  title="Orbital videos already used as backgrounds"
                 >
-                  <Clock className="h-3 w-3 text-cyan-400" />
-                  Used Videos ({orbitalStatus?.usedCount ?? 0})
-                </button>
+                  <Clock className="text-cyan-400" />
+                </IconButton>
               </div>
             </div>
 
@@ -2514,7 +2434,7 @@ export function AgentHub() {
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-semibold text-gray-200 flex items-center gap-1.5">
                   <Youtube className="h-3.5 w-3.5 text-red-500" />
-                  YouTube Shorts Auto-Publish
+                  Auto-post
                 </span>
                 <span className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${
                   ytStatus.connected
@@ -2533,7 +2453,7 @@ export function AgentHub() {
                     onChange={(e) => setYtAutoPublish(e.target.checked)}
                     className="rounded border-[#172A4A] bg-[#070D18] text-red-600 focus:ring-0 cursor-pointer h-3.5 w-3.5"
                   />
-                  <span>Automatically post to YouTube Shorts after rendering</span>
+                  <span>Post after rendering</span>
                 </label>
                 <select
                   value={ytPrivacy}
@@ -2547,20 +2467,17 @@ export function AgentHub() {
               </div>
 
               {!ytStatus.connected && (
-                <p className="text-[10px] text-gray-400">
-                  Tip: Connect YouTube in{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGeneratorModalOpen(false);
-                      setSettingsOpen(true);
-                    }}
-                    className="text-red-400 underline hover:text-red-300 cursor-pointer"
-                  >
-                    Assistant Settings
-                  </button>{" "}
-                  {ytStatus.oneClick ? " — one press, nothing to set up." : " to enable automatic posting."}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGeneratorModalOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 rounded border border-red-500/40 bg-red-600/20 px-2 py-1 text-[10px] font-bold text-red-200 transition-colors hover:bg-red-600/30 cursor-pointer"
+                >
+                  <Link2 className="h-3 w-3" />
+                  Connect YouTube
+                </button>
               )}
             </div>
 
@@ -2583,10 +2500,6 @@ export function AgentHub() {
             {/* Video & Script Preview */}
             {(completedVideoUrl || generatedScript) && (
               <div className="rounded-lg border border-cyan-500/30 bg-[#070D18] p-3 space-y-2">
-                <p className="text-cyan-300 font-bold text-xs flex items-center justify-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                  Video Render Complete
-                </p>
                 {completedVideoUrl && (
                   <video
                     src={completedVideoUrl}
@@ -2602,36 +2515,40 @@ export function AgentHub() {
                 )}
                 {completedVideoUrl && (
                   <div className="flex flex-col gap-1.5 pt-1">
-                    <a
-                      href={completedVideoUrl.includes("?") ? `${completedVideoUrl}&download=1` : `${completedVideoUrl}?download=1`}
-                      download="soundwave_viral_short.mp4"
-                      className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500 text-[#070B14] py-1.5 text-xs font-bold hover:bg-cyan-400 transition-colors cursor-pointer shadow-md shadow-cyan-500/20"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Download 9:16 Short (MP4)
-                    </a>
-                    {uploadedYoutubeUrl ? (
-                      <a
-                        href={uploadedYoutubeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-red-600/30 border border-red-500/50 text-red-300 hover:bg-red-600/40 py-1.5 text-xs font-bold transition-all cursor-pointer"
+                    <div className="flex items-center gap-1.5">
+                      <IconLink
+                        label="Download the MP4"
+                        href={completedVideoUrl.includes("?") ? `${completedVideoUrl}&download=1` : `${completedVideoUrl}?download=1`}
+                        download="soundwave_viral_short.mp4"
+                        tone="cyan"
+                        size="lg"
+                        className="flex-1"
                       >
-                        <Youtube className="h-3.5 w-3.5 text-red-500" />
-                        Watch on YouTube Shorts
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleManualUploadYt(completedVideoUrl, generatedScript)}
-                        disabled={isUploadingToYt}
-                        className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-red-600/20 border border-red-500/40 text-red-300 hover:bg-red-600/30 py-1.5 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
-                      >
-                        <Youtube className="h-3.5 w-3.5 text-red-500" />
-                        {isUploadingToYt ? "Uploading..." : "Post to YouTube Shorts Now"}
-                      </button>
-                    )}
+                        <Download />
+                      </IconLink>
+                      {uploadedYoutubeUrl ? (
+                        <IconLink
+                          label="Open it on YouTube"
+                          href={uploadedYoutubeUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          tone="ghost"
+                          size="lg"
+                        >
+                          <Youtube className="text-red-500" />
+                        </IconLink>
+                      ) : (
+                        <IconButton
+                          label="Post it to YouTube Shorts"
+                          onClick={() => handleManualUploadYt(completedVideoUrl, generatedScript)}
+                          disabled={isUploadingToYt}
+                          tone="red"
+                          size="lg"
+                        >
+                          {isUploadingToYt ? <Loader2 className="animate-spin" /> : <Youtube />}
+                        </IconButton>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -2648,7 +2565,7 @@ export function AgentHub() {
                 loading={isGenerating}
                 icon={<Sparkles className="h-3.5 w-3.5" />}
               >
-                {isGenerating ? "Rendering..." : "Generate Short"}
+                {isGenerating ? "Rendering…" : "Generate short"}
               </Button>
             </div>
           </div>
@@ -2660,11 +2577,11 @@ export function AgentHub() {
         <Modal
           open={macrosModalOpen}
           onClose={() => setMacrosModalOpen(false)}
-          title="Ghost Operator Macros"
+          title="Macros"
         >
           <div className="space-y-3 font-mono text-xs">
-            <p className="text-gray-400 text-[11px]">
-              Saved multi-step automations that really run on this PC: opening web pages and apps, live system facts, scanning the workspace folder, the clipboard, reminders and starting a short. Steps Soundwave can't do yet (system volume, screenshots, moving windows, running code) are skipped and say why — nothing is faked. Every step's result appears in the chat.
+            <p className="text-[11px] text-gray-400">
+              Multi-step automations that <b className="text-gray-300">really run on this PC</b>. Steps Soundwave can't do yet are skipped and say why.
             </p>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -2676,8 +2593,8 @@ export function AgentHub() {
                   <div>
                     <h4 className="text-xs font-bold text-white">{m.name}</h4>
                     <p className="text-[11px] text-gray-400 mt-0.5">{m.description}</p>
-                    <span className="text-[10px] text-cyan-400 mt-1 block">
-                      {m.steps?.length || 0} steps · {(m.steps ?? []).map((s) => s.action).join(" → ")}
+                    <span className="mt-1 block truncate text-[10px] text-cyan-400">
+                      {(m.steps?.length || 0)} steps · {(m.steps ?? []).map((s) => s.action).join(" → ")}
                     </span>
                   </div>
                   <button
@@ -2686,7 +2603,7 @@ export function AgentHub() {
                       setMacrosModalOpen(false);
                     }}
                     disabled={isRunningMacro}
-                    className="flex items-center gap-1 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 px-3 py-1.5 text-xs font-bold hover:bg-cyan-500 hover:text-[#070B14] transition-all cursor-pointer"
+                    className="flex items-center gap-1 rounded-lg border border-cyan-400/40 bg-cyan-500/20 px-3 py-1.5 text-xs font-bold text-cyan-300 transition-all hover:bg-cyan-500 hover:text-[#070B14] cursor-pointer"
                   >
                     <Play className="h-3 w-3" />
                     Run
@@ -2709,11 +2626,10 @@ export function AgentHub() {
         <Modal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          title="Assistant Configuration"
+          title="Settings"
           size="lg"
           footer={
-            <div className="flex w-full items-center justify-between font-mono text-xs">
-              <span className="text-[11px] text-gray-500">Soundwave AI Control Center</span>
+            <div className="flex w-full items-center justify-end font-mono text-xs">
               <Button variant="primary" size="sm" onClick={() => setSettingsOpen(false)}>
                 Done
               </Button>
@@ -2733,7 +2649,7 @@ export function AgentHub() {
                 }`}
               >
                 <SettingsIcon className="h-3.5 w-3.5" />
-                General & Voice
+                General
               </button>
               <button
                 type="button"
@@ -2751,6 +2667,7 @@ export function AgentHub() {
               <button
                 type="button"
                 onClick={() => setSettingsTab("youtube")}
+                data-testid="youtube-tab"
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "youtube"
                     ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm"
@@ -2758,7 +2675,7 @@ export function AgentHub() {
                 }`}
               >
                 <Youtube className="h-3.5 w-3.5 text-red-500" />
-                YouTube & Shorts
+                YouTube
               </button>
               <button
                 type="button"
@@ -2770,7 +2687,7 @@ export function AgentHub() {
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-                Thinking Orb
+                Orb
               </button>
             </div>
 
@@ -2778,7 +2695,7 @@ export function AgentHub() {
             {settingsTab === "general" && (
               <div className="space-y-3.5 animate-fadeIn">
                 <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Assistant Identity Name</label>
+                  <label className="font-semibold text-gray-300">Name</label>
                   <input
                     type="text"
                     value={assistantName}
@@ -2790,10 +2707,7 @@ export function AgentHub() {
                 {/* Voice Talent Selection */}
                 <div className="space-y-2 p-3 rounded-lg border border-[#172A4A] bg-[#070D18]">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-bold text-white">Soundwave Voice</p>
-                      <p className="text-[10px] text-gray-400">Microsoft neural voice for the agent's replies and for the shorts it narrates</p>
-                    </div>
+                    <p className="text-xs font-bold text-white">Voice</p>
                     <button
                       type="button"
                       onClick={() =>
@@ -2802,9 +2716,11 @@ export function AgentHub() {
                           selectedVoice,
                         )
                       }
-                      className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-bold text-cyan-400 hover:bg-cyan-500 hover:text-[#070B14] transition-all flex items-center gap-1 cursor-pointer"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-400 transition-all hover:bg-cyan-500 hover:text-[#070B14] cursor-pointer"
+                      title="Hear this voice"
+                      aria-label="Hear this voice"
                     >
-                      <Volume2 className="h-3 w-3" /> Test Voice
+                      <Volume2 className="h-3 w-3" />
                     </button>
                   </div>
 
@@ -2822,10 +2738,7 @@ export function AgentHub() {
                 </div>
 
                 <div className="flex items-center justify-between p-2.5 rounded-lg border border-[#172A4A] bg-[#070D18]">
-                  <div>
-                    <p className="text-xs font-bold text-white">Speak Replies Aloud</p>
-                    <p className="text-[10px] text-gray-400">Reads every reply in the selected Soundwave voice</p>
-                  </div>
+                  <p className="text-xs font-bold text-white">Speak replies</p>
                   <button
                     type="button"
                     onClick={() => setVoiceFeedback(!voiceFeedback)}
@@ -2833,22 +2746,20 @@ export function AgentHub() {
                       voiceFeedback ? "bg-cyan-500 text-[#070B14]" : "bg-gray-800 text-gray-400"
                     }`}
                   >
-                    {voiceFeedback ? "Enabled" : "Disabled"}
+                    {voiceFeedback ? "On" : "Off"}
                   </button>
                 </div>
 
                 {/* Voice input (local speech recognition) */}
                 <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg border border-[#172A4A] bg-[#070D18]">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-white">Voice Input</p>
+                    <p className="text-xs font-bold text-white">Voice input</p>
                     <p className="text-[10px] text-gray-400">
                       {voiceInputStatus?.available
-                        ? `Recognized on this PC (whisper.cpp · ${voiceInputStatus.model}) — nothing is uploaded. Tap the mic, hold it to talk${
-                            voiceHotkey ? `, or press ${hotkeyLabel(voiceHotkey)} from any app` : ""
-                          }.`
+                        ? `On this PC (whisper.cpp) — nothing leaves it${voiceHotkey ? ` · ${hotkeyLabel(voiceHotkey)}` : ""}`
                         : voiceInputStatus
                         ? `Unavailable: ${voiceInputStatus.reason ?? "speech engine missing"}`
-                        : "Checking the speech engine..."}
+                        : "Checking…"}
                     </p>
                   </div>
                   <Link
@@ -2866,9 +2777,7 @@ export function AgentHub() {
             {/* TAB: Memory — what the agent remembers (real; shared with the phone) */}
             {settingsTab === "memory" && (
               <div className="space-y-3.5 animate-fadeIn" data-testid="memory-panel">
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  Soundwave remembers notes it saved (say “remember that…”) and a summary of earlier conversations, so it knows what you did together — on this PC and on your phone. Gemini writes the summary when the chat grows and when you press Clear.
-                </p>
+                <p className="text-[11px] text-gray-400">What the agent remembers — shared with your phone.</p>
                 {memoryError && <p className="text-[11px] text-amber-300">{memoryError}</p>}
 
                 <div className="space-y-1.5">
@@ -2877,7 +2786,7 @@ export function AgentHub() {
                   </div>
                   <div className="max-h-48 overflow-y-auto space-y-1 border border-[#172A4A] rounded-lg p-2 bg-[#070D18]">
                     {!memoryState || memoryState.notes.length === 0 ? (
-                      <p className="text-[11px] text-gray-500 p-1">No notes yet. Tell the agent “remember that my channel is about…”, or add one below.</p>
+                      <p className="p-1 text-[11px] text-gray-500">No notes yet.</p>
                     ) : (
                       memoryState.notes.map((n) => (
                         <div key={n.id} className="group flex items-start justify-between gap-2 rounded px-1 py-0.5 hover:bg-white/[0.03]" data-testid="memory-note">
@@ -2934,7 +2843,7 @@ export function AgentHub() {
                 </div>
 
                 <div className="space-y-1.5" data-testid="memory-briefing">
-                  <label className="text-gray-300 font-semibold">Morning briefing</label>
+                  <label className="font-semibold text-gray-300">Briefing</label>
                   <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 text-[11px] text-gray-300">
                     {memoryState?.briefing ? (
                       <>
@@ -2954,7 +2863,7 @@ export function AgentHub() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-gray-300 font-semibold">Summary of earlier conversations</label>
+                  <label className="font-semibold text-gray-300">Summary</label>
                   <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap" data-testid="memory-summary">
                     {memoryState?.summary ? (
                       <>
@@ -2962,29 +2871,30 @@ export function AgentHub() {
                         <span className="mt-1 block text-[10px] text-gray-500">Updated {noteAge(memoryState.summary.updatedAt)}</span>
                       </>
                     ) : (
-                      <span className="text-gray-500">Nothing yet — it's written once the conversation gets long, or when you press Clear (needs a Gemini key).</span>
+                      <span className="text-gray-500">Nothing yet.</span>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#172A4A]/60">
-                  <span className="text-[10px] text-gray-500">Stored on this PC; your paired phone gets a copy for chatting while the PC is off.</span>
-                  <div className="flex gap-2">
-                    {memoryState?.summary && (
-                      <Button variant="outline" size="sm" onClick={() => void memoryAction(() => memoryApi.forgetSummary(), "Summary forgotten.")}>
-                        Forget summary
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (window.confirm("Forget every note and the conversation summary? The conversation itself stays.")) void memoryAction(() => memoryApi.clear(), "Memory cleared.");
-                      }}
+                <div className="flex items-center justify-end gap-1.5 border-t border-[#172A4A]/60 pt-1">
+                  {memoryState?.summary && (
+                    <IconButton
+                      label="Forget the summary"
+                      tone="plain"
+                      onClick={() => void memoryAction(() => memoryApi.forgetSummary(), "Summary forgotten.")}
                     >
-                      Forget everything
-                    </Button>
-                  </div>
+                      <Trash2 />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    label="Forget every note and the summary"
+                    tone="plain"
+                    onClick={() => {
+                      if (window.confirm("Forget every note and the conversation summary? The conversation itself stays.")) void memoryAction(() => memoryApi.clear(), "Memory cleared.");
+                    }}
+                  >
+                    <Trash />
+                  </IconButton>
                 </div>
               </div>
             )}
@@ -2996,7 +2906,7 @@ export function AgentHub() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Youtube className="h-4 w-4 text-red-500" />
-                      <span className="text-xs font-bold text-white">YouTube Shorts &amp; Auto-Publish</span>
+                      <span className="text-xs font-bold text-white">YouTube</span>
                     </div>
                     <span
                       data-testid="yt-badge"
@@ -3014,7 +2924,7 @@ export function AgentHub() {
 
                   {ytStatus.connected ? (
                     <p className="text-[10px] text-gray-400">
-                      Linked to <b className="text-gray-200">{ytStatus.channelTitle || "your channel"}</b>. Post any rendered short from the chat, or let new ones post themselves.
+                      Linked to <b className="text-gray-200">{ytStatus.channelTitle || "your channel"}</b>.
                     </p>
                   ) : (
                     <>
@@ -3026,8 +2936,7 @@ export function AgentHub() {
                       {ytStatus.oneClick ? (
                         <div className="space-y-2" data-testid="yt-oneclick">
                           <p className="text-[10px] text-gray-400">
-                            One press: sign in with Google and Soundwave can post your shorts.{" "}
-                            <b className="text-gray-200">Nothing to set up in Google Cloud.</b>
+                            One press — <b className="text-gray-200">nothing to set up in Google Cloud.</b>
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
                             <button
@@ -3040,21 +2949,18 @@ export function AgentHub() {
                               {isConnectingYt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
                               {isConnectingYt ? "Waiting for Google…" : "Connect YouTube"}
                             </button>
-                            <span className="text-[10px] text-gray-500">Opens Google's sign-in in your browser and comes straight back.</span>
                           </div>
                           <p className="text-[10px] text-gray-500">
-                            Soundwave asks Google for two things only: uploading videos and the channel's name. You can remove access any time at{" "}
+                            Uploads and the channel's name only ·{" "}
                             <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
-                              myaccount.google.com/permissions
+                              remove access
                             </a>
-                            .
                           </p>
                         </div>
                       ) : (
                         <div className="space-y-2" data-testid="yt-manual">
                           <p className="text-[10px] text-gray-400">
-                            This build doesn't include Soundwave's own Google app, so YouTube needs{" "}
-                            <b className="text-gray-200">your own free OAuth client once</b> — three clicks in Google Cloud, about two minutes:
+                            This build has no built-in Google app, so YouTube needs <b className="text-gray-200">your own free client once</b>:
                           </p>
                           <textarea
                             rows={2}
@@ -3075,7 +2981,6 @@ export function AgentHub() {
                               {isConnectingYt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
                               {isConnectingYt ? "Waiting for Google…" : "Connect YouTube"}
                             </button>
-                            <span className="text-[10px] text-gray-500">Saves what you pasted, then opens Google's sign-in. The link is kept automatically.</span>
                           </div>
                         </div>
                       )}
@@ -3085,8 +2990,8 @@ export function AgentHub() {
                   <details className="text-[10px] text-gray-400" data-testid="yt-advanced">
                     <summary className="cursor-pointer select-none hover:text-gray-200">
                       {ytStatus.oneClick && !ytStatus.connected
-                        ? "Advanced: use your own Google Cloud project instead (or an OAuth Playground refresh token)"
-                        : "The Google Cloud clicks, step by step (and the refresh-token route)"}
+                        ? "Advanced: your own Google Cloud project instead"
+                        : "Google Cloud steps (and the refresh-token route)"}
                     </summary>
                     <div className="mt-1.5 space-y-2">
                       {ytStatus.oneClick && (
@@ -3136,7 +3041,7 @@ export function AgentHub() {
 
                       {!ytStatus.oneClick && (
                         <p className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200/80">
-                          YouTube keeps uploads from new Google Cloud projects <b>Private</b> until the project passes YouTube's API audit (the agent can explain). You can always download the MP4 and post it in YouTube Studio.
+                          New Google Cloud projects keep uploads <b>Private</b> until YouTube's API audit. You can always post the MP4 yourself.
                         </p>
                       )}
 
@@ -3150,7 +3055,7 @@ export function AgentHub() {
                         data-testid="yt-ask-agent"
                       >
                         <Sparkles className="h-2.5 w-2.5" />
-                        Ask Soundwave to walk me through it
+                        Ask the agent
                       </button>
                     </div>
                   </details>
@@ -3163,11 +3068,11 @@ export function AgentHub() {
                         onChange={(e) => setYtAutoPublish(e.target.checked)}
                         className="rounded border-[#172A4A] bg-[#070D18] text-red-600 focus:ring-0 cursor-pointer"
                       />
-                      <span>Auto-Publish Shorts to YouTube upon generation</span>
+                      <span>Auto-post after rendering</span>
                     </label>
 
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-gray-400">Privacy:</span>
+                      <span className="text-[10px] text-gray-400">Privacy</span>
                       <select
                         value={ytPrivacy}
                         onChange={(e) => setYtPrivacy(e.target.value as any)}
@@ -3187,7 +3092,7 @@ export function AgentHub() {
                       disabled={isTestingYt}
                       className="rounded border border-[#172A4A] bg-[#0A1224] hover:bg-[#111E3A] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
                     >
-                      {isTestingYt ? "Testing..." : "Test Connection"}
+                      {isTestingYt ? "Testing…" : "Test"}
                     </button>
                     <button
                       type="button"
@@ -3195,7 +3100,7 @@ export function AgentHub() {
                       disabled={isSavingYt}
                       className="rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 text-red-200 px-3.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
                     >
-                      {isSavingYt ? "Saving..." : "Save settings"}
+                      {isSavingYt ? "Saving…" : "Save"}
                     </button>
                   </div>
                 </div>
@@ -3205,7 +3110,7 @@ export function AgentHub() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Workflow className="h-4 w-4 text-cyan-400" />
-                      <span className="text-xs font-bold text-white">Channels &amp; what to publish on each</span>
+                      <span className="text-xs font-bold text-white">Channels</span>
                     </div>
                     <span className="text-[9px] text-gray-500">
                       {ytPlanStatus?.active.length ? `${ytPlanStatus.active.length} on autopilot` : "nothing scheduled"}
@@ -3213,14 +3118,12 @@ export function AgentHub() {
                   </div>
 
                   <p className="text-[10px] text-gray-400">
-                    Tell the agent what to publish on each channel and how often — it writes, narrates, renders and posts it by itself while Soundwave is
-                    running. A <b className="text-gray-200">demo</b> records the app's own window working.
+                    What to publish on each channel, and how often — written, narrated, rendered and posted by itself.
                   </p>
 
                   {ytChannels.length === 0 ? (
                     <p className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1.5 text-[10px] text-gray-500">
-                      No channel connected yet. Press <b className="text-gray-300">Connect YouTube</b> above — every sign-in adds one channel, so you can
-                      connect a second account for a second channel. Soundwave can't create a YouTube channel for you; it posts to the ones you connect.
+                      Connect YouTube above — each sign-in adds one channel. (Soundwave can't create a channel for you.)
                     </p>
                   ) : (
                     <div className="space-y-1.5">
@@ -3235,10 +3138,6 @@ export function AgentHub() {
                           recording={isRecordingDemo}
                         />
                       ))}
-                      <p className="text-[9px] text-gray-500">
-                        Another channel? Press <b className="text-gray-400">Connect YouTube</b> again and sign in with the account that owns it — each
-                        sign-in adds one channel here.
-                      </p>
                     </div>
                   )}
 
@@ -3255,7 +3154,7 @@ export function AgentHub() {
                       className="flex w-full items-center justify-center gap-1.5 rounded bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-200 font-bold py-1.5 text-[11px] transition-all cursor-pointer disabled:opacity-50"
                     >
                       {isRecordingDemo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Film className="h-3 w-3" />}
-                      {isRecordingDemo ? "Filming my own window…" : "Record a demo of myself now"}
+                      {isRecordingDemo ? "Filming…" : "Demo"}
                     </button>
                   )}
                 </div>
@@ -3267,12 +3166,12 @@ export function AgentHub() {
               <div className="space-y-3 animate-fadeIn">
                 <div className="p-3 rounded-lg border border-[#172A4A] bg-[#070D18] space-y-2">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-bold text-white">Thinking Orb Visualizer Mode</p>
-                      <p className="text-[10px] text-gray-400">Auto Sync dynamically reacts to listening, thinking, & speaking</p>
-                    </div>
-                    <span className="rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-2 py-0.5 text-[10px] font-bold">
-                      {orbMode === "auto" ? "AUTO SYNC (DEFAULT)" : orbMode.toUpperCase()}
+                    <p className="text-xs font-bold text-white">Orb</p>
+                    <span
+                      className="rounded border border-cyan-500/40 bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300"
+                      title="Auto Sync follows listening, thinking and speaking"
+                    >
+                      {orbMode === "auto" ? "AUTO" : orbMode.toUpperCase()}
                     </span>
                   </div>
 
@@ -3281,19 +3180,19 @@ export function AgentHub() {
                       <button
                         key={st.id}
                         type="button"
+                        title={st.desc}
                         onClick={() => {
                           setOrbMode(st.id);
                           localStorage.setItem("soundwave_orb_mode", st.id);
                           toast.info("Orb Mode Set", `${st.label} mode active.`);
                         }}
-                        className={`rounded-lg px-2.5 py-2 text-left text-[11px] font-mono transition-all border cursor-pointer ${
+                        className={`rounded-lg border px-2.5 py-2 text-left font-mono text-[11px] transition-all cursor-pointer ${
                           orbMode === st.id
-                            ? "border-cyan-400 bg-cyan-500/20 text-cyan-200 font-bold shadow-sm shadow-cyan-500/30"
-                            : "border-[#14233D] bg-[#0A1224] text-gray-400 hover:text-white hover:border-[#1F3660]"
+                            ? "border-cyan-400 bg-cyan-500/20 font-bold text-cyan-200 shadow-sm shadow-cyan-500/30"
+                            : "border-[#14233D] bg-[#0A1224] text-gray-400 hover:border-[#1F3660] hover:text-white"
                         }`}
                       >
                         <div className="font-semibold">{st.label}</div>
-                        <div className="text-[9px] text-gray-500 truncate">{st.desc}</div>
                       </button>
                     ))}
                   </div>
@@ -3309,7 +3208,7 @@ export function AgentHub() {
         <Modal
           open={orbitalHistoryOpen}
           onClose={() => setOrbitalHistoryOpen(false)}
-          title="Orbital NCG Background History"
+          title="Background history"
           size="xl"
           footer={
             <div className="flex w-full items-center justify-between gap-2 font-mono text-xs">
@@ -3321,7 +3220,7 @@ export function AgentHub() {
                 disabled={!orbitalStatus || (orbitalStatus.usedCount === 0 && orbitalStatus.skippedCount === 0)}
                 icon={<Trash2 className="h-3.5 w-3.5" />}
               >
-                Reset History
+                Reset
               </Button>
               <div className="flex items-center gap-2">
                 <Button
@@ -3331,7 +3230,7 @@ export function AgentHub() {
                   loading={isRefreshingOrbital}
                   icon={<RefreshCw className="h-3.5 w-3.5" />}
                 >
-                  Re-check Channel
+                  Re-check
                 </Button>
                 <Button variant="primary" size="sm" onClick={() => setOrbitalHistoryOpen(false)}>
                   Done
@@ -3341,12 +3240,12 @@ export function AgentHub() {
           }
         >
           <div className="space-y-3 font-mono text-xs">
-            <p className="text-[11px] text-gray-400 leading-normal">
-              Every short uses a video from{" "}
+            <p className="text-[11px] text-gray-400">
+              One{" "}
               <a href={ORBITAL_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline hover:text-cyan-200">
-                youtube.com/@OrbitalNCG
+                @OrbitalNCG
               </a>{" "}
-              that was never used before. The agent pastes its link into the YouTube link importer and imports just the stretch of gameplay the short needs. A video counts as used once a short has been rendered from it.
+              video per short, never reused. Counted once a short is rendered from it.
             </p>
 
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -3370,10 +3269,10 @@ export function AgentHub() {
             )}
 
             <div className="space-y-1.5">
-              <h4 className="text-[11px] font-bold text-gray-200">Used videos ({orbitalStatus?.usedCount ?? 0})</h4>
+              <h4 className="text-[11px] font-bold text-gray-200">Used ({orbitalStatus?.usedCount ?? 0})</h4>
               {!orbitalStatus || orbitalStatus.used.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-[#14233D] bg-[#070D18] p-3 text-center text-[11px] text-gray-500">
-                  No Orbital videos used yet. Generate a short and its background video will show up here.
+                  Nothing used yet.
                 </p>
               ) : (
                 <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
@@ -3396,7 +3295,6 @@ export function AgentHub() {
                         title={u.url}
                       >
                         <ExternalLink className="h-3 w-3" />
-                        YouTube
                       </a>
                     </div>
                   ))}
@@ -3406,7 +3304,7 @@ export function AgentHub() {
 
             {orbitalStatus && orbitalStatus.skipped.length > 0 && (
               <div className="space-y-1.5">
-                <h4 className="text-[11px] font-bold text-amber-300">Skipped: couldn't be imported ({orbitalStatus.skipped.length})</h4>
+                <h4 className="text-[11px] font-bold text-amber-300">Skipped ({orbitalStatus.skipped.length})</h4>
                 <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.skipped.map((sk) => (
                     <div key={sk.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#070D18] px-2.5 py-1.5">
@@ -3478,8 +3376,8 @@ function ChannelRow({
 
   const running = channel.plan.auto && channel.plan.what.trim().length > 0;
   const summary = running
-    ? `${channel.plan.kind === "demo" ? "Records the app" : "Normal short"} · ${channel.plan.what} · every ${channel.plan.everyDays}d${channel.plan.time ? ` from ${channel.plan.time}` : ""}${channel.plan.due ? " · due now" : ""}`
-    : "Not on autopilot — nothing is scheduled for this channel";
+    ? `${channel.plan.kind === "demo" ? "Demo" : "Short"} · ${channel.plan.what} · every ${channel.plan.everyDays}d${channel.plan.time ? ` from ${channel.plan.time}` : ""}${channel.plan.due ? " · due now" : ""}`
+    : "Off";
 
   return (
     <div className="rounded-lg border border-[#172A4A] bg-[#0A1224] p-2 space-y-1.5" data-testid={`yt-channel-${channel.id}`}>
@@ -3488,7 +3386,7 @@ function ChannelRow({
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="flex min-w-0 items-center gap-1.5 text-left cursor-pointer"
-          title="What should the agent publish on this channel?"
+          title="What the agent publishes here"
         >
           <Youtube className="h-3 w-3 shrink-0 text-red-500" />
           <span className="truncate text-[11px] font-bold text-gray-100">{channel.name}</span>
@@ -3506,15 +3404,15 @@ function ChannelRow({
 
       <p className="text-[10px] text-gray-400 leading-snug">{summary}</p>
       {channel.plan.lastError && (
-        <p className="rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[9px] text-amber-200/90">
-          Last run didn't finish: {channel.plan.lastError}
+        <p className="truncate rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[9px] text-amber-200/90" title={channel.plan.lastError}>
+          ✗ {channel.plan.lastError}
         </p>
       )}
 
       {open && (
         <div className="space-y-1.5 border-t border-[#172A4A]/70 pt-1.5" data-testid={`yt-plan-${channel.id}`}>
           <label className="block text-[9px] text-gray-400">
-            What to publish here
+            What
             <input
               value={what}
               onChange={(e) => setWhat(e.target.value)}
@@ -3531,8 +3429,8 @@ function ChannelRow({
                 onChange={(e) => setKind(e.target.value as "short" | "demo")}
                 className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
               >
-                <option value="short">Normal short</option>
-                <option value="demo">Demo — films the app</option>
+                <option value="short">Short</option>
+                <option value="demo">Demo</option>
               </select>
             </label>
             <label className="w-16 text-[9px] text-gray-400">
@@ -3547,7 +3445,7 @@ function ChannelRow({
               />
             </label>
             <label className="w-24 text-[9px] text-gray-400">
-              Not before
+              After
               <input
                 type="time"
                 value={time}
@@ -3557,9 +3455,7 @@ function ChannelRow({
             </label>
           </div>
           {kind === "demo" && (
-            <p className="text-[9px] text-cyan-300/80">
-              A demo films Soundwave's own window while it works — the app has to be open on screen for the picture to be right.
-            </p>
+            <p className="text-[9px] text-cyan-300/80">The app has to be on screen.</p>
           )}
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <button
@@ -3567,7 +3463,7 @@ function ChannelRow({
               onClick={() => onSave(channel.id, { plan: { what, kind, everyDays, time, auto } }, `Saved for “${channel.name}”`)}
               className="rounded bg-cyan-500 hover:bg-cyan-400 px-2 py-1 text-[10px] font-bold text-[#070B14] transition-all cursor-pointer"
             >
-              Save plan
+              Save
             </button>
             <button
               type="button"
@@ -3580,7 +3476,7 @@ function ChannelRow({
                 auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-[#172A4A] bg-[#070D18] text-gray-300 hover:border-cyan-500/50"
               }`}
             >
-              {auto ? "Autopilot ON" : "Autopilot off"}
+              {auto ? "Autopilot" : "Manual"}
             </button>
             <button
               type="button"
@@ -3588,7 +3484,7 @@ function ChannelRow({
               disabled={recording}
               className="rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 px-2 py-1 text-[10px] font-bold text-red-200 transition-all cursor-pointer disabled:opacity-50"
             >
-              {recording ? "Filming…" : "Record a demo now"}
+              {recording ? "Filming…" : "Demo"}
             </button>
             {!channel.default && (
               <button
@@ -3597,7 +3493,7 @@ function ChannelRow({
                 className="rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-300 hover:border-cyan-500/50 hover:text-cyan-200 transition-all cursor-pointer"
                 title="Where shorts go when you don't name a channel"
               >
-                Make default
+                Default
               </button>
             )}
             <button
@@ -3610,6 +3506,63 @@ function ChannelRow({
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One niche, one button: the title and an “i” at the right end. Pressing the
+ * “i” grows the button and shows the description under the title; pressing the
+ * button itself picks the niche. Nothing else is written on the grid.
+ */
+function NicheButton({
+  niche,
+  selected,
+  expanded,
+  onSelect,
+  onToggleInfo,
+}: {
+  niche: NicheInfo;
+  selected: boolean;
+  expanded: boolean;
+  onSelect: () => void;
+  onToggleInfo: () => void;
+}) {
+  return (
+    <div
+      className={`relative flex flex-col rounded-lg border transition-all ${
+        selected ? "border-cyan-400 bg-cyan-500/10" : "border-[#172A4A] bg-[#070D18]"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="flex w-full items-center gap-2 px-2 py-2 pr-7 text-left cursor-pointer"
+      >
+        {getNicheIcon(niche.iconName)}
+        <span className="truncate text-[11px] font-bold text-white">{niche.name}</span>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleInfo();
+        }}
+        aria-label={`What “${niche.name}” is about`}
+        aria-expanded={expanded}
+        title={expanded ? "Hide the description" : "What this niche is about"}
+        className={`absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full border transition-colors cursor-pointer ${
+          expanded
+            ? "border-cyan-400/70 text-cyan-300"
+            : "border-white/10 text-gray-500 hover:border-cyan-400/60 hover:text-cyan-300"
+        }`}
+      >
+        <Info className="h-3 w-3" />
+      </button>
+      {expanded && (
+        <p className="px-2 pb-2 text-[10px] leading-snug text-gray-400">{niche.desc}</p>
       )}
     </div>
   );

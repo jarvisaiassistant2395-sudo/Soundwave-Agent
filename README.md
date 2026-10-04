@@ -150,6 +150,19 @@ sidebar also has a **minimize** button (the small chevron at its top): it folds
 to a 4rem rail of icons — same tabs, labels as tooltips — and remembers the
 choice between restarts.
 
+**Minimal screens** (desktop 1.5.9): the same features with far less writing on
+them. Actions with an unmistakable icon are icon-only, with the words kept as
+the tooltip and the screen-reader name (`components/ui/IconButton.tsx`) —
+download the MP4, post to YouTube, open it on YouTube, refresh, forget a note,
+export the chat, test the voice. The Command Center's cards (System, Backgrounds,
+YouTube, Latest short, Uptime) keep their numbers and drop their captions; the
+chat header is two icons; the quick chips under the composer are two icons; the
+orb states are names with the descriptions in the tooltip. Settings, the short
+generator and the macros modal lost their paragraphs to one-line hints and
+tooltips. The niche picker is one button per niche, title only, with an "i" at
+the right end that grows the button to show the description underneath. In the
+Voice Library the "In use" badge no longer overflows the card (the row wraps).
+
 **The agent's eyes** (desktop 1.5.6): it can *read* what it is pointed at, with
 no setup, no logins and no API keys. `read_video` takes a YouTube link and comes
 back with the transcript (the uploader's subtitles, or YouTube's automatic

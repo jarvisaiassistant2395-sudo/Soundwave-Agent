@@ -29,21 +29,21 @@ export function Dashboard() {
           to="/agent"
           className="inline-flex h-11 items-center justify-center gap-2 rounded-btn bg-gradient-to-r from-blue-500 to-violet-500 px-5 font-semibold text-white shadow-glow transition-all duration-200 hover:from-blue-400 hover:to-violet-400"
         >
-          <Bot className="h-4 w-4" /> Open Command Center
+          <Bot className="h-4 w-4" /> Command Center
         </Link>
       </div>
 
       {/* Stats */}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Shorts made by the agent" value={loading ? "…" : String(shorts.length)} icon={<Clapperboard className="h-5 w-5" />} />
+        <StatCard title="Shorts made" value={loading ? "…" : String(shorts.length)} icon={<Clapperboard className="h-5 w-5" />} />
         <StatCard title="Posted to YouTube" value={loading ? "…" : String(onYouTube)} icon={<Youtube className="h-5 w-5" />} />
         <StatCard
-          title="Orbital NCG videos left"
+          title="Backgrounds left"
           value={orbital?.available != null ? String(orbital.available) : "—"}
           icon={<ArrowUpRight className="h-5 w-5" />}
           footer={
             <p className="mt-1 text-xs text-gray-500">
-              {orbital ? `${orbital.usedCount} used as backgrounds so far` : "Listed on the first Generate"}
+              {orbital ? `${orbital.usedCount} used` : "First check on Generate"}
             </p>
           }
         />
@@ -65,19 +65,19 @@ export function Dashboard() {
         <QuickAction
           icon={<Sparkles className="h-6 w-6" />}
           title="Generate a short"
-          desc="The agent writes it, narrates it and renders it over an unused Orbital NCG video."
+          desc="Written, narrated and rendered by the agent."
           to="/agent?tab=generator"
         />
         <QuickAction
           icon={<Bot className="h-6 w-6" />}
           title="Talk to the agent"
-          desc={`Ask for anything, or say "make a short about…". It answers as ${displayNameFor(voice)}.`}
+          desc={`Anything you'd type or say — answered as ${displayNameFor(voice)}.`}
           to="/agent"
         />
         <QuickAction
           icon={<Mic className="h-6 w-6" />}
           title="Pick the agent's voice"
-          desc="Listen to the Soundwave voices and choose who speaks and narrates."
+          desc="Hear every Soundwave voice and choose one."
           to="/voices"
         />
       </div>
@@ -102,7 +102,7 @@ export function Dashboard() {
             <EmptyState
               icon={<Clapperboard className="h-8 w-8" />}
               title="No shorts yet"
-              description="The agent makes every video. Ask it in the Command Center, or press Generate."
+              description="Ask the agent in the Command Center."
               action={
                 <Link
                   to="/agent?tab=generator"

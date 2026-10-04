@@ -1,14 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Mic,
-  Play,
-  Square,
-  Sparkles,
-  Volume2,
-} from "lucide-react";
+import { Mic, Play, Square, Sparkles, Volume2 } from "lucide-react";
 import { Navbar } from "../components/layout/Navbar";
 import { Badge } from "../components/ui/Badge";
+import { IconButton } from "../components/ui/IconButton";
 import { DEFAULT_VOICES, loadAgentVoice, SAMPLE_SENTENCE } from "../lib/voices";
 import { cn } from "../lib/cn";
 
@@ -79,32 +74,27 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
               <Sparkles className="h-7 w-7 text-cyan-400" />
               Neural Voice Library
             </h1>
-            <p className="mt-1 max-w-2xl text-xs sm:text-sm text-gray-400">
-              The Soundwave voices. Pick one with “Use in Command Center” and the agent replies in it and narrates your shorts with it.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">Replies and shorts.</p>
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-950/20 px-3 py-1.5 text-xs text-cyan-300 font-mono">
             <Volume2 className="h-4 w-4 text-cyan-400" />
-            <span>Agent voice: {DEFAULT_VOICES.find((v) => v.id === agentVoice)?.displayName ?? agentVoice}</span>
+            <span title="The voice in use now">{DEFAULT_VOICES.find((v) => v.id === agentVoice)?.displayName ?? agentVoice}</span>
           </div>
         </div>
 
         {/* ── NEURAL VOICE DIRECTORY ────────────────────────────────────── */}
         <div className="mt-8 space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-800 pb-4">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
-                Studio Neural Voice Catalog
-              </span>
-              <p className="text-xs text-gray-400 mt-0.5">High-RPM narrator voices for documentary, fact videos, and viral vertical shorts.</p>
-            </div>
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
+              {filtered.length} voices
+            </span>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search voices…"
+                placeholder="Search"
                 className="rounded-xl border border-gray-800 bg-[#0C1220] px-3.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
               />
               <div className="flex flex-wrap gap-1.5">
@@ -112,22 +102,24 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                   <button
                     key={g}
                     onClick={() => setGender(g)}
-                    className={`rounded-lg border px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                    title={g === "all" ? "Every voice" : `${g} voices`}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
                       gender === g ? "border-cyan-500 bg-cyan-500/20 text-cyan-300" : "border-gray-800 bg-[#0C1220] text-gray-400 hover:text-white"
                     }`}
                   >
-                    {g === "all" ? "All Genders" : g}
+                    {g === "all" ? "All" : g === "Male" ? "M" : "F"}
                   </button>
                 ))}
                 {(["all", "American", "British"] as AccentFilter[]).map((a) => (
                   <button
                     key={a}
                     onClick={() => setAccent(a)}
-                    className={`rounded-lg border px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                    title={a === "all" ? "Every accent" : `${a} accent`}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
                       accent === a ? "border-blue-500 bg-blue-500/20 text-blue-300" : "border-gray-800 bg-[#0C1220] text-gray-400 hover:text-white"
                     }`}
                   >
-                    {a === "all" ? "All Accents" : a}
+                    {a === "all" ? "All" : a === "American" ? "US" : "UK"}
                   </button>
                 ))}
               </div>
@@ -158,21 +150,24 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     <p className="truncate font-mono text-[10px] text-cyan-400/80">{v.id}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Badge tone={v.gender === "Male" ? "blue" : "violet"}>{v.gender}</Badge>
                   <Badge tone="gray">{v.accent}</Badge>
                   {v.id === agentVoice && (
                     <Badge tone="green" dot>
-                      Agent's voice
+                      In use
                     </Badge>
                   )}
                 </div>
-                <button
+                <IconButton
+                  label={v.id === agentVoice ? "Open the Command Center" : "Use this voice in the Command Center"}
                   onClick={() => navigate(`/agent?voice=${v.id}`)}
-                  className="mt-auto flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-gray-700 bg-[#070D18] text-xs font-semibold text-gray-300 transition-all hover:border-cyan-500 hover:text-white cursor-pointer"
+                  size="lg"
+                  tone={v.id === agentVoice ? "cyan" : "ghost"}
+                  className="mt-auto w-full rounded-xl"
                 >
-                  <Mic className="h-3.5 w-3.5 text-cyan-400" /> {v.id === agentVoice ? "Open Command Center" : "Use in Command Center"}
-                </button>
+                  <Mic className="text-cyan-400" />
+                </IconButton>
               </div>
             ))}
           </div>

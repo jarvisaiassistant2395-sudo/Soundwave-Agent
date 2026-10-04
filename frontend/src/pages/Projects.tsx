@@ -25,7 +25,6 @@ export function Projects() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-white">Projects</h1>
-          <p className="mt-1 text-sm text-gray-400">Every short the agent has made, newest first.</p>
         </div>
         <Link
           to="/agent?tab=generator"
@@ -45,7 +44,7 @@ export function Projects() {
               setQuery(e.target.value);
               setParams(e.target.value ? { q: e.target.value } : {}, { replace: true });
             }}
-            placeholder="Search by topic or background…"
+            placeholder="Search"
             className="w-full rounded-input border border-gray-700 bg-gray-900 py-2 pl-9 pr-3 text-sm text-white placeholder-gray-500"
             aria-label="Search shorts"
           />
@@ -73,7 +72,7 @@ export function Projects() {
                   ? `The app's server didn't answer (${error}).`
                   : query
                     ? "Try a different search."
-                    : "The agent makes every video. Ask it in the Command Center, or press Generate."
+                    : "Ask the agent in the Command Center."
               }
               action={
                 !error && !query ? (

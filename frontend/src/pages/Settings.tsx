@@ -343,29 +343,28 @@ function PreferencesTab() {
               options={AGENT_VOICES.map((v) => ({ value: v.id, label: agentVoiceLabel(v.id) }))}
               ariaLabel="Agent voice"
             />
-            <p className="mt-1 text-xs text-gray-500">The Soundwave voice the agent speaks with and narrates your shorts in.</p>
           </div>
           <div>
-            <label className="mb-1.5 block text-sm text-gray-300">Thinking Orb Visualizer Mode</label>
+            <label className="mb-1.5 block text-sm text-gray-300">Orb</label>
             <Select
               value={orbMode}
               onChange={setOrbMode}
               options={[
-                { value: "auto", label: "Auto Sync (Default — dynamic reactive states)" },
-                { value: "breathing", label: "Breathing (Morphing gentle standby ring)" },
-                { value: "listening", label: "Listening (Rolling rings waveform)" },
-                { value: "solving", label: "Solving (Scrambled concentric bands)" },
-                { value: "searching", label: "Searching (Sweeping scan meridian)" },
-                { value: "connecting", label: "Connecting (Constellation network)" },
-                { value: "weaving", label: "Weaving (Luminous triple plait)" },
-                { value: "composing", label: "Composing (Harmonic multi-band sash)" },
-                { value: "working", label: "Working (High-speed particle orbits)" },
-                { value: "shaping", label: "Shaping (Geometric metamorphosis)" },
+                { value: "auto", label: "Auto" },
+                { value: "breathing", label: "Breathing" },
+                { value: "listening", label: "Listening" },
+                { value: "solving", label: "Solving" },
+                { value: "searching", label: "Searching" },
+                { value: "connecting", label: "Connecting" },
+                { value: "weaving", label: "Weaving" },
+                { value: "composing", label: "Composing" },
+                { value: "working", label: "Working" },
+                { value: "shaping", label: "Shaping" },
               ]}
               ariaLabel="Orb mode"
             />
           </div>
-          <Button onClick={savePrefs}>Save preferences</Button>
+          <Button onClick={savePrefs}>Save</Button>
         </div>
       </Card>
 
@@ -374,7 +373,7 @@ function PreferencesTab() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-white">Download my data</p>
-              <p className="text-xs text-gray-500">GDPR — exports your profile, projects, and usage logs.</p>
+              <p className="text-xs text-gray-500">Your profile, projects and logs.</p>
             </div>
             <Button size="sm" variant="outline" icon={<Download className="h-4 w-4" />} onClick={downloadData}>Export</Button>
           </div>
@@ -502,7 +501,7 @@ function VoiceDesktopTab() {
               {status === null
                 ? "Checking the speech engine…"
                 : status.available
-                  ? `Speech is recognized on this PC by whisper.cpp (${status.model} model). Your voice is never uploaded.`
+                  ? `On this PC (whisper.cpp ${status.model}) — never uploaded.`
                   : `Voice input isn't available: ${status.reason ?? "the speech engine is missing"}`}
               {status?.lastError && <p className="mt-1 text-xs text-amber-300/90">Last problem: {status.lastError}</p>}
             </div>
@@ -516,7 +515,7 @@ function VoiceDesktopTab() {
               onClick={() => (test === "listening" ? void finishTest("manual") : void startTest())}
               disabled={test === "transcribing" || status?.available === false}
             >
-              {test === "listening" ? "Stop" : test === "transcribing" ? "Transcribing…" : "Test microphone"}
+              {test === "listening" ? "Stop" : test === "transcribing" ? "Transcribing…" : "Test mic"}
             </Button>
             {test === "listening" && (
               <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -532,13 +531,13 @@ function VoiceDesktopTab() {
           </div>
 
           <div>
-            <SettingRow title="Send when I stop talking" hint="Tap the mic (or the shortcut) and just talk — it sends after a short pause. Off: tap again to send.">
+            <SettingRow title="Send when I stop talking" hint="It sends after a pause.">
               <Toggle checked={prefs.autoStop} onChange={(v) => updatePrefs({ autoStop: v })} label="Send when I stop talking" />
             </SettingRow>
-            <SettingRow title="Sound cues" hint="A soft chime when listening starts and stops.">
+            <SettingRow title="Sound cues" hint="Chime on listen.">
               <Toggle checked={prefs.earcons} onChange={(v) => updatePrefs({ earcons: v })} label="Sound cues" />
             </SettingRow>
-            <SettingRow title="Speak replies aloud" hint="The agent answers in its Soundwave voice.">
+            <SettingRow title="Speak replies aloud">
               <Toggle checked={prefs.speakReplies} onChange={(v) => updatePrefs({ speakReplies: v })} label="Speak replies aloud" />
             </SettingRow>
           </div>
@@ -547,9 +546,7 @@ function VoiceDesktopTab() {
 
       <Card title="Desktop app" icon={<MonitorSmartphone className="h-4 w-4" />}>
         {!desktop ? (
-          <p className="text-sm text-gray-400">
-            The global voice shortcut, the tray icon and Windows notifications are part of the Soundwave AI desktop app for Windows.
-          </p>
+          <p className="text-sm text-gray-400">The shortcut, tray icon and notifications need the desktop app.</p>
         ) : !desk ? (
           <p className="flex items-center gap-2 text-sm text-gray-400">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
@@ -560,9 +557,9 @@ function VoiceDesktopTab() {
               title="Voice shortcut"
               hint={
                 !desk.hotkeyEnabled ? (
-                  "Off — use the mic button in the Command Center."
+                  "Off."
                 ) : desk.hotkeyRegistered ? (
-                  <>Works from any app: press it, talk, and the voice bar answers. Press it again to send right away.</>
+                  <>Works from any app.</>
                 ) : (
                   <span className="text-amber-300">{desk.hotkeyError ?? "Another app uses this shortcut."}</span>
                 )
@@ -578,13 +575,13 @@ function VoiceDesktopTab() {
                 />
               </div>
             </SettingRow>
-            <SettingRow title="Keep running in the tray" hint="Closing the window keeps Soundwave listening for the shortcut and finishing your shorts. Quit from the tray icon.">
+            <SettingRow title="Keep running in the tray" hint="Closing the window keeps it running.">
               <Toggle checked={desk.closeToTray} onChange={(v) => void updateDesk({ closeToTray: v })} label="Keep running in the tray" disabled={savingDesk} />
             </SettingRow>
-            <SettingRow title="Start with Windows" hint="Starts quietly in the tray when you sign in, so the shortcut always works.">
+            <SettingRow title="Start with Windows" hint="Quiet start in the tray.">
               <Toggle checked={desk.openAtLogin} onChange={(v) => void updateDesk({ openAtLogin: v })} label="Start with Windows" disabled={savingDesk} />
             </SettingRow>
-            <SettingRow title="Notifications" hint="A Windows notification when a short is ready or fails while you're in another app.">
+            <SettingRow title="Notifications" hint="When a short is ready or fails.">
               <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"

@@ -142,9 +142,9 @@ export function MorningTab() {
           </div>
         </div>
 
-        <p className="mb-2 mt-5 text-sm font-medium text-gray-300">Topics — anything you want to hear about</p>
+        <p className="mb-2 mt-5 text-sm font-medium text-gray-300">Topics</p>
         <div className="space-y-2" data-testid="briefing-topics">
-          {plan.topics.length === 0 && <p className="text-sm text-gray-500">No topics yet — the briefing has the weather, your shorts and ideas.</p>}
+          {plan.topics.length === 0 && <p className="text-sm text-gray-500">No topics — weather and your shorts only.</p>}
           {plan.topics.map((t) => (
             <div key={t} className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-2.5" data-testid="briefing-topic">
               <span className="min-w-0 truncate text-sm text-gray-200">{t}</span>
@@ -173,7 +173,7 @@ export function MorningTab() {
                 data-testid="briefing-topic-input"
               />
               <Button variant="outline" onClick={() => void addTopic(topic)} disabled={busy || !topic.trim()} icon={<Plus className="h-4 w-4" />}>
-                Add topic
+                Add
               </Button>
             </div>
             {SUGGESTED.length > 0 && (
@@ -194,15 +194,14 @@ export function MorningTab() {
           </>
         )}
         <p className="mt-4 text-xs text-gray-500">
-          Saved in Soundwave's memory, so your phone knows them too — you can also just tell the agent (“brief me on trending GitHub repos”). Each morning Gemini searches the web
-          for every topic (free with a free key; if search isn't available it reads GitHub, Hacker News and Google News instead) and only tells you what it found.
+          Kept in memory (your phone knows them too). Each morning Gemini searches the web for every topic, free with a free key.
         </p>
       </Card>
 
       <Card title="Open these on my PC" icon={<Globe className="h-4 w-4" />}>
-        {!settings.canOpen && <p className="mb-3 text-xs text-amber-300">Only the desktop app can open things on the PC.</p>}
+        {!settings.canOpen && <p className="mb-3 text-xs text-amber-300">Desktop app only.</p>}
         <div className="space-y-2" data-testid="morning-items">
-          {settings.items.length === 0 && <p className="text-sm text-gray-500">Nothing yet — add a website or an app below.</p>}
+          {settings.items.length === 0 && <p className="text-sm text-gray-500">Nothing yet.</p>}
           {settings.items.map((item, i) => (
             <div key={`${item.kind}-${item.value}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-2.5">
               <span className="flex min-w-0 items-center gap-2 text-sm text-gray-200">
@@ -250,7 +249,7 @@ export function MorningTab() {
         <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-white">Open them when I start it from my phone</p>
-            <p className="mt-0.5 text-xs text-gray-500">Off: from the phone you only get the briefing. When the PC is off the phone always gives the briefing only.</p>
+            Off: briefing only, also when the PC is off.
           </div>
           <Toggle checked={settings.openFromPhone} onChange={(v) => void save({ openFromPhone: v })} label="Open them when I start it from my phone" disabled={busy} />
         </div>
@@ -274,12 +273,12 @@ export function MorningTab() {
           </Button>
         </div>
         {weather && <p className={cn("mt-2 text-xs", weather.ok ? "text-emerald-300" : "text-amber-300")}>{weather.text}</p>}
-        <p className="mt-2 text-xs text-gray-500">Weather by Open-Meteo (free, no account). Leave empty to use your PC's time zone city.</p>
+        Weather by Open-Meteo. Empty = your PC's city.
 
         <div className="mt-5 flex items-center justify-between gap-4 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3">
           <div className="min-w-0">
             <p className="text-sm font-medium text-white">Include three short ideas</p>
-            <p className="mt-0.5 text-xs text-gray-500">Fresh topics for your channel that you haven't made yet (needs a Gemini key in Settings → Brain).</p>
+            Fresh topic ideas for your channel (needs a Gemini key).
           </div>
           <Toggle checked={settings.ideas} onChange={(v) => void save({ ideas: v })} label="Include three short ideas" disabled={busy} />
         </div>

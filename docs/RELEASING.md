@@ -351,6 +351,22 @@ dead sign-in, deltas, and the wording), the guide checks in
 labels as tooltips, still minimized after a reload) and proves a voice set on
 the PC's conversation reaches the open window.
 
+1.5.9 is the minimal pass over the whole UI: the screens keep the information
+and drop the prose. Buttons that had a caption now show the icon alone (download
+the MP4, post to YouTube, open on YouTube, refresh, forget a note, export the
+chat) — every one of them keeps its tooltip and its accessible name, so nothing
+became unfindable; the checklists inside Settings, the generator modal and the
+Command Center's cards lost their explanatory paragraphs to those tooltips, the
+orb-state grid keeps the names and moves the descriptions into the title, and
+system stats drop the two labelled bars that repeated the tiles. The niche
+picker is the shape you asked for: one button per niche carrying only its title
+and an "i" at the right end — the "i" grows that button and prints its
+description underneath (`NicheButton` in `AgentHub.tsx`). The Voice Library's
+"Agent's voice" badge no longer pushes itself out of the card (the badge row
+wraps, and the badge says "In use"). E2E follows the two labels it clicked by
+name: the chat placeholder is now `Message…` and the settings tab carries
+`data-testid="youtube-tab"`.
+
 ## Versioning
 
 Bump `desktop/package.json` → `version` (this drives artifact names), tag

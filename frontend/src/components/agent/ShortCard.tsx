@@ -1,4 +1,5 @@
 import { Download, ExternalLink, Youtube } from "lucide-react";
+import { IconLink } from "../ui/IconButton";
 import { Badge } from "../ui/Badge";
 import { formatDate, formatDuration } from "../../lib/format";
 import { displayNameFor } from "../../lib/voices";
@@ -30,7 +31,7 @@ export function ShortCard({ short }: { short: AgentShort }) {
         {s.voice && <Badge tone="blue">{displayNameFor(s.voice)}</Badge>}
         {s.youtubeUrl && (
           <Badge tone="red" dot>
-            On YouTube
+            Posted
           </Badge>
         )}
       </div>
@@ -49,24 +50,15 @@ export function ShortCard({ short }: { short: AgentShort }) {
         </a>
       )}
 
-      <div className="mt-auto flex gap-2">
-        <a
-          href={shortDownloadUrl(short)}
-          download
-          className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-btn bg-blue-600 text-xs font-semibold text-white transition-colors hover:bg-blue-500"
-        >
-          <Download className="h-3.5 w-3.5" /> Download
-        </a>
+      <div className="mt-auto flex justify-end gap-2">
         {s.youtubeUrl && (
-          <a
-            href={s.youtubeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-btn border border-red-500/40 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-600/20"
-          >
-            <Youtube className="h-3.5 w-3.5" /> Watch
-          </a>
+          <IconLink label="Watch on YouTube" href={s.youtubeUrl} target="_blank" rel="noopener noreferrer" size="lg" tone="red">
+            <Youtube />
+          </IconLink>
         )}
+        <IconLink label="Download the MP4" href={shortDownloadUrl(short)} download size="lg" tone="cyan" className="flex-1">
+          <Download />
+        </IconLink>
       </div>
     </div>
   );

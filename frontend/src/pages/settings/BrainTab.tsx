@@ -249,21 +249,21 @@ export function BrainTab() {
         ) : status.configured ? (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-900/40 px-4 py-3 text-sm text-gray-300">
             <KeyRound className="h-4 w-4 shrink-0 text-blue-400" />
-            Key saved. Press <span className="font-medium text-white">Test</span> to check that Gemini answers.
+            Key saved — press <span className="font-medium text-white">Test</span>.
           </div>
         ) : (
           <div className="mb-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-100" data-testid="brain-setup">
-            <p className="font-medium text-white">Get your free Gemini API key — it takes a minute:</p>
+            <p className="font-medium text-white">Free Gemini API key:</p>
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-blue-100/90">
               <li>
                 Open{" "}
                 <a href={GET_KEY_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-white underline underline-offset-2">
                   Google AI Studio <ExternalLink className="h-3 w-3" />
                 </a>{" "}
-                and sign in with your Google account.
+                and sign in.
               </li>
-              <li>Click “Create API key”, then copy it.</li>
-              <li>Paste it below and press “Save & test”.</li>
+              <li>Create an API key, copy it.</li>
+              <li>Paste it below, press Save &amp; test.</li>
             </ol>
           </div>
         )}
@@ -279,7 +279,7 @@ export function BrainTab() {
                     Saved on this PC: <span className="font-mono text-gray-300" data-testid="brain-key-hint">{status.keyHint}</span>
                   </>
                 ) : status.source === "env" ? (
-                  "Using GEMINI_API_KEY from this computer's environment. A key saved here takes its place."
+                  "From the environment; a key saved here wins."
                 ) : (
                   "None yet."
                 )}
@@ -427,7 +427,7 @@ export function BrainTab() {
                   free tier (Google charges per search after 5,000 a month).
                 </p>
                 {status.webSearch && status.searchUnavailable && (
-                  <p className="mt-1 text-xs text-amber-300">This key can't use Google Search (free tier), so the agent answers without it.</p>
+                  <p className="mt-1 text-xs text-amber-300">No Google Search on the free tier — answers without it.</p>
                 )}
               </div>
               <Toggle checked={status.webSearch} onChange={(v) => void change({ webSearch: v })} label="Search the web" disabled={Boolean(busy)} />

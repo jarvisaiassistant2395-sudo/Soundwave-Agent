@@ -138,10 +138,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="text-sm font-semibold text-white tracking-tight group-hover:text-blue-400 transition-colors">
                 Soundwave <span className="text-blue-400">AI</span>
               </span>
-              <span className="text-[11px] text-gray-400 flex items-center gap-1">
-                Command Suite
-                <ChevronDown className="h-3 w-3 text-gray-400" />
-              </span>
             </div>
           )}
         </NavLink>
@@ -191,7 +187,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects..."
+              placeholder="Search"
               className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-gray-400 transition-colors hover:border-white/[0.12] focus:border-blue-500 focus:outline-none"
             />
           </form>
@@ -227,13 +223,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             "flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-xs text-gray-400",
             rail && "justify-center px-0",
           )}
-          title="Fleet Online · 4 Agents"
+          title="Soundwave is online"
         >
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
-          {!rail && <span className="truncate">Fleet Online · 4 Agents</span>}
+          {!rail && <span className="truncate">Online</span>}
         </div>
       </div>
 

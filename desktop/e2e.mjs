@@ -384,8 +384,8 @@ try {
   const pill = (await main.textContent('[data-testid="brain-pill"]'))?.trim();
   if (!/Gemini 3\.8 Flash/.test(pill ?? "")) await fail(`Command Center: the brain pill says "${pill}"`);
   const question = "hello from the end-to-end test";
-  await main.fill('input[placeholder="Type a message..."]', question);
-  await main.press('input[placeholder="Type a message..."]', "Enter");
+  await main.fill('input[placeholder="Message…"]', question);
+  await main.press('input[placeholder="Message…"]', "Enter");
   await main.waitForFunction((t) => document.body.innerText.includes(t), FAKE_HELLO, { timeout: 45_000 });
   const asked = fakeGemini.seen.filter((r) => r.url?.endsWith(":generateContent")).at(-1);
   const lastTurn = asked?.body?.contents?.at(-1)?.parts?.[0]?.text;
@@ -473,7 +473,7 @@ try {
   const memoryNow = await main.evaluate(async () => (await fetch("/api/v1/memory")).json());
   if (!memoryNow.notes?.some((n) => /space facts/.test(n.text))) await fail(`Memory tab: the note isn't in the agent's memory (${JSON.stringify(memoryNow).slice(0, 200)})`);
   await main.screenshot({ path: path.join(shotsDir, "9-memory-tab.png"), timeout: 15_000 }).catch(() => {});
-  await main.click('button:has-text("YouTube & Shorts")');
+  await main.click('[data-testid="youtube-tab"]');
   await main.waitForSelector('[data-testid="yt-connect"]', { timeout: 15_000 });
   const ytMode = await main.evaluate(async () => (await fetch("/api/v1/youtube/status")).json());
   const oneClickPanel = await main.$('[data-testid="yt-oneclick"]');
@@ -494,10 +494,10 @@ try {
   // to ignore red. What matters is that the answer is reported every run.
   at("agent eyes (real video + real page)");
   await main.goto(`${appBase}/agent`);
-  await main.waitForSelector('input[placeholder="Type a message..."]', { timeout: 30_000 });
+  await main.waitForSelector('input[placeholder="Message…"]', { timeout: 30_000 });
   const watchUrl = "https://www.youtube.com/watch?v=iG9CE55wbtY"; // a TED talk with human-made English subtitles
-  await main.fill('input[placeholder="Type a message..."]', `read this video and tell me what it says: ${watchUrl}`);
-  await main.press('input[placeholder="Type a message..."]', "Enter");
+  await main.fill('input[placeholder="Message…"]', `read this video and tell me what it says: ${watchUrl}`);
+  await main.press('input[placeholder="Message…"]', "Enter");
   const eyesSeen = async () =>
     main
       .evaluate(() => {
@@ -520,8 +520,8 @@ try {
     const kind = /READ_VEOK .+? \((manual|auto)\)/.exec(videoRead)?.[1] ?? "?";
     ok(`the agent read a real YouTube video (${kind} captions): “${title}”`);
   }
-  await main.fill('input[placeholder="Type a message..."]', "read this page and tell me what it says: https://example.com/");
-  await main.press('input[placeholder="Type a message..."]', "Enter");
+  await main.fill('input[placeholder="Message…"]', "read this page and tell me what it says: https://example.com/");
+  await main.press('input[placeholder="Message…"]', "Enter");
   let pageRead = "";
   for (let i = 0; i < 30 && !pageRead; i++) {
     await new Promise((r) => setTimeout(r, 1000));
@@ -602,9 +602,9 @@ try {
   // The agent downloads or reads the file, listens with whisper.cpp, picks the
   // moment and renders a vertical clip with captions — watch it in the chat.
   await main.goto(`${appBase}/agent`);
-  await main.waitForSelector('input[placeholder="Type a message..."]', { timeout: 30_000 });
-  await main.fill('input[placeholder="Type a message..."]', `cut 1 clip out of this video: ${clipSource}`);
-  await main.press('input[placeholder="Type a message..."]', "Enter");
+  await main.waitForSelector('input[placeholder="Message…"]', { timeout: 30_000 });
+  await main.fill('input[placeholder="Message…"]', `cut 1 clip out of this video: ${clipSource}`);
+  await main.press('input[placeholder="Message…"]', "Enter");
   // The clips pipeline starts in the background; if its first line never shows,
   // say what the chat actually contains instead of a bare 60 s timeout.
   const chatNow = () =>

@@ -93,7 +93,7 @@ function PairingQr({ link }: { link: string }) {
     <div
       className="h-52 w-52 shrink-0 overflow-hidden rounded-xl bg-white p-2 shadow-[0_0_40px_-10px_rgba(99,102,241,0.6)] [&>svg]:h-full [&>svg]:w-full"
       role="img"
-      aria-label="Pairing QR code — scan it with the Soundwave phone app"
+      aria-label="Pairing QR code for the Soundwave phone app"
       data-testid="pairing-qr"
       // The SVG is generated locally by the qrcode library from our own link.
       dangerouslySetInnerHTML={{ __html: svg }}
@@ -148,7 +148,7 @@ export function PhoneTab() {
       const next = await call("POST", "/enabled", { enabled });
       setStatus(next);
       if (enabled && next.error) toast.error("Couldn't open the phone connection", next.error);
-      else if (enabled) toast.success("Phone access on", "Scan the code with the Soundwave app. If Windows asks, allow Soundwave AI on private networks.");
+      else if (enabled) toast.success("Phone access on", "Scan the code with the Soundwave app.");
     } catch (e) {
       toast.error("Couldn't change phone access", (e as Error).message);
     } finally {
@@ -214,7 +214,7 @@ export function PhoneTab() {
             <p className="text-sm font-medium text-white">Let my phone connect</p>
             <p className="mt-0.5 text-xs text-gray-500">
               {!status.enabled ? (
-                "Off — no phone can reach Soundwave on this PC."
+                "Off — no phone reaches this PC."
               ) : status.error ? (
                 <span className="text-amber-300">{status.error}</span>
               ) : status.listening ? (
@@ -235,8 +235,8 @@ export function PhoneTab() {
             <p className="text-sm font-medium text-white">Chat from the phone when this PC is off</p>
             <p className="mt-0.5 text-xs text-gray-500">
               {status.shareBrain !== false
-                ? "On — your paired phones get a copy of your Gemini key (Settings → Brain) and the agent's memory, end-to-end encrypted, so they can keep chatting with Gemini directly while this PC is off. What's said there comes back here when they reconnect."
-                : "Off — phones only chat while this PC runs. They delete their copy of the key the next time they connect."}
+                ? "On — phones get your Gemini key and memory, end-to-end encrypted, so they keep chatting with the agent."
+                : "Off — phones chat only while this PC runs; their key copy is deleted next time they connect."}
             </p>
           </div>
           <Toggle
