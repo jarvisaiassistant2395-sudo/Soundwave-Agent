@@ -178,6 +178,22 @@ function supportsLoginItems() {
 function publicState() {
   return {
     ...settings,
+    wake: {
+      enabled: settings.wakeEnabled,
+      running: alive(wakeWindow),
+      phrases: [...DEFAULT_WAKE_PHRASES],
+      paused: wakePaused.size > 0,
+      state: wakeInfo.state,
+      detail: wakeInfo.detail,
+      heard: wakeInfo.heard,
+      ignored: wakeInfo.ignored,
+      lastHeard: wakeInfo.lastHeard,
+      lastHit: wakeInfo.lastHit,
+    },
+    pushToTalkStatus: {
+      enabled: settings.pushToTalk && settings.hotkeyEnabled,
+      ...(keyWatcher ? keyWatcher.info() : { supported: false, ready: false, down: false, problem: "off", keys: [] }),
+    },
     version: app.getVersion(),
     hotkeyLabel: hotkeyLabel(settings.hotkey),
     hotkeyRegistered: hotkeyState.registered,

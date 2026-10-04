@@ -220,9 +220,16 @@ try {
     const d = window.soundwaveDesktop;
     if (!d?.isDesktop) return null;
     const s = await d.getState();
-    return { version: s.version, closeToTray: s.closeToTray, choices: s.hotkeyChoices.length };
+    return {
+      version: s.version,
+      closeToTray: s.closeToTray,
+      choices: s.hotkeyChoices.length,
+      wakeStatus: Boolean(s.wake && typeof s.wake.state === "string"),
+      pushToTalkStatus: Boolean(s.pushToTalkStatus && typeof s.pushToTalkStatus.ready === "boolean"),
+    };
   });
   if (!bridge) await fail("window.soundwaveDesktop (preload bridge) is missing in the page");
+  if (!bridge.wakeStatus || !bridge.pushToTalkStatus) await fail(`desktop bridge status is incomplete (wake ${bridge.wakeStatus}, push-to-talk ${bridge.pushToTalkStatus})`);
   ok(`desktop bridge works (app ${bridge.version}, close-to-tray ${bridge.closeToTray}, ${bridge.choices} shortcut choices)`);
 
   // ── 1b. The sidebar's minimize button (rail, remembered) ─────────────────
