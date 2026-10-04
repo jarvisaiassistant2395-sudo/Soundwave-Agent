@@ -235,6 +235,15 @@ describe("the Soundwave guide", () => {
     expect(textOf("reading")).toMatch(/r\.jina\.ai/);
     expect(textOf("reading")).toMatch(/can't read Twitter, Instagram, TikTok, Reddit/);
     expect(textOf("command-center")).toMatch(/🌅 Morning Setup/);
+    // The two new abilities have to be explained where the agent looks first.
+    expect(textOf("voices")).toMatch(/Ask the agent to change it in chat — "use Ava", "switch to Ryan"/);
+    expect(textOf("voices")).toMatch(/refused honestly/);
+    expect(textOf("views")).toMatch(/how many views do my videos have\?/);
+    expect(textOf("views")).toMatch(/\+412 views since yesterday/);
+    expect(textOf("views")).toMatch(/says that plainly instead of showing a zero/);
+    expect(guide.GUIDE_IDS).toContain("views");
+    expect(guide.searchGuide("how many views did my videos get").map((s) => s.id)).toContain("views");
+    expect(guide.searchGuide("change your voice to a british one").map((s) => s.id)).toContain("voices");
     expect(guide.GUIDE_SECTIONS.map((s) => s.text).join("\n")).not.toMatch(/Deep Focus|Pomodoro/);
     expect(guide.searchGuide("my phone can't connect to the pc").map((s) => s.id)).toContain("phone");
     expect(guide.searchGuide("how to get a gemini api key")[0]!.id).toBe("brain");

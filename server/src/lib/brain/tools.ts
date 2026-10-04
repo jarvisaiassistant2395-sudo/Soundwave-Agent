@@ -4,7 +4,11 @@
 // on the reply (a short to follow, a video to show) for the app to render.
 
 import { ago, listShorts } from "../shortsLibrary.js";
-import { appendToConversation, findJob } from "../conversation.js";
+import { appendToConversation, findJob, getConversation, setConversationVoice } from "../conversation.js";
+import { VOICES, resolveVoice, voiceNames, voiceNickname } from "../voices.js";
+import { DEFAULT_AGENT_VOICE } from "../edgeTts.js";
+import { channelInsights, legacyChannelInsight } from "../channelInsights.js";
+import { viewsBriefing, viewsSummary } from "./core/insights.js";
 import { chatTime, newMessageId, type ChatMessage } from "../chatMessages.js";
 import { connectedPhone, pairedPhones } from "../companion/service.js";
 import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
@@ -823,6 +827,128 @@ AGENT_TOOLS.push(
         ...(connected
           ? { note: "The phone has the alarm now." }
           : { note: "The phone isn't connected at this moment, so it will set the alarm the next time its app is open — tell the user that." }),
+      };
+    },
+  },
+);
+
+// ── The agent's own voice, and how the videos are doing ─────────────────────
+
+AGENT_TOOLS.push(
+  {
+    declaration: {
+      name: "list_voices",
+      description:
+        "Every Soundwave voice the agent can speak with (replies on the PC and the phone, and the narration of the shorts it makes): each one's name, its voice id, and which one is in use now. Call this whenever the user asks about the voice, wants a different one, or names a voice you are not sure about — never invent a voice name.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    available: (ctx) => ctx.desktop,
+    async run() {
+      const current = getConversation().voice || DEFAULT_AGENT_VOICE;
+      return {
+        current: current,
+        currentName: voiceNickname(VOICES.find((v) => v.id === current)?.displayName ?? current),
+        voices: VOICES.map((v) => ({
+          name: voiceNickname(v.displayName),
+          id: v.id,
+          about: `${v.gender} voice, ${v.accent} accent${v.id.includes("Multilingual") ? " — the most natural generation" : ""}`,
+          inUse: v.id === current,
+        })),
+        note: "The names in `name` are what the user says (“use Ava”); `set_voice` takes those, or the id.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "set_voice",
+      description:
+        "Switch the voice the agent speaks with, from the next reply on: spoken answers on the PC and the phone, and the narration of the shorts it makes. Pass the name the user used (“Ava”, “Ryan”, “Sonia”) or the full voice id. Call list_voices first when the user is vague or you are unsure of the name — this tool refuses a name that isn't a real Soundwave voice and tells you the ones that are.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          voice: { type: "STRING", description: 'The voice to use, e.g. "Ava", "Ryan", "en-GB-SoniaNeural".' },
+        },
+        required: ["voice"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const asked = str(args.voice, 60);
+      if (!asked) return { changed: false, reason: "Which voice? Tell me the name — I can list them.", voices: voiceNames() };
+      const meta = resolveVoice(asked);
+      if (!meta) {
+        return {
+          changed: false,
+          reason: `There's no Soundwave voice called “${asked}”.`,
+          voices: voiceNames(),
+          note: "Ask the user which of these they meant, or offer the closest ones — do not guess and do not claim it changed.",
+        };
+      }
+      setConversationVoice(meta.id);
+      ctx.effects.log.push(`Voice → ${voiceNickname(meta.displayName)}`);
+      ctx.effects.tag ??= "VOICE";
+      return {
+        changed: true,
+        voice: meta.id,
+        name: voiceNickname(meta.displayName),
+        usedFor: "spoken replies on the PC and the phone, and the narration of new shorts",
+        note: `From now on I speak with ${voiceNickname(meta.displayName)} (${meta.gender.toLowerCase()}, ${meta.accent.toLowerCase()} accent) — including the shorts I make.`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "youtube_views",
+      description:
+        "How the person's videos are doing on YouTube right now: for every channel they connected — total views, subscribers, video count, and the latest uploads with each video's views. It also reports what changed since the last time it looked, so it can say “+412 views since yesterday”. Use it whenever the user asks about views, how a video or the channel is doing, or asks to be briefed on them.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          channel: { type: "STRING", description: "Optional: one channel by name (see list_youtube_channels). Leave out for all of them." },
+          videos: { type: "NUMBER", description: "Optional: how many recent videos per channel (1–10, default 5)." },
+        },
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    async run(args) {
+      const channel = str(args.channel, 80) || undefined;
+      const videos = typeof args.videos === "number" && Number.isFinite(args.videos) ? Math.round(args.videos) : undefined;
+      const result = await channelInsights({ channel, recent: videos });
+      const channels = [...result.channels];
+      let errors = [...result.errors];
+      // A machine that connected before channels existed: the one legacy
+      // account still gets its numbers reported, in the same shape.
+      if (!channels.length && !channel) {
+        const legacy = await legacyChannelInsight({ recent: videos });
+        if (legacy) {
+          channels.push(legacy);
+          errors = errors.filter((e) => !/No YouTube channel is connected/.test(e));
+        }
+      }
+      if (!channels.length) {
+        return {
+          ok: false,
+          reason: errors[0] ?? "No YouTube channel is connected yet — connect one in Settings → YouTube & Shorts and I'll report its views.",
+          errors,
+        };
+      }
+      return {
+        ok: true,
+        checkedAt: result.checkedAt,
+        report: viewsBriefing(channels, errors, new Date(result.checkedAt)),
+        summary: viewsSummary(channels),
+        channels: channels.map((c) => ({
+          name: c.name,
+          channelTitle: c.channelTitle,
+          subscribers: c.subscribers,
+          totalViews: c.views,
+          videos: c.videos,
+          gainedViewsSinceLastCheck: c.gainedViews,
+          lastCheckedAt: c.lastCheckedAt,
+          latest: c.recent.map((v) => ({ title: v.title, views: v.views, postedAt: v.publishedAt, url: v.url })),
+        })),
+        errors,
       };
     },
   },

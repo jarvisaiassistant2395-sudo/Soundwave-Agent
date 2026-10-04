@@ -4,6 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Bot,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleUserRound,
   CreditCard,
   FolderKanban,
@@ -51,6 +53,17 @@ const manageNav: NavItem[] = [
   { to: "/help", label: "Help & Docs", icon: <HelpCircle className="h-4 w-4" /> },
 ];
 
+/** "Minimize the sidebar": the rail, remembered between windows and restarts. */
+export const SIDEBAR_COLLAPSED_KEY = "soundwave_sidebar_collapsed";
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const user = auth.user;
@@ -59,6 +72,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // The narrow rail state. Only the desktop sidebar collapses — the phone-sized
+  // drawer is already out of the way.
+  const [collapsed, setCollapsed] = useState(loadSidebarCollapsed);
+
+  const toggleCollapsed = () => {
+    setCollapsed((was) => {
+      const next = !was;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* storage unavailable */
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     setMobileOpen(false);
@@ -95,91 +123,117 @@ export function AppShell({ children }: { children: ReactNode }) {
   // page itself never scrolls (its left column and chat scroll on their own).
   const isCommandCenter = location.pathname.startsWith("/agent");
 
-  const sidebar = (
-    <div className="flex h-full flex-col bg-[#0F1017] text-gray-300 select-none">
+  /**
+   * The sidebar. `rail` is the minimized form: a 4rem column with the icons and
+   * nothing else — the same buttons, reachable, with the labels as tooltips.
+   */
+  const renderSidebar = (rail: boolean) => (
+    <div className="flex h-full flex-col bg-[#0F1017] text-gray-300 select-none" data-testid="sidebar" data-collapsed={rail ? "true" : "false"}>
       {/* Workspace Brand Switcher */}
-      <div className="flex h-14 items-center justify-between border-b border-white/[0.06] px-3.5">
-        <NavLink to="/agent" className="flex items-center gap-2.5 group">
+      <div className={cn("flex h-14 items-center border-b border-white/[0.06]", rail ? "justify-center px-1" : "justify-between px-3.5")}>
+        <NavLink to="/agent" className="flex items-center gap-2.5 group" title="Soundwave AI — Command Center">
           <LogoMark className="h-7 w-7" />
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-white tracking-tight group-hover:text-blue-400 transition-colors">
-              Soundwave <span className="text-blue-400">AI</span>
-            </span>
-            <span className="text-[11px] text-gray-400 flex items-center gap-1">
-              Command Suite
-              <ChevronDown className="h-3 w-3 text-gray-400" />
-            </span>
-          </div>
+          {!rail && (
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold text-white tracking-tight group-hover:text-blue-400 transition-colors">
+                Soundwave <span className="text-blue-400">AI</span>
+              </span>
+              <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                Command Suite
+                <ChevronDown className="h-3 w-3 text-gray-400" />
+              </span>
+            </div>
+          )}
         </NavLink>
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-white/[0.06] hover:text-white lg:hidden transition-colors"
-          onClick={() => setMobileOpen(false)}
-          aria-label="Close menu"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {!rail && (
+          <>
+            {/* Minimize: the narrow rail (remembered between restarts). */}
+            <button
+              className="hidden h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-white/[0.06] hover:text-white lg:flex transition-colors"
+              onClick={toggleCollapsed}
+              aria-label="Minimize the sidebar"
+              aria-expanded={!collapsed}
+              title="Minimize the sidebar"
+              data-testid="sidebar-toggle"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-white/[0.06] hover:text-white lg:hidden transition-colors"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </>
+        )}
       </div>
+      {rail && (
+        <div className="flex justify-center pt-2">
+          <button
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.1] bg-[#16171F] text-gray-400 transition-colors hover:text-white"
+            onClick={toggleCollapsed}
+            aria-label="Expand the sidebar"
+            aria-expanded={!collapsed}
+            title="Expand the sidebar"
+            data-testid="sidebar-toggle"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
-      {/* Global Quick Search Input in Sidebar */}
-      <div className="px-3 pt-3">
-        <form onSubmit={onSearch} className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search projects..."
-            className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-gray-400 transition-colors hover:border-white/[0.12] focus:border-blue-500 focus:outline-none"
-          />
-        </form>
-      </div>
+      {/* Global Quick Search Input in Sidebar (hidden in the rail — no room for it) */}
+      {!rail && (
+        <div className="px-3 pt-3">
+          <form onSubmit={onSearch} className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects..."
+              className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] py-1.5 pl-8 pr-2.5 text-xs text-white placeholder-gray-400 transition-colors hover:border-white/[0.12] focus:border-blue-500 focus:outline-none"
+            />
+          </form>
+        </div>
+      )}
 
       {/* Grouped Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4" aria-label="Main navigation">
-        {/* Group: Workspace */}
-        <div>
-          <div className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
-            Workspace
+      <nav className={cn("flex-1 overflow-y-auto py-3 space-y-4", rail ? "px-2" : "px-2.5")} aria-label="Main navigation">
+        {([
+          ["Workspace", workspaceNav],
+          ["Create", createNav],
+          ["Manage", manageNav],
+        ] as Array<[string, NavItem[]]>).map(([title, items]) => (
+          <div key={title}>
+            {!rail && (
+              <div className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase" data-testid={`sidebar-group-${title.toLowerCase()}`}>
+                {title}
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {items.map((item) => (
+                <SidebarNavLink key={item.to} item={item} rail={rail} />
+              ))}
+            </div>
           </div>
-          <div className="space-y-0.5">
-            {workspaceNav.map((item) => (
-              <SidebarNavLink key={item.to} item={item} />
-            ))}
-          </div>
-        </div>
-
-        {/* Group: Create */}
-        <div>
-          <div className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
-            Create
-          </div>
-          <div className="space-y-0.5">
-            {createNav.map((item) => (
-              <SidebarNavLink key={item.to} item={item} />
-            ))}
-          </div>
-        </div>
-
-        {/* Group: Manage */}
-        <div>
-          <div className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
-            Manage
-          </div>
-          <div className="space-y-0.5">
-            {manageNav.map((item) => (
-              <SidebarNavLink key={item.to} item={item} />
-            ))}
-          </div>
-        </div>
+        ))}
       </nav>
 
       {/* Workspace System Status Pill */}
-      <div className="px-3 pb-2">
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-xs text-gray-400">
+      <div className={cn("pb-2", rail ? "px-2" : "px-3")}>
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-xs text-gray-400",
+            rail && "justify-center px-0",
+          )}
+          title="Fleet Online · 4 Agents"
+        >
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </span>
-          <span className="truncate">Fleet Online · 4 Agents</span>
+          {!rail && <span className="truncate">Fleet Online · 4 Agents</span>}
         </div>
       </div>
 
@@ -189,15 +243,25 @@ export function AppShell({ children }: { children: ReactNode }) {
           align="right"
           label="Account options"
           trigger={
-            <button className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-white/[0.05]">
+            <button
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-white/[0.05]",
+                rail && "justify-center",
+              )}
+              title={rail ? (user?.name ?? "Account") : undefined}
+            >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-600/80 text-xs font-semibold text-white">
                 {initials(user?.name ?? "Creator")}
               </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-white">{user?.name ?? "Creator Workspace"}</p>
-                <p className="truncate text-[11px] text-gray-400">{user?.plan ?? "PRO"} Plan</p>
-              </div>
-              <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+              {!rail && (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-white">{user?.name ?? "Creator Workspace"}</p>
+                    <p className="truncate text-[11px] text-gray-400">{user?.plan ?? "PRO"} Plan</p>
+                  </div>
+                  <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                </>
+              )}
             </button>
           }
           items={[
@@ -218,9 +282,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         isCommandCenter && "lg:h-screen lg:min-h-0 lg:overflow-hidden",
       )}
     >
-      {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 border-r border-white/[0.06] bg-[#0F1017] lg:block">
-        {sidebar}
+      {/* Desktop sidebar — 15rem, or the 4rem rail when minimized */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-20 hidden border-r border-white/[0.06] bg-[#0F1017] transition-[width] duration-200 lg:block",
+          collapsed ? "w-16" : "w-60",
+        )}
+        data-testid="desktop-sidebar"
+        data-collapsed={collapsed ? "true" : "false"}
+      >
+        {renderSidebar(collapsed)}
       </aside>
 
       {/* Mobile drawer */}
@@ -241,14 +312,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               exit={{ x: -260 }}
               transition={{ type: "tween", duration: 0.2 }}
             >
-              {sidebar}
+              {renderSidebar(false)}
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
       {/* Main column */}
-      <div className={cn("lg:pl-60 flex-1 flex flex-col", isCommandCenter && "lg:min-h-0")}>
+      <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60", isCommandCenter && "lg:min-h-0")}>
         {/* Header Bar */}
         <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#0C0D12]/90 backdrop-blur-md">
           <div className="flex h-full items-center justify-between px-4 sm:px-6">
@@ -308,7 +379,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function SidebarNavLink({ item }: { item: NavItem }) {
+function SidebarNavLink({ item, rail = false }: { item: NavItem; rail?: boolean }) {
   const location = useLocation();
   const currentPathWithSearch = location.pathname + location.search;
   const isMatch = item.to.includes("?")
@@ -320,17 +391,22 @@ function SidebarNavLink({ item }: { item: NavItem }) {
       to={item.to}
       end={item.end}
       className={cn(
-        "flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+        "flex items-center rounded-lg py-1.5 text-xs font-medium transition-colors",
+        rail ? "justify-center px-0" : "justify-between px-2.5",
         isMatch
           ? "bg-white/[0.08] text-white"
           : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200",
       )}
+      // The rail hides the labels: the name has to be findable another way.
+      title={rail ? item.label : undefined}
+      aria-label={rail ? item.label : undefined}
+      data-testid={rail ? "sidebar-rail-link" : undefined}
     >
-      <div className="flex items-center gap-2.5 truncate">
+      <div className={cn("flex items-center truncate", rail ? "" : "gap-2.5")}>
         <span className={cn(isMatch ? "text-blue-400" : "text-gray-400")}>{item.icon}</span>
-        <span className="truncate">{item.label}</span>
+        {!rail && <span className="truncate">{item.label}</span>}
       </div>
-      {item.badge && (
+      {!rail && item.badge && (
         <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400">
           {item.badge}
         </span>

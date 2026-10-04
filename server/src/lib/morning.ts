@@ -17,6 +17,8 @@ import { findJob } from "./conversation.js";
 import { listShorts } from "./shortsLibrary.js";
 import { getOrbitalStatus } from "./orbitalBackground.js";
 import { youtubeService } from "./youtube.js";
+import { channelInsights } from "./channelInsights.js";
+import { defaultChannelId, listChannels } from "./youtubeChannels.js";
 import { briefingPlan, lastMorningAt, memoryState, noteMorningRun } from "./memory.js";
 import { getActiveShortJobs } from "../routes/agentShort.js";
 import { generateContent, GeminiError, visibleText } from "./brain/gemini.js";
@@ -146,6 +148,35 @@ export async function openMorningItems(items: MorningItem[]): Promise<MorningFac
 }
 
 async function youtubeFacts(): Promise<MorningFacts["youtube"]> {
+  // Channels connected through Settings → YouTube & Shorts (any number of them):
+  // report the default one — the channel this PC publishes to — with its real
+  // numbers the same way the agent's youtube_views tool does.
+  const channels = listChannels();
+  if (channels.length) {
+    try {
+      const result = await channelInsights({ recent: 3 });
+      const preferred = result.channels.find((c) => c.id === defaultChannelId()) ?? result.channels[0];
+      if (preferred) {
+        return {
+          channel: preferred.channelTitle || preferred.name,
+          subscribers: preferred.subscribers,
+          views: preferred.views,
+          videos: preferred.videos,
+          latest: preferred.recent.map((v) => ({
+            title: v.title,
+            views: v.views,
+            when: v.publishedAt ? relativeTime(Date.parse(v.publishedAt)) : null,
+          })),
+        };
+      }
+      console.warn(`[morning] channel numbers unavailable: ${result.errors.join("; ")}`);
+    } catch (err) {
+      console.warn(`[morning] channel numbers unavailable: ${(err as Error).message.split("\n")[0]}`);
+    }
+  }
+
+  // The legacy single "Connect YouTube account" (a machine that connected
+  // before channels existed).
   const cfg = youtubeService.getConfig();
   if (!cfg.clientId || !cfg.clientSecret || !cfg.refreshToken) return null;
   try {

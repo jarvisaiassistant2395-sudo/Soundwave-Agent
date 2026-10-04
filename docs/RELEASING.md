@@ -329,6 +329,28 @@ the E2E its page-log/on-screen diagnostics. What this does and doesn't buy, and
 how to add a marker or debug an obfuscated crash:
 [PROTECTING_THE_CODE.md](PROTECTING_THE_CODE.md).
 
+1.5.8 lets the agent change its own voice from chat and report on views. Two
+new tools: `list_voices` (every name, which one is in use) and `set_voice`
+("use Ava", "switch to Ryan") — the name is resolved against `lib/voices.ts`
+(nickname, full id, an unambiguous partial name; anything else is refused by
+listing the real names), and the choice is written into the shared conversation
+(`setConversationVoice` now bumps the revision, so the desktop's long-poll
+adopts it: `conversationSync` saves the voice into localStorage — the phone
+already speaks with it, and the next short is narrated with it). `youtube_views`
+reads each connected channel's numbers with that channel's own sign-in
+(`lib/channelInsights.ts`: totals + latest uploads + deltas from
+`data/youtube/view-history.json`), and words them through the pure helpers in
+`brain/core/insights.ts`; Morning Setup uses the same per-channel numbers when
+channels exist. The Command Center's sidebar gained a minimize button (a 4rem
+icon rail, remembered in `soundwave_sidebar_collapsed`). Tests:
+`server/tests/voice_choice.test.ts` (7, including "the server's voice list
+equals the UI's" and a voice change waking the open window),
+`server/tests/channel_insights.test.ts` (11, two channels on the fake Google, a
+dead sign-in, deltas, and the wording), the guide checks in
+`memory_guide.test.ts`, and the desktop E2E drives the minimize button (rail,
+labels as tooltips, still minimized after a reload) and proves a voice set on
+the PC's conversation reaches the open window.
+
 ## Versioning
 
 Bump `desktop/package.json` → `version` (this drives artifact names), tag

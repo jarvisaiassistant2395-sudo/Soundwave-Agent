@@ -10,6 +10,7 @@ import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, st
 import { nicheCatalog } from "../lib/brain/core/viral.js";
 import { TREND_REFRESH_DAYS, refreshTrends, trendsStatus } from "../lib/trends.js";
 import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
+import { getConversation } from "../lib/conversation.js";
 import { SttError, getSttStatus, transcribe } from "../lib/stt.js";
 import type { ChatReply } from "../lib/chatMessages.js";
 import { activeBrain } from "../lib/brain/settings.js";
@@ -275,7 +276,7 @@ async function startShortFromChat(topic: string, input: AgentChatInput): Promise
   try {
     const { jobId } = await startShortJob({
       topic,
-      voice: input.voice || "en-US-GuyNeural",
+      voice: input.voice || getConversation().voice || DEFAULT_AGENT_VOICE,
       resolution: input.resolution || "1080p",
       seconds: input.seconds,
       userId: input.userId || "local-user",

@@ -169,6 +169,16 @@ What gets uploaded: the title comes from the start of the script, with " #shorts
 Remember YouTube's rule for new Google Cloud projects: uploads stay Private until the project passes YouTube's API audit (the linking guide explains it). You can always download the MP4 and upload it yourself in YouTube Studio.`,
   },
   {
+    id: "views",
+    title: "How the videos are doing (views)",
+    summary: "ask about views, the agent reads the real numbers from YouTube — totals, latest uploads, what changed since last time, per channel",
+    text: `Ask the agent how the videos are doing and it reads the real numbers from YouTube: "how many views do my videos have?", "brief me on the views", "how is the last short doing?", "which video is doing best?". It answers with total views, subscribers and video count, the latest uploads with each one's views, and — because it remembers the last time it looked — what changed since then ("+412 views since yesterday"). With more than one channel connected it reports each of them, and together.
+
+The numbers come from each channel's own sign-in (Settings → YouTube & Shorts), so nothing is estimated. If a channel isn't connected, or its sign-in stopped working, the agent says that plainly instead of showing a zero. A video whose view count YouTube hides is reported as hidden.
+
+Where to see it yourself: YouTube Studio, or the channel's page on YouTube. The morning briefing also includes the numbers for the channel it publishes to when one is connected (see the Morning Setup guide).`,
+  },
+  {
     id: "brain",
     title: "The agent's brain (Gemini key and Settings → Brain)",
     summary: "getting a free Gemini API key, Settings → Brain options, free limits, errors, privacy",
@@ -256,7 +266,9 @@ On the phone: tap the mic in the app. While the PC is reachable the recording is
     summary: "the Soundwave voices (which sound most natural) and every place to change them, reading replies aloud on PC and phone",
     text: `Soundwave speaks and narrates shorts with Microsoft's neural voices — all free, nothing to install. The most natural ones are the newest "Multilingual" generation: Ava and Emma (US female) and Andrew and Brian (US male). The classic set is still there: Guy, Christopher (US male), Ryan (UK male), Jenny, Ana (US female) and Sonia (UK female). Pick the ones marked "most natural" in the Voice Library first — they are noticeably warmer and less flat. The same voice is used for replies and for the shorts it makes.
 
-Change it in any of these places: the voice picker in the Command Center's top bar; the generator window ("Narrator"); gear → General & Voice → Soundwave Voice ("Test Voice" plays a sample); Settings → Preferences → Agent voice; or the Voice Library page (preview each voice, then "Use in Command Center").
+Ask the agent to change it in chat — "use Ava", "switch to Ryan", "speak with Sonia" — or say "which voices do you have?" to hear the names. It switches on the spot and the choice sticks everywhere: spoken replies on the PC and the phone, and the narration of the shorts it makes from then on. A name it doesn't know is refused honestly (it lists the real ones) instead of quietly keeping the old voice.
+
+Change it by hand in any of these places: the voice picker in the Command Center's top bar; the generator window ("Narrator"); gear → General & Voice → Soundwave Voice ("Test Voice" plays a sample); Settings → Preferences → Agent voice; or the Voice Library page (preview each voice, then "Use in Command Center").
 
 Reading replies aloud: gear → General & Voice → "Speak Replies Aloud" (also in Settings → Voice & Desktop). Every reply has a speaker button to hear it again. Replies start playing while they're still being made, at a natural pace with a short pause at each sentence, and long explanations are read to the end (they're spoken in pieces, so nothing stops halfway).
 

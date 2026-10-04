@@ -21,7 +21,7 @@ import {
   saveChatHistory,
   type ChatMessage,
 } from "./agentChat";
-import { AGENT_VOICE_STORAGE_KEY, loadAgentVoice } from "./voices";
+import { AGENT_VOICE_STORAGE_KEY, isSoundwaveVoice, loadAgentVoice, saveAgentVoice } from "./voices";
 
 interface Snapshot {
   epoch: string;
@@ -47,6 +47,10 @@ function apply(snap: Snapshot): void {
   epoch = snap.epoch;
   rev = snap.rev;
   known = new Set(snap.messages.map((m) => m.id));
+  // The voice the agent chose in chat lives on the PC's copy — the phone speaks
+  // with it too. Adopt it here (storage events carry it to the other windows,
+  // e.g. the voice bar) so the next reply really is spoken in that voice.
+  if (isSoundwaveVoice(snap.voice) && snap.voice !== loadAgentVoice()) saveAgentVoice(snap.voice);
   const local = loadChatHistory() ?? [];
   const next = newConversation ? snap.messages : mergeChat(local, snap.messages);
   if (!sameConversation(next, local)) {
@@ -96,10 +100,14 @@ export function startConversationSync(): () => void {
     const local = loadChatHistory() ?? [];
     const voice = loadAgentVoice();
     if (!local.some((m) => !known.has(m.id)) && voice === lastVoice) return;
+    // Only push the voice when it's a choice made HERE (a new pick in this app);
+    // `lastVoice` is what the PC's copy has. Pushing a stale local value would
+    // undo a voice the agent picked in chat a moment ago.
+    const sendVoice = voice !== lastVoice;
     const res = await fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: local, voice }),
+      body: JSON.stringify(sendVoice ? { messages: local, voice } : { messages: local }),
     });
     if (res.status === 404) return stop();
     if (!res.ok) return;
@@ -126,6 +134,9 @@ export function startConversationSync(): () => void {
       if (res.ok) {
         const snap = (await res.json()) as Snapshot;
         epoch = snap.epoch;
+        // What the PC's copy holds, so the first push doesn't overwrite the
+        // agent's own choice with whatever this window had saved.
+        lastVoice = isSoundwaveVoice(snap.voice) ? snap.voice : "";
         apply(snap);
       }
     } catch {
@@ -138,7 +149,9 @@ export function startConversationSync(): () => void {
         const res = await fetch(`${ENDPOINT}?epoch=${encodeURIComponent(epoch)}&rev=${rev}&wait=1`, { signal: pull.signal });
         if (res.status === 404) return stop();
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        apply((await res.json()) as Snapshot);
+        const snap = (await res.json()) as Snapshot;
+        lastVoice = isSoundwaveVoice(snap.voice) ? snap.voice : "";
+        apply(snap);
         if (loadAgentVoice() !== lastVoice) schedulePush();
       } catch {
         if (stopped) return;

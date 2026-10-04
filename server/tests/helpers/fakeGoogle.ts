@@ -32,6 +32,22 @@ export interface FakeGoogle {
   token: Array<(req: Seen) => Reply>;
   weather: { place: Record<string, unknown> | null; tempC: number; code: number };
   youtube: { title: string; subscribers: string; views: string; videos: string; ok: boolean };
+  /**
+   * Opt-in: several channels, each with its own sign-in, numbers and uploads —
+   * what the views briefing reads. When this is empty the single `youtube`
+   * channel above answers every call (the older tests).
+   */
+  accounts: Array<{
+    refreshToken: string;
+    id: string;
+    title: string;
+    subscribers: string;
+    views: string;
+    videos: string;
+    uploads: Array<{ id: string; title: string; views: string; publishedAt: string }>;
+  }>;
+  /** Refresh tokens the token endpoint refuses (a channel that needs reconnecting). */
+  badRefreshTokens: string[];
   /** Every video upload: which token started it, the title, and the bytes sent. */
   uploads: Array<{ initAuth?: string; title?: string; bytes: number }>;
   generateCalls(): Seen[];
@@ -49,6 +65,8 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     token: [],
     weather: { place: { name: "Kruševac", latitude: 43.58, longitude: 21.33, country: "Serbia", country_code: "RS" }, tempC: 14.2, code: 2 },
     youtube: { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true },
+    accounts: [] as FakeGoogle["accounts"],
+    badRefreshTokens: [] as string[],
     uploads: [] as Array<{ initAuth?: string; title?: string; bytes: number }>,
     generateCalls: () => fake.seen.filter((s) => s.path.includes(":generateContent")),
     reset() {
@@ -58,8 +76,17 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       fake.token.length = 0;
       fake.weather = { place: { name: "Kruševac", latitude: 43.58, longitude: 21.33, country: "Serbia", country_code: "RS" }, tempC: 14.2, code: 2 };
       fake.youtube = { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true };
+      fake.accounts.length = 0;
+      fake.badRefreshTokens.length = 0;
       fake.uploads.length = 0;
     },
+  };
+
+  /** Which account a request is made with (`ya29.account-<n>`), when accounts are in play. */
+  const accountFor = (authorization: string | undefined): (FakeGoogle["accounts"][number] & { youtubeOk?: boolean }) | null => {
+    const m = /^Bearer ya29\.account-(\d+)$/.exec(authorization ?? "");
+    if (!m) return null;
+    return fake.accounts[Number(m[1])] ?? null;
   };
 
   const answer = (seen: Seen): Reply => {
@@ -94,9 +121,33 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
           },
         };
       }
+      const asked = String((seen.body as { refresh_token?: string } | null)?.refresh_token ?? "");
+      if (asked && fake.badRefreshTokens.includes(asked)) {
+        return { status: 400, body: { error: "invalid_grant", error_description: "Token has been expired or revoked." } };
+      }
+      const account = fake.accounts.findIndex((a) => a.refreshToken === asked);
+      if (account >= 0) return { body: { access_token: `ya29.account-${account}`, expires_in: 3599, token_type: "Bearer" } };
       return { body: { access_token: "ya29.fake-access-2", expires_in: 3599, token_type: "Bearer" } };
     }
     if (p === "/youtube/v3/channels") {
+      const account = accountFor(seen.headers.authorization);
+      if (account) {
+        if (account.youtubeOk === false) {
+          return { status: 403, body: { error: { code: 403, message: "Request had insufficient authentication scopes.", errors: [{ reason: "insufficientPermissions" }] } } };
+        }
+        return {
+          body: {
+            items: [
+              {
+                id: account.id,
+                snippet: { title: account.title },
+                statistics: { subscriberCount: account.subscribers, viewCount: account.views, videoCount: account.videos },
+                contentDetails: { relatedPlaylists: { uploads: `UU${account.id}` } },
+              },
+            ],
+          },
+        };
+      }
       if (!fake.youtube.ok) return { status: 403, body: { error: { code: 403, message: "Request had insufficient authentication scopes.", errors: [{ reason: "insufficientPermissions" }] } } };
       return {
         body: {
@@ -123,9 +174,35 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       if (upload) upload.bytes = seen.raw.length;
       return { body: { id: `vid-${fake.uploads.length}`, kind: "youtube#video" } };
     }
-    if (p === "/youtube/v3/playlistItems") return { body: { items: [{ contentDetails: { videoId: "vid1" } }] } };
+    if (p === "/youtube/v3/playlistItems") {
+      const account = accountFor(seen.headers.authorization);
+      if (account) return { body: { items: account.uploads.map((u) => ({ contentDetails: { videoId: u.id } })) } };
+      return { body: { items: [{ contentDetails: { videoId: "vid1" } }] } };
+    }
     if (p === "/youtube/v3/videos") {
-      return { body: { items: [{ snippet: { title: "Black holes in 60 seconds", publishedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() }, statistics: { viewCount: "4321" } }] } };
+      const account = accountFor(seen.headers.authorization);
+      if (account) {
+        const asked = (seen.query.get("id") ?? "").split(",").filter(Boolean);
+        const items = account.uploads
+          .filter((u) => !asked.length || asked.includes(u.id))
+          .map((u) => ({
+            id: u.id,
+            snippet: { title: u.title, publishedAt: u.publishedAt },
+            statistics: { viewCount: u.views },
+          }));
+        return { body: { items } };
+      }
+      return {
+        body: {
+          items: [
+            {
+              id: "vid1",
+              snippet: { title: "Black holes in 60 seconds", publishedAt: new Date(Date.now() - 2 * 86_400_000).toISOString() },
+              statistics: { viewCount: "4321" },
+            },
+          ],
+        },
+      };
     }
     return { status: 404, body: { error: { code: 404, message: `fake: no route ${seen.method} ${p}` } } };
   };
@@ -137,7 +214,11 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       const u = new URL(req.url ?? "/", "http://fake");
       let body: unknown = null;
       try {
-        body = raw && (req.headers["content-type"] ?? "").includes("json") ? JSON.parse(raw) : null;
+        const type = req.headers["content-type"] ?? "";
+        if (raw && type.includes("json")) body = JSON.parse(raw);
+        // OAuth token requests are form-encoded — the refresh token decides
+        // which account (channel) signs in, so the fake has to read it.
+        else if (raw && type.includes("application/x-www-form-urlencoded")) body = Object.fromEntries(new URLSearchParams(raw));
       } catch {
         body = null;
       }

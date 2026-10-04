@@ -141,12 +141,19 @@ export function onConversationReset(listener: (cleared: ChatMessage[]) => void):
   return () => changes.off("reset", listener);
 }
 
+/**
+ * The agent's voice, shared with every window and the phone. Bumps the revision
+ * and wakes the desktop's long-poll, so a voice the agent picks in chat takes
+ * effect straight away — including on the phone from the next reply on.
+ */
 export function setConversationVoice(voice: string | undefined): void {
   if (!voice) return;
   const s = load();
   if (s.voice === voice) return;
   s.voice = voice;
+  s.rev += 1;
   persist(s);
+  changes.emit("change", s.rev);
 }
 
 /** The last few turns before now, as the agent's `history`. */

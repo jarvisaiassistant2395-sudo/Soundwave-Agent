@@ -95,6 +95,8 @@ it never claims something it didn't do:
 | `run_morning_setup` | Morning Setup: opens the morning items (Settings → Morning Setup), researches the briefing topics and returns the facts for the briefing |
 | `update_morning_briefing` | the daily briefing plan — topics (anything), time, automatic — saved in the agent's memory |
 | `remember`, `forget` | the agent's notes (memory, shared with the phone; never keys or passwords) |
+| `list_voices`, `set_voice` | the Soundwave voices — list every name, switch the one the agent speaks and narrates with |
+| `youtube_views` | how the person's videos are doing: per-channel totals, latest uploads, and what changed since the last look |
 | `soundwave_guide` | the built-in user guide — every feature, exact steps and button names (`server/src/lib/brain/core/guide.ts`) |
 | Google Search | live answers — only with a key that has billing (not on the free tier) |
 
@@ -127,6 +129,26 @@ per check at most, so a channel posting five videos doesn't swamp the PC; ask
 `lib/channelWatch.ts` + `brain/core/watch.ts` (pure rules: channel references,
 new-upload planning, status text). It lives on the PC: a video posted while it
 was off is picked up when it starts.
+
+**Your voice, and how the videos are doing** (desktop 1.5.8): the agent speaks
+with the Soundwave voices, and you can change the one it uses just by asking —
+"use Ava", "switch to Ryan", "speak with Sonia" — or "which voices do you
+have?" to hear the names. `list_voices` / `set_voice`
+(`brain/tools.ts`, `lib/voices.ts`) match what a person says (a nickname, a full
+id, a partial name when it's unambiguous), refuse a name that isn't real by
+listing the ones that are, and the choice goes into the shared conversation — so
+it sticks for spoken replies on the PC *and* the phone, and for the narration of
+the shorts made from then on. Ask "how many views do my videos have?", "brief
+me on the views" or "how is the last short doing?" and `youtube_views`
+(`lib/channelInsights.ts`) reads each connected channel's real numbers from
+YouTube with that channel's own sign-in: total views, subscribers, video count,
+the latest uploads with each video's views — and, because every look is
+remembered (`data/youtube/view-history.json`), what changed since last time
+("+415 views since yesterday"). A channel that isn't connected, or whose
+sign-in died, is named as such instead of showing a zero. The Command Center's
+sidebar also has a **minimize** button (the small chevron at its top): it folds
+to a 4rem rail of icons — same tabs, labels as tooltips — and remembers the
+choice between restarts.
 
 **The agent's eyes** (desktop 1.5.6): it can *read* what it is pointed at, with
 no setup, no logins and no API keys. `read_video` takes a YouTube link and comes

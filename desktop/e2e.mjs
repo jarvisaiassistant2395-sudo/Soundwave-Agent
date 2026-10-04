@@ -207,6 +207,81 @@ try {
   if (!bridge) await fail("window.soundwaveDesktop (preload bridge) is missing in the page");
   ok(`desktop bridge works (app ${bridge.version}, close-to-tray ${bridge.closeToTray}, ${bridge.choices} shortcut choices)`);
 
+  // ── 1b. The sidebar's minimize button (rail, remembered) ─────────────────
+  at("sidebar minimize");
+  const sidebar = () =>
+    main.evaluate(() => {
+      const aside = document.querySelector('[data-testid="desktop-sidebar"]');
+      const content = document.querySelector("main");
+      return {
+        collapsed: aside?.getAttribute("data-collapsed"),
+        width: Math.round(aside?.getBoundingClientRect().width ?? 0),
+        contentLeft: Math.round(content?.getBoundingClientRect().left ?? 0),
+        railLinks: [...document.querySelectorAll('[data-testid="sidebar-rail-link"]')].map((a) => a.getAttribute("aria-label")),
+        showsLabels: /Voice Library/.test(document.body.innerText),
+        stored: localStorage.getItem("soundwave_sidebar_collapsed"),
+      };
+    });
+  await main.click('[data-testid="sidebar-toggle"]');
+  await main.waitForFunction(() => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "true", null, { timeout: 10_000 });
+  await sleep(400); // the width transition
+  const narrow = await sidebar();
+  if (!(narrow.width < 60)) await fail(`the sidebar is ${narrow.width}px wide after minimizing — the rail should be about 64`);
+  else ok(`the minimize button turned the sidebar into a ${narrow.width}px rail`);
+  if (!(narrow.contentLeft < 100)) await fail(`the page didn't follow the rail (content starts at ${narrow.contentLeft}px)`);
+  if (narrow.stored !== "1") await fail(`the choice isn't remembered (soundwave_sidebar_collapsed=${narrow.stored})`);
+  if (narrow.showsLabels) await fail("the minimized rail still shows the labels");
+  if (!narrow.railLinks.includes("Voice Library") || !narrow.railLinks.includes("Command Center")) {
+    await fail(`the rail lost its buttons: ${JSON.stringify(narrow.railLinks)}`);
+  } else {
+    ok(`the rail keeps every tab reachable by icon (${narrow.railLinks.length} links, labels as tooltips)`);
+  }
+  await main.screenshot({ path: path.join(shotsDir, "1b-sidebar-rail.png") });
+
+  // Still minimized after a restart of the window (that's what "remembered" means).
+  await main.reload();
+  await main.waitForSelector('[data-testid="desktop-sidebar"]', { timeout: 60_000 });
+  await main.waitForFunction(() => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "true", null, { timeout: 15_000 });
+  ok("the minimized sidebar is still minimized after a reload");
+
+  // Expand it again — the rest of this run works with the full sidebar.
+  await main.click('[data-testid="sidebar-toggle"]');
+  await main.waitForFunction(() => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "false", null, { timeout: 10_000 });
+  await sleep(400);
+  const back = await sidebar();
+  if (!(back.width > 200 && back.showsLabels)) await fail(`the sidebar didn't come back (${back.width}px, labels ${back.showsLabels})`);
+  else ok(`expanding puts the full sidebar back (${back.width}px, labels visible)`);
+
+  // ── 1c. A voice the agent picks reaches the open window ──────────────────
+  // The agent's set_voice tool writes the voice into the shared conversation
+  // (the same store the phone reads). The desktop adopts it through the
+  // conversation sync, so the next reply is really spoken in that voice.
+  at("voice follows the agent's choice");
+  const voiceNow = () => main.evaluate(() => localStorage.getItem("soundwave_voice"));
+  const previousVoice = await voiceNow();
+  const setVoiceOnServer = (voice) =>
+    main.evaluate(async (v) => {
+      const history = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
+      const res = await fetch("/api/v1/companion/conversation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history, voice: v }),
+      });
+      return res.ok;
+    }, voice);
+  if (!(await setVoiceOnServer("en-US-AvaMultilingualNeural"))) await fail("couldn't set a voice on the PC's conversation");
+  try {
+    await main.waitForFunction(() => localStorage.getItem("soundwave_voice") === "en-US-AvaMultilingualNeural", null, { timeout: 15_000 });
+    ok(`a voice set on the PC's conversation is adopted by the window (${previousVoice} → Ava) — the agent's set_voice reaches the speaker`);
+  } catch {
+    await fail(`the window kept the voice ${await voiceNow()} after the PC's conversation changed to Ava`);
+  }
+  // Back to what it was, so the rest of the run speaks in the usual voice.
+  if (previousVoice) {
+    await setVoiceOnServer(previousVoice);
+    await main.waitForFunction((v) => localStorage.getItem("soundwave_voice") === v, previousVoice, { timeout: 15_000 }).catch(() => undefined);
+  }
+
   const engine = await main.evaluate(() => fetch("/api/v1/agent/transcribe/status").then((r) => r.json()));
   if (!engine.available) await fail(`speech engine unavailable in the packaged app: ${engine.reason}`);
   ok(`speech engine ready in the packaged app (whisper.cpp ${engine.model})`);

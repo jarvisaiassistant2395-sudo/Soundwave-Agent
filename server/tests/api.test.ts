@@ -157,8 +157,10 @@ describe("projects", () => {
   it("lists Microsoft Neural voices with sample URLs", async () => {
     const res = await request(app).get("/api/v1/voices");
     expect(res.status).toBe(200);
-    expect(res.body.voices.length).toBe(6);
-    expect(res.body.voices[0].id).toBe("en-US-JennyNeural");
+    expect(res.body.voices.length).toBe(10);
+    // The most natural (Multilingual) generation is listed first, like the app's picker.
+    expect(res.body.voices[0].id).toBe("en-US-AvaMultilingualNeural");
+    expect(res.body.voices.map((v: { id: string }) => v.id)).toContain("en-US-JennyNeural");
     expect(res.body.voices[0].sampleUrl).toContain("/voice-samples/");
   });
 });
