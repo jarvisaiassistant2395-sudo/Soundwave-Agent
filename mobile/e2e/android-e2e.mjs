@@ -678,6 +678,21 @@ try {
     adb("shell", `input tap ${x} ${y}`);
     return { x, y };
   };
+  const briefingFailures = () =>
+    page
+      .evaluate(() =>
+        [...document.querySelectorAll('[data-testid="msg-agent"]')]
+          .map((el) => el.innerText.replace(/\s+/g, " ").trim())
+          .filter((text) => text.includes("The morning briefing didn't work this time:")),
+      )
+      .catch(() => []);
+  // Old briefing errors stay in the chat so the person can read them later.
+  // Snapshot them before this alarm: only an error added after the dismissal is
+  // evidence that this alarm's briefing failed.
+  const briefingFailuresBeforeAlarm = await briefingFailures();
+  if (briefingFailuresBeforeAlarm.length) {
+    annotate("warning", "Phone app E2E", `${briefingFailuresBeforeAlarm.length} earlier briefing error(s) are in the chat; the alarm check will only count a new one`);
+  }
   let tapped = null;
   for (let i = 0; i < 4 && !tapped; i++) {
     await sleep(1200);
@@ -703,10 +718,14 @@ try {
       .evaluate(() => ({
         phase: document.querySelector('[data-testid="briefing-bar"]')?.getAttribute("data-phase") ?? null,
         text: document.body.innerText,
+        briefingFailures: [...document.querySelectorAll('[data-testid="msg-agent"]')]
+          .map((el) => el.innerText.replace(/\s+/g, " ").trim())
+          .filter((text) => text.includes("The morning briefing didn't work this time:")),
       }))
-      .catch(() => ({ phase: null, text: "" }));
+      .catch(() => ({ phase: null, text: "", briefingFailures: [] }));
     alarmSpoke = st.phase === "speaking";
-    alarmProblem = /The morning briefing didn't work this time: ([^\n]+)/.exec(st.text)?.[1] ?? null;
+    const newFailure = st.briefingFailures.slice(briefingFailuresBeforeAlarm.length).at(0);
+    alarmProblem = newFailure ? /The morning briefing didn't work this time: ([^\n]+)/.exec(newFailure)?.[1] ?? newFailure : null;
     lastScreen = st.text.replace(/\s+/g, " ").slice(-300);
     if (!alarmSpoke && !alarmProblem) await sleep(500);
   }
@@ -727,8 +746,9 @@ try {
   let silentProblem = null;
   for (let i = 0; i < 16 && !silentProblem; i++) {
     await sleep(500);
-    const text = await page.evaluate(() => document.body.innerText).catch(() => "");
-    silentProblem = /didn't work this time: the phone couldn't make any sound come out/.exec(text)?.[0] ?? null;
+    const failures = await briefingFailures();
+    const newFailures = failures.slice(briefingFailuresBeforeAlarm.length);
+    silentProblem = newFailures.find((text) => /didn't work this time: the phone couldn't make any sound come out/.test(text)) ?? null;
   }
   if (silentProblem) fail(`the phone didn't actually play the briefing: ${silentProblem}`);
   else ok("the briefing was really played by the phone (no silent-player failure)");

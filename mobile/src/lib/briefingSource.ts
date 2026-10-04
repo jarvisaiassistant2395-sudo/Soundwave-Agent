@@ -13,7 +13,36 @@
 // So the rule is deliberately not "is the PC province offline?" but "can this
 // phone write it?": yes, whenever it is not forgotten and holds the key.
 
+import { inBriefingWindow } from "../../../server/src/lib/brain/core/morning";
+import type { BriefingPlan } from "../../../server/src/lib/brain/core/memory";
+
 export type CompanionPhase = "connecting" | "searching" | "online" | "offline" | "forgotten";
+
+/**
+ * Should opening the app start the automatic briefing now?
+ *
+ * An enabled plan with no topics is the untouched default, not a request to
+ * prepare an empty briefing. Still let an online PC be checked for a briefing
+ * it already prepared; only start a disconnected attempt when there is content
+ * to cover locally or a prepared message already exists on the phone.
+ */
+export function shouldPrepareBriefing(plan: BriefingPlan | null, forced: boolean): boolean {
+  return forced || Boolean(plan?.topics.length);
+}
+
+export function shouldDeliverAutomaticBriefing(opts: {
+  talkOnOpen: boolean;
+  plan: BriefingPlan | null;
+  now: Date;
+  day: string;
+  heardDays: readonly string[];
+  hasPreparedMessage: boolean;
+  pcMayHavePreparedMessage: boolean;
+}): boolean {
+  const { talkOnOpen, plan, now, day, heardDays, hasPreparedMessage, pcMayHavePreparedMessage } = opts;
+  if (!talkOnOpen || !plan?.auto || !inBriefingWindow(plan.time, now) || heardDays.includes(day)) return false;
+  return plan.topics.length > 0 || hasPreparedMessage || pcMayHavePreparedMessage;
+}
 
 /**
  * Can the phone write today's briefing itself right now? True whenever it holds

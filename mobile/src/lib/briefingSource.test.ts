@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { briefingFailureNote, canWriteBriefingOnPhone, type CompanionPhase } from "./briefingSource";
+import { DEFAULT_BRIEFING } from "../../../server/src/lib/brain/core/memory";
+import {
+  briefingFailureNote,
+  canWriteBriefingOnPhone,
+  shouldDeliverAutomaticBriefing,
+  shouldPrepareBriefing,
+  type CompanionPhase,
+} from "./briefingSource";
 
 // The rule this pins down, in the words of the bug it fixes: a run went red
 // because the phone was restarted to check the morning briefing and, at that
@@ -7,6 +14,46 @@ import { briefingFailureNote, canWriteBriefingOnPhone, type CompanionPhase } fro
 // was nothing to do, showed the person "this phone doesn't have a Gemini key
 // of its own yet", and never started the briefing. It was holding the key the
 // whole time (the phone-mode banner on that same screen only shows when it is).
+
+describe("when the app starts an automatic briefing", () => {
+  const now = new Date(2026, 9, 4, 9, 0);
+  const day = "2026-10-04";
+  const base = {
+    talkOnOpen: true,
+    now,
+    day,
+    heardDays: [] as string[],
+    hasPreparedMessage: false,
+    pcMayHavePreparedMessage: false,
+  };
+
+  it("does not turn the empty default plan into a failed offline briefing", () => {
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan: DEFAULT_BRIEFING })).toBe(false);
+  });
+
+  it("checks an online PC for its existing briefing even with no topics", () => {
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan: DEFAULT_BRIEFING, pcMayHavePreparedMessage: true })).toBe(true);
+  });
+
+  it("does not prepare an empty plan automatically, but honors an explicit alarm request", () => {
+    expect(shouldPrepareBriefing(DEFAULT_BRIEFING, false)).toBe(false);
+    expect(shouldPrepareBriefing({ ...DEFAULT_BRIEFING, topics: ["the latest AI news"] }, false)).toBe(true);
+    expect(shouldPrepareBriefing(DEFAULT_BRIEFING, true)).toBe(true);
+  });
+
+  it("starts when there are topics, or when an existing briefing only needs speaking", () => {
+    const plan = { ...DEFAULT_BRIEFING, topics: ["the latest AI news"] };
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan })).toBe(true);
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan: DEFAULT_BRIEFING, hasPreparedMessage: true })).toBe(true);
+  });
+
+  it("respects the app setting, briefing window, and already-heard days", () => {
+    const plan = { ...DEFAULT_BRIEFING, topics: ["the latest AI news"] };
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan, talkOnOpen: false })).toBe(false);
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan, now: new Date(2026, 9, 4, 20, 0) })).toBe(false);
+    expect(shouldDeliverAutomaticBriefing({ ...base, plan, heardDays: [day] })).toBe(false);
+  });
+});
 
 describe("who writes today's briefing", () => {
   it("lets the phone write it whenever it holds the key — even before it knows the PC is away", () => {

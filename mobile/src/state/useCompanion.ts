@@ -54,8 +54,14 @@ import {
 import { alarmLabel, alarmTarget, DEFAULT_BRIEFING_AFTER_ALARM_SECONDS, clockLabel } from "../../../server/src/lib/brain/core/alarm";
 import { phoneFetchText } from "../lib/phoneFetch";
 import { toast } from "../lib/toast";
-import { inBriefingWindow, localDay } from "../../../server/src/lib/brain/core/morning";
-import { briefingFailureNote, canWriteBriefingOnPhone, type CompanionPhase } from "../lib/briefingSource";
+import { localDay } from "../../../server/src/lib/brain/core/morning";
+import {
+  briefingFailureNote,
+  canWriteBriefingOnPhone,
+  shouldDeliverAutomaticBriefing,
+  shouldPrepareBriefing,
+  type CompanionPhase,
+} from "../lib/briefingSource";
 
 export type PairingPhase = { kind: "idle" } | { kind: "working"; pcName: string } | { kind: "failed"; message: string; code: string };
 
@@ -558,7 +564,23 @@ export function useCompanion(): Companion {
       const plan = effectiveMemory(memoryRef.current, outboxRef.current.memoryOps)?.briefing ?? null;
       const now = new Date();
       const day = localDay(now);
-      if (!opts.force && (!settingsRef.current.talkOnOpen || !plan?.auto || !inBriefingWindow(plan.time, now) || heardRef.current.includes(day))) return;
+      const prepared = [...(conversationRef.current?.messages ?? [])]
+        .reverse()
+        .find((m) => m.sender === "assistant" && m.briefingDate === day);
+      if (
+        !opts.force &&
+        !shouldDeliverAutomaticBriefing({
+          talkOnOpen: settingsRef.current.talkOnOpen,
+          plan,
+          now,
+          day,
+          heardDays: heardRef.current,
+          hasPreparedMessage: Boolean(prepared),
+          pcMayHavePreparedMessage:
+            stateRef.current.kind === "online" || stateRef.current.kind === "connecting" || stateRef.current.kind === "searching",
+        })
+      )
+        return;
       briefingBusy.current = true;
       briefingStop.current = false;
       lastPrepareRefused.current = null;
@@ -586,6 +608,7 @@ export function useCompanion(): Companion {
         };
         const find = () => [...(conversationRef.current?.messages ?? [])].reverse().find((m) => m.sender === "assistant" && m.briefingDate === day) ?? null;
         let msg = find();
+        if (!opts.force && !plan?.topics.length && !msg && stateRef.current.kind !== "online") return;
         if (stateRef.current.kind === "online") {
           const status = await c.briefingToday();
           if (!opts.force && status.heard) {
@@ -596,6 +619,10 @@ export function useCompanion(): Companion {
           }
           msg = status.message ?? msg;
           if (!msg) {
+            // An empty plan is the default, not a request to prepare a briefing.
+            // The read-only status check above still lets us speak one the PC
+            // prepared before this phone had the latest conversation snapshot.
+            if (!shouldPrepareBriefing(plan, Boolean(opts.force))) return;
             setBriefing({ kind: "preparing", by: "pc", topics: plan?.topics ?? [] });
             // `prepare` is this phone asking the PC to write today's briefing
             // now — it answers with the briefing (an alarm was turned off, so
@@ -652,7 +679,11 @@ export function useCompanion(): Companion {
               msg = await writeBriefingOnPhone(plan, "pc-nothing", why);
             }
           }
-        } else if (!msg && canWriteBriefingOnPhone(stateRef.current.kind as CompanionPhase, Boolean(await ensureKit()))) {
+        } else if (
+          !msg &&
+          shouldPrepareBriefing(plan, Boolean(opts.force)) &&
+          canWriteBriefingOnPhone(stateRef.current.kind as CompanionPhase, Boolean(await ensureKit()))
+        ) {
           // The PC is not answering — or has not finished being decided about
           // ("connecting"/"searching" take seconds after the app opens). The
           // phone holds the PC's key, which is all it needs to research and

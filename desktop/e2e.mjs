@@ -509,8 +509,14 @@ try {
   const pill = (await main.textContent('[data-testid="brain-pill"]'))?.trim();
   if (!/Gemini 3\.8 Flash/.test(pill ?? "")) await fail(`Command Center: the brain pill says "${pill}"`);
   const question = "hello from the end-to-end test";
-  await main.fill('input[placeholder="Message…"]', question);
-  await main.press('input[placeholder="Message…"]', "Enter");
+  const agentInput = 'input[placeholder="Message…"]';
+  await main.waitForSelector(agentInput, { state: "visible", timeout: 20_000 });
+  await main.fill(agentInput, question);
+  // `page.press(selector, ...)` has intermittently hung here after `fill`
+  // already focused the input (the packaged app's CI failure). Send Enter to
+  // the focused page directly so Playwright doesn't need to re-resolve a
+  // rapidly rerendered input between the two actions.
+  await main.keyboard.press("Enter");
   await main.waitForFunction((t) => document.body.innerText.includes(t), FAKE_HELLO, { timeout: 45_000 });
   const asked = fakeGemini.seen.filter((r) => r.url?.endsWith(":generateContent")).at(-1);
   const lastTurn = asked?.body?.contents?.at(-1)?.parts?.[0]?.text;
@@ -649,9 +655,10 @@ try {
    */
   const askAgent = async (text) => {
     try {
-      await main.waitForSelector('input[placeholder="Message…"]', { state: "visible", timeout: 20_000 });
-      await main.fill('input[placeholder="Message…"]', text);
-      await main.press('input[placeholder="Message…"]', "Enter");
+      const selector = 'input[placeholder="Message…"]';
+      await main.waitForSelector(selector, { state: "visible", timeout: 20_000 });
+      await main.fill(selector, text);
+      await main.keyboard.press("Enter");
     } catch (err) {
       const state = await main
         .evaluate(() => {
