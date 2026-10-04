@@ -623,7 +623,12 @@ try {
   const memoryNow = await main.evaluate(async () => (await fetch("/api/v1/memory")).json());
   if (!memoryNow.notes?.some((n) => /space facts/.test(n.text))) await fail(`Memory tab: the note isn't in the agent's memory (${JSON.stringify(memoryNow).slice(0, 200)})`);
   await main.screenshot({ path: path.join(shotsDir, "9-memory-tab.png"), timeout: 15_000 }).catch(() => {});
-  await main.click('[data-testid="youtube-tab"]');
+  const youtubeTab = '[data-testid="youtube-tab"]';
+  await main.waitForSelector(youtubeTab, { state: "visible", timeout: 15_000 });
+  // The tab is already visible in the open modal, but Playwright's pointer
+  // stability check has stalled on this animated settings panel in Windows CI.
+  // Keep the visibility assertion and invoke the real button handler directly.
+  await main.locator(youtubeTab).evaluate((el) => el.click());
   await main.waitForSelector('[data-testid="yt-connect"]', { timeout: 15_000 });
   const ytMode = await main.evaluate(async () => (await fetch("/api/v1/youtube/status")).json());
   const oneClickPanel = await main.$('[data-testid="yt-oneclick"]');
