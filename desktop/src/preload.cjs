@@ -34,6 +34,6 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
   notify: (notification) => ipcRenderer.send("soundwave:notify", notification),
   showApp: (route) => ipcRenderer.send("soundwave:show-app", route),
   hideOverlay: () => ipcRenderer.send("soundwave:hide-overlay"),
-  setVoiceState: (state) => ipcRenderer.send("soundwave:voice-state", state),
+  setVoiceState: (state, source) => ipcRenderer.send("soundwave:voice-state", { state, source }),
   openMicrophoneSettings: () => ipcRenderer.send("soundwave:open-mic-settings"),
 });

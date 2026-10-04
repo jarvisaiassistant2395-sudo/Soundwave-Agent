@@ -56,10 +56,10 @@ async function pc(route, body, method = body === undefined ? "GET" : "POST") {
 }
 
 /**
- * Why a briefing step failed: what the PC says it has for today, and what the
- * phone itself holds (its conversation, its outbox, whether it has a key), as
- * one line for the annotation — the app's own sentence alone can't say whether
- * the PC had nothing or the phone never saw what it had.
+ * Why a briefing step failed: what the PC says it has for today (including
+ * whether it has a brain key at all), and what the phone is showing, as one line
+ * for the annotation — the app's own sentence alone can't say whether the PC had
+ * nothing or the phone never saw what it had.
  */
 async function briefingDiagnosis(page, day = null) {
   const bits = [];
@@ -80,42 +80,32 @@ async function briefingDiagnosis(page, day = null) {
   bits.push(
     `PC conversation: ${conv.messages.length} message(s), briefings ${briefs.map((m) => `${m.briefingDate}/${m.sender}${m.answeredBy ? `/${m.answeredBy}` : ""}`).join(", ") || "none"}`,
   );
-  const phone = await page.evaluate((d) => {
-    const read = (k) => {
-      try {
-        return JSON.parse(localStorage.getItem(k) ?? "null");
-      } catch {
-        return null;
-      }
-    };
-    const c = read("soundwave.conversation");
-    const o = read("soundwave.outbox");
-    const mine = (c?.messages ?? []).filter((m) => m.briefingDate);
-    return {
-      day: d,
-      messages: (c?.messages ?? []).length,
-      briefings: mine.map((m) => `${m.briefingDate}/${m.sender}${m.answeredBy ? `/${m.answeredBy}` : ""}`),
-      heard: read("soundwave.heardBriefings") ?? [],
-      outbox: `${o?.messages?.length ?? 0} message(s), ${o?.memoryOps?.length ?? 0} memory op(s)`,
-      // Both are the difference between "the phone decided not to brief" and
-      // "the phone never had what it takes to": the plan it holds, and whether
-      // it is set to talk when opened.
-      talkOnOpen: read("soundwave.settings")?.talkOnOpen ?? null,
-      plan: (() => {
-        const b = read("soundwave.memory")?.briefing;
-        return b ? `${b.time} auto=${b.auto} topics=${b.topics?.length ?? 0}` : "none";
-      })(),
-      // Named for what it is: the kit the PC shares (it carries the Gemini key
-      // the phone researches with). "false" here means the phone had nothing to
-      // write a briefing with, whatever the PC could or couldn't do.
-      hasKit: Boolean(read("soundwave.kit")),
-    };
-  }, day);
+  // What the phone itself holds (its conversation, the kit, the outbox) lives in
+  // Capacitor Preferences — Android SharedPreferences, which this page cannot
+  // read. An earlier version of this diagnosis read localStorage and reported
+  // "kit from the PC false, plan none" for a phone that plainly had both: a
+  // wrong answer is worse than no answer, so the phone's side is read from what
+  // it is showing instead.
+  const shown = await offlineState(page);
+  const barPhase = await page
+    .evaluate(() => document.querySelector('[data-testid="briefing-bar"]')?.getAttribute("data-phase") ?? null)
+    .catch(() => null);
   bits.push(
-    `phone holds: ${phone.messages} message(s), briefings ${phone.briefings.join(", ") || "none"}, heard ${JSON.stringify(phone.heard)}, outbox ${phone.outbox}, kit from the PC ${phone.hasKit}, talk on open ${phone.talkOnOpen}, plan ${phone.plan} (the PC's day when the stage started: ${phone.day})`,
+    `the phone shows: ${shown.agentCount ?? "?"} agent message(s), briefing bar ${barPhase ?? "not shown"}, last agent “${String(shown.lastAgent ?? "").slice(0, 90)}”, banner “${String(shown.banner ?? "").slice(0, 80)}” (day the stage started: ${day})`,
   );
   return bits.join(" | ");
 }
+
+/**
+ * The diagnosis, bounded. It only ever runs *after* something already failed,
+ * and every call in it is a network round trip to the PC — a hung one there once
+ * sat until the job's own 45-minute cap killed the whole run.
+ */
+const briefWhy = (page, day = null, ms = 8000) =>
+  Promise.race([
+    briefingDiagnosis(page, day).catch((e) => `(the diagnosis failed: ${e.message})`),
+    new Promise((r) => setTimeout(() => r("(the diagnosis is still running — see the run's log)"), ms)),
+  ]);
 
 let webviewPid = null;
 /** JavaScript errors the app's page reported (shown when a step fails). */
@@ -538,7 +528,7 @@ try {
   } catch (err) {
     // A 60-second wait that ends in "Timeout" names nothing: say what the PC
     // had, what the phone held, and what the phone was showing at that moment.
-    const why = await briefingDiagnosis(page).catch((e) => `(the diagnosis failed: ${e.message})`);
+    const why = await briefWhy(page);
     annotate("error", "Phone app E2E", `the briefing never started — ${why}; what the phone showed: ${JSON.stringify(await offlineState(page)).slice(0, 500)}`);
     throw err;
   }
@@ -721,10 +711,10 @@ try {
     // Say what the PC knew at that moment: with the app's own sentence alone a
     // red run here can't be told apart from a bad test (that is exactly what
     // happened once, and cost a whole run to work out).
-    const why = await briefingDiagnosis(page, briefingNow?.day ?? null).catch((e) => `(the diagnosis failed: ${e.message})`);
+    const why = await briefWhy(page, briefingNow?.day ?? null);
     fail(`the briefing after the alarm failed: ${alarmProblem} — ${why}`);
   } else if (!alarmSpoke) {
-    const why = await briefingDiagnosis(page, briefingNow?.day ?? null).catch((e) => `(the diagnosis failed: ${e.message})`);
+    const why = await briefWhy(page, briefingNow?.day ?? null);
     fail(`the briefing never started talking after the alarm was turned off — ${why} | app screen: "${lastScreen}"`);
   }
   else ok(`turned off → the briefing started talking ${Math.round((Date.now() - turnedOffAt) / 1000)} s later (the alarm said 5 s; then today's briefing is fetched and the voice starts)`);

@@ -369,7 +369,20 @@ function describeExit(code: number | null, signal: NodeJS.Signals | null, stderr
 let queued = 0;
 let chain: Promise<unknown> = Promise.resolve();
 
-function enqueue<T>(task: () => Promise<T>): Promise<T> {
+/**
+ * One whisper at a time — with the person's request ahead of anything else.
+ *
+ * `background` marks work nobody is waiting for: the hidden wake listener
+ * checking what it just heard ("Hey Soundwave"). Such a request is refused the
+ * moment *anything* is queued, and the listener throws that utterance away and
+ * checks the next one — so a person's recording can never sit in a queue behind
+ * it, or fail because a background check filled the queue. Whisper is a single
+ * process on a single PC, and both callers want it: the person goes first.
+ */
+function enqueue<T>(task: () => Promise<T>, opts: { background?: boolean } = {}): Promise<T> {
+  if (opts.background && queued > 0) {
+    return Promise.reject(new SttError("STT_BUSY", "The speech engine is busy with something you asked for."));
+  }
   if (queued > MAX_QUEUED) {
     return Promise.reject(new SttError("STT_BUSY", "Still working on your last voice command — try again in a moment."));
   }
@@ -478,8 +491,10 @@ export function getSttStatus(): SttStatus {
  * Transcribe a recording. Takes 16 kHz mono PCM WAV as-is (what the app's
  * recorder sends); anything else is converted with ffmpeg first. Near-silent
  * clips come back as `{ text: "", noSpeech: true }` without running whisper.
+ * `background: true` is for work nobody is waiting on (the wake listener): it
+ * is refused rather than queued when the engine is already busy.
  */
-export async function transcribe(audio: Buffer, opts: { signal?: AbortSignal } = {}): Promise<TranscriptResult> {
+export async function transcribe(audio: Buffer, opts: { signal?: AbortSignal; background?: boolean } = {}): Promise<TranscriptResult> {
   const { setup, problem } = resolveWhisper();
   if (!setup) throw new SttError("STT_UNAVAILABLE", problem ?? "Voice input isn't available.");
   if (!audio || audio.length < 64) throw new SttError("BAD_AUDIO", "The recording was empty.");
@@ -504,7 +519,7 @@ export async function transcribe(audio: Buffer, opts: { signal?: AbortSignal } =
 
   const started = Date.now();
   try {
-    const raw = await enqueue(() => runWhisper(setup, encodeWav(pcm), opts.signal));
+    const raw = await enqueue(() => runWhisper(setup, encodeWav(pcm), opts.signal), { background: opts.background });
     const text = cleanTranscript(raw, levels);
     const elapsedMs = Date.now() - started;
     health.lastError = null;

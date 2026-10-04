@@ -142,6 +142,14 @@ weight is written into the ASS rather than dropped. The licence travels with it
 and the audit refuses a bundle that drops it. Proof, not a promise: a test
 renders a frame and reads libass' `fontselect:` line back out.
 
+The same release settles who the microphone belongs to. "Hey Soundwave" listens
+in a hidden window; the Command Center's mic and the voice bar now tell the
+desktop shell when they are recording, so the listener stays quiet instead of
+transcribing the person twice — and its own checks are marked as background
+work, which the speech engine refuses rather than queues whenever something you
+asked for is using it. If a recording ever fails to transcribe, the reason is in
+the log now, not just in a toast that disappears.
+
 **Watched channels** (desktop 1.5.4): tell it "watch @MrBeast, 2 shorts each" and
 that's it — the PC checks the channel every few minutes while Soundwave AI runs
 and, the moment something new is up, announces it in the chat and cuts the

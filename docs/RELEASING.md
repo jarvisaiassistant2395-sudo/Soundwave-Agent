@@ -449,6 +449,36 @@ program and **refuses the build** if `bin/fonts` holds the font but not its
 app already drew its interface in Inter, so a short now looks like the product
 that made it.
 
+**One microphone at a time.** The wake word ("Hey Soundwave", 1.6.0) put a
+hidden window on the PC that listens and transcribes what it hears in the
+background. That window and the person both want the same thing: this PC's
+single whisper.cpp. Only the voice bar told the shell it was recording, so
+talking into the **Command Center's own microphone** left the wake listener
+listening too — two captures, one engine, and a recording that could fail or sit
+behind a background check with nothing said about it. Now:
+
+- `useVoiceCapture` (the Command Center's mic *and* the voice bar) reports its
+  phase to the shell as source `mic`; the voice bar keeps reporting as `voice`.
+  Two sources, two reasons in one pause set — neither cancels the other, and
+  `mic` is cleared when the window goes away.
+- The wake listener's requests are marked `?background=1`. The engine serves the
+  person first: a background check is refused (429 `STT_BUSY`) the moment
+  anything is queued, and the listener drops that utterance and checks the next
+  one. It never sits *in front of* a person's recording, and it can never fill
+  the queue. Its state line doesn't call that an error — being busy is the
+  designed answer — and the interpreter treats a refusal as ordinary.
+- A failed transcription is no longer silent: `useVoiceCapture` logs
+  `[voice] transcription failed: …` and `[voice] nothing heard …` to the
+  console, where a person (and a CI page log) can read it. The desktop e2e's mic
+  stage retries once, *says* that it retried, and on failure reports the
+  engine's own `lastError`/`lastTranscribedAt` from
+  `/api/v1/agent/transcribe/status` instead of a bare timeout.
+
+Server suite: `tests/stt.test.ts` proves the order — a slow stand-in whisper, a
+person's request in the engine, a background request refused, the person's
+request still answered, and the same background request served once the engine
+is free.
+
 1.6.4 gives the agent a second way to read a hard page: Scrapling on this PC.
 
 `read_web_page` already fetched the page and pulled the article out locally

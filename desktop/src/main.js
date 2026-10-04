@@ -671,13 +671,20 @@ function registerIpc() {
   ipcMain.on("soundwave:hide-overlay", (event) => {
     if (trusted(event)) hideOverlay();
   });
-  ipcMain.on("soundwave:voice-state", (event, state) => {
+  ipcMain.on("soundwave:voice-state", (event, payload) => {
     if (!trusted(event)) return;
+    // Older senders passed the state as a bare string; the shape is tolerated
+    // either way so a window and the shell can never disagree about a version.
+    const state = typeof payload === "string" ? payload : payload?.state;
+    const source = typeof payload === "string" ? "voice" : payload?.source;
     if (state !== "idle" && state !== "listening" && state !== "working") return;
     setTrayTooltip(state);
     // While Soundwave is listening or answering, the wake listener stays quiet:
     // it must never transcribe the person's own push-to-talk, or its own voice.
-    setWakePaused("voice", state !== "idle");
+    // Two windows report this independently — the voice bar ("voice", which also
+    // covers the speaking that follows) and the Command Center's own mic
+    // ("mic") — so each keeps its own reason and neither cancels the other.
+    setWakePaused(source === "mic" ? "mic" : "voice", state !== "idle");
   });
   ipcMain.on("soundwave:wake-state", (event, payload) => {
     if (!trusted(event) || !alive(wakeWindow) || event.sender !== wakeWindow.webContents) return;

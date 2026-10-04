@@ -166,7 +166,10 @@ router.post("/transcribe", optionalAuth, express.raw({ type: () => true, limit: 
   });
   try {
     const audio = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-    const result = await transcribe(audio, { signal: controller.signal });
+    // ?background=1 — the hidden wake listener checking what it just heard.
+    // Dropped rather than queued when the engine is busy with a person's
+    // recording: there is always another utterance a second later.
+    const result = await transcribe(audio, { signal: controller.signal, background: req.query.background === "1" });
     res.json(result);
   } catch (err) {
     if (err instanceof SttError) {

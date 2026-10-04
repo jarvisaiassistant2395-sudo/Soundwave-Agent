@@ -366,17 +366,49 @@ try {
   // ── 2. The Command Center's mic: tap, talk, it sends when you pause ───────
   at("Command Center microphone");
   await main.evaluate(() => localStorage.setItem("soundwave_voice_debug", "1"));
-  await main.locator('button[aria-label="Talk to Soundwave"]').click();
-  await main.waitForFunction(() => /listening/i.test(document.body.innerText), null, { timeout: 30_000 });
-  ok("tapping the mic starts listening");
-  await main.screenshot({ path: path.join(shotsDir, "2-listening.png") });
-  await main.waitForFunction(
-    () => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").some((m) => m.viaVoice && /ask not what your country/i.test(m.text)),
-    null,
-    { timeout: 120_000, polling: 500 },
-  );
-  const heard = (await voiceTurns(main)).at(-1);
-  if (!EXPECT.test(heard ?? "")) await fail(`the mic heard "${heard}"`);
+  const turnsBeforeMic = (await voiceTurns(main)).length;
+  // One retry, said out loud rather than hidden: this PC has a single whisper,
+  // and if it is busy for a moment the recording is lost with a toast the run
+  // can't see. A person would simply say it again — and a red run must never be
+  // a 120-second silence with no reason in it.
+  let heard = null;
+  for (let attempt = 1; attempt <= 2 && heard === null; attempt++) {
+    if (attempt > 1) {
+      annotate("warning", "Desktop E2E: Command Center mic", "the first tap produced no voice turn — tapping the mic and saying it again");
+    }
+    await main.locator('button[aria-label="Talk to Soundwave"]').click();
+    await main.waitForFunction(() => /listening/i.test(document.body.innerText), null, { timeout: 30_000 });
+    if (attempt === 1) {
+      ok("tapping the mic starts listening");
+      await main.screenshot({ path: path.join(shotsDir, "2-listening.png") });
+    }
+    try {
+      await main.waitForFunction(
+        (n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n,
+        turnsBeforeMic,
+        { timeout: 90_000, polling: 500 },
+      );
+      heard = (await voiceTurns(main)).at(-1) ?? "";
+    } catch {
+      // Name what the PC's speech engine says about itself — its last error and
+      // when it last transcribed — so a failure here is a finding, not a hang.
+      const engine = await main
+        .evaluate(() => fetch("/api/v1/agent/transcribe/status").then((r) => r.json()).catch(() => null))
+        .catch(() => null);
+      annotate(
+        "error",
+        "Desktop E2E: Command Center mic",
+        `tap ${attempt} of 2 produced no voice turn in 90 s. Engine: ${JSON.stringify({
+          available: engine?.available ?? null,
+          lastError: engine?.lastError ?? null,
+          lastTranscribedAt: engine?.lastTranscribedAt ?? null,
+          lastElapsedMs: engine?.lastElapsedMs ?? null,
+        })}`,
+      );
+    }
+  }
+  if (heard === null) await fail("the Command Center mic never produced a voice turn — see the engine line in this run's errors");
+  if (!EXPECT.test(heard)) await fail(`the mic heard "${heard}"`);
   await main.waitForFunction(() => /YOU \(VOICE\)/.test(document.body.innerText), null, { timeout: 30_000 });
   ok(`mic → whisper.cpp → agent: "${heard}"`);
   annotate("notice", "Desktop E2E: Command Center mic", `Heard "${heard}" and sent it to the agent.`);

@@ -77,7 +77,13 @@ export interface SoundwaveDesktop {
   notify(notification: DesktopNotification): void;
   showApp(route?: string): void;
   hideOverlay(): void;
-  setVoiceState(state: "idle" | "listening" | "working"): void;
+  /**
+   * What this window is doing with the microphone, so the shell can keep the
+   * hidden wake listener quiet while Soundwave listens or answers. `source`
+   * keeps two independent reporters from cancelling each other: the voice bar
+   * ("voice") and the Command Center's own mic ("mic").
+   */
+  setVoiceState(state: "idle" | "listening" | "working", source?: "voice" | "mic"): void;
   openMicrophoneSettings(): void;
   /** The wake page: pause/resume the microphone (the shell does it while it talks). */
   onWakeControl(callback: (command: "pause" | "resume") => void): () => void;

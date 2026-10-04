@@ -51,14 +51,17 @@ export function WakeListener() {
       if (busyRef.current) return; // whisper is already working: don't queue the world
       busyRef.current = true;
       try {
-        const heard = await transcribeRecording(utterance.wav);
+        const heard = await transcribeRecording(utterance.wav, undefined, { background: true });
         if (stoppedRef.current) return;
         const text = heard.text?.trim();
         if (text) bridge.wakeHeard({ text });
       } catch (err) {
-        // The engine being busy or briefly unhappy is not worth a dialog: say it
-        // once in the state line, and keep listening (the next phrase retries).
-        report("error", (err as Error)?.message || "The speech engine didn't answer.");
+        const message = (err as Error)?.message || "The speech engine didn't answer.";
+        // "Busy" is the normal, designed answer while the person's own
+        // recording is being transcribed (the engine serves them first): that
+        // utterance is simply dropped and the next one is checked. Anything
+        // else is worth saying once in the state line, and we keep listening.
+        if (!/busy/i.test(message)) report("error", message);
         return;
       } finally {
         busyRef.current = false;

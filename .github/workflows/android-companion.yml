@@ -179,7 +179,14 @@ jobs:
   emulator-e2e:
     needs: apk
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The flow keeps growing (boot, install, and a full morning/afternoon on the
+    # phone: settings, chat, briefing, alarm, wake word, push-to-talk). At 45
+    # minutes one run was killed mid-flow — "The job has exceeded the maximum
+    # execution time" — which tells you nothing about the app. The cap is a
+    # backstop for a hang, not a target: the emulator boots in minutes and every
+    # wait inside the flow is bounded (the briefing diagnosis, which runs after a
+    # failure and once sat here, is capped at 8 seconds).
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
 

@@ -375,10 +375,19 @@ export interface VoiceInputStatus {
   lastError: string | null;
 }
 
-export async function transcribeRecording(wav: Blob, signal?: AbortSignal): Promise<Transcript> {
+/**
+ * Send a recording to this PC's speech engine.
+ *
+ * `background: true` marks work nobody is waiting on — the hidden wake page
+ * checking what it just heard. The engine is one whisper on one machine, and it
+ * serves the person first: a background check is refused (429) rather than
+ * queued when the engine is busy, and the wake listener simply checks its next
+ * utterance.
+ */
+export async function transcribeRecording(wav: Blob, signal?: AbortSignal, opts: { background?: boolean } = {}): Promise<Transcript> {
   let res: Response;
   try {
-    res = await fetch("/api/v1/agent/transcribe", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav, signal });
+    res = await fetch(`/api/v1/agent/transcribe${opts.background ? "?background=1" : ""}`, { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav, signal });
   } catch (err) {
     if ((err as Error)?.name === "AbortError") throw err;
     throw new VoiceInputError("failed", "Couldn't reach Soundwave's speech engine.");

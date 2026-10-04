@@ -98,7 +98,7 @@ describe("voice input — audio helpers", () => {
 
 // ── Engine discovery + the HTTP route ───────────────────────────────────────
 
-const ENV_KEYS = ["WHISPER_CLI_PATH", "WHISPER_MODEL_PATH", "FAKE_WHISPER_OUTPUT", "FAKE_WHISPER_EXIT", "FAKE_WHISPER_LOG"] as const;
+const ENV_KEYS = ["WHISPER_CLI_PATH", "WHISPER_MODEL_PATH", "FAKE_WHISPER_OUTPUT", "FAKE_WHISPER_EXIT", "FAKE_WHISPER_LOG", "FAKE_WHISPER_SLEEP"] as const;
 const savedEnv: Record<string, string | undefined> = {};
 let tmp = "";
 let app: ReturnType<typeof createApp>;
@@ -135,6 +135,7 @@ function installFakeWhisper(): { cli: string; model: string; log: string } {
       "#!/bin/sh",
       'bytes=$(wc -c)',
       'printf "%s\\n" "args=$*" "cwd=$(pwd)" "stdin=$bytes" >> "$FAKE_WHISPER_LOG"',
+      '[ -n "$FAKE_WHISPER_SLEEP" ] && sleep "$FAKE_WHISPER_SLEEP"',
       'if [ -n "$FAKE_WHISPER_EXIT" ]; then echo "whisper_init: failed to open something" >&2; echo "boom: out of cheese" >&2; exit "$FAKE_WHISPER_EXIT"; fi',
       'printf "%s\\n" "$FAKE_WHISPER_OUTPUT"',
       "",
@@ -215,6 +216,34 @@ describe("voice input — POST /api/v1/agent/transcribe", () => {
       expect(calls).toMatch(/args=-m ggml-base\.en-q5_1\.bin -f - -of soundwave-stt -l en -t \d+ -nt -np -sns/);
       expect(calls).toContain(`cwd=${fs.realpathSync(path.dirname(model))}`);
       expect(calls).toMatch(new RegExp(`stdin=\\s*${wav.length}\\b`));
+    });
+
+    it("serves a person's recording before background work, and never behind it", async () => {
+      const { log } = installFakeWhisper();
+      process.env.FAKE_WHISPER_OUTPUT = " Make a YouTube short about black holes.";
+      process.env.FAKE_WHISPER_SLEEP = "2"; // a slow engine, so there is a queue to get in
+      const wav = encodeWav(speechLikePcm());
+
+      // The person's recording, in the engine. (.then() starts it: supertest
+      // only dispatches a request when it is awaited.)
+      const mine = request(app).post("/api/v1/agent/transcribe").set("Content-Type", "audio/wav").send(wav).then((r) => r);
+      for (let i = 0; i < 60 && !fs.existsSync(log); i++) await new Promise((r) => setTimeout(r, 25));
+      expect(fs.existsSync(log), "the person's recording should be in the engine by now").toBe(true);
+
+      // The hidden wake listener checking what it just heard: refused, not
+      // queued — it throws the utterance away and checks the next one.
+      const background = await request(app).post("/api/v1/agent/transcribe?background=1").set("Content-Type", "audio/wav").send(wav);
+      expect(background.status).toBe(429);
+      expect(background.body.error.code).toBe("STT_BUSY");
+
+      // …and the person's own request still answers, unharmed.
+      expect((await mine).status).toBe(200);
+
+      // With the engine free, the same background request is served normally.
+      const later = await request(app).post("/api/v1/agent/transcribe?background=1").set("Content-Type", "audio/wav").send(wav);
+      expect(later.status).toBe(200);
+      expect(later.body.text).toBe("Make a YouTube short about black holes.");
+      delete process.env.FAKE_WHISPER_SLEEP;
     });
 
     it("reports what whisper heard as no speech", async () => {

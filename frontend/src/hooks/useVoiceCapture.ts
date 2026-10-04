@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getDesktop } from "../lib/desktop";
 import { stopSpeaking } from "../lib/speech";
 import {
   VoiceInputError,
@@ -48,6 +49,11 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
   const go = useCallback((next: CapturePhase) => {
     phaseRef.current = next;
     setPhase(next);
+    // This PC has one speech engine, and the hidden wake listener wants it too:
+    // while this window is recording or transcribing, the shell keeps that
+    // listener quiet (source "mic" — the voice bar reports separately as
+    // "voice", so neither cancels the other's pause).
+    getDesktop()?.setVoiceState(next === "idle" ? "idle" : next === "transcribing" ? "working" : "listening", "mic");
   }, []);
 
   const finish = useCallback(
@@ -68,6 +74,7 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
         const recording = await recorder.stop(reason);
         if (controller.signal.aborted) return;
         if (!recording.hadSpeech && (reason === "no-speech" || recording.durationMs < 400)) {
+          console.warn(`[voice] nothing heard (${reason}, ${Math.round(recording.durationMs)} ms)`);
           go("idle");
           handlersRef.current.onNothingHeard();
           return;
@@ -76,9 +83,17 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
         if (controller.signal.aborted) return;
         go("idle");
         if (transcript.text.trim()) handlersRef.current.onTranscript(transcript.text.trim());
-        else handlersRef.current.onNothingHeard();
+        else {
+          // The engine answered, but with nothing in it: say so with the shape
+          // of the recording, so "I didn't catch that" is diagnosable.
+          console.warn(`[voice] nothing heard in ${(recording.durationMs / 1000).toFixed(1)} s of audio (${Math.round(recording.wav.size / 1024)} KB)`);
+          handlersRef.current.onNothingHeard();
+        }
       } catch (err) {
         if (controller.signal.aborted || (err as Error)?.name === "AbortError") return;
+        // A toast disappears in seconds and a run's screenshot may not be
+        // readable: the reason also goes to the console, where it stays.
+        console.warn(`[voice] transcription failed: ${(err as Error)?.message ?? String(err)}`);
         go("idle");
         playEarcon("error");
         handlersRef.current.onError(err as Error);
@@ -160,6 +175,9 @@ export function useVoiceCapture(handlers: VoiceCaptureHandlers) {
     () => () => {
       recorderRef.current?.cancel();
       abortRef.current?.abort();
+      // This window is going away: the shell must not keep the wake listener
+      // paused on its behalf.
+      getDesktop()?.setVoiceState("idle", "mic");
     },
     [],
   );
