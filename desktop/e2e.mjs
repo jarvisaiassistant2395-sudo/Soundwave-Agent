@@ -267,8 +267,13 @@ try {
   await sleep(400); // the width transition
   const narrow = await sidebar();
   if (desktopLayout) {
-    if (!(narrow.width < 60)) await fail(`the sidebar is ${narrow.width}px wide after minimizing — the rail should be about 64`);
-    else ok(`the minimize button turned the sidebar into a ${narrow.width}px rail`);
+    // w-16 is exactly 4rem = 64px (border-box). The range also means a hidden
+    // element (0px) can't pass this by accident.
+    if (!(narrow.width >= 48 && narrow.width <= 72)) {
+      await fail(`the sidebar is ${narrow.width}px wide after minimizing — the rail should be about 64`);
+    } else {
+      ok(`the minimize button turned the sidebar into a ${narrow.width}px rail`);
+    }
     if (!(narrow.contentLeft < 100)) await fail(`the page didn't follow the rail (content starts at ${narrow.contentLeft}px)`);
   } else {
     ok(`the minimize button collapsed the sidebar (rail geometry not assertable at ${pageWidth}px)`);
@@ -296,7 +301,9 @@ try {
   await sleep(400);
   const back = await sidebar();
   if (desktopLayout) {
-    if (!(back.width > 200 && back.showsLabels)) await fail(`the sidebar didn't come back (${back.width}px, labels ${back.showsLabels})`);
+    if (!(back.width >= 200 && back.width <= 280 && back.showsLabels)) {
+      await fail(`the sidebar didn't come back (${back.width}px, labels ${back.showsLabels})`);
+    }
     else ok(`expanding puts the full sidebar back (${back.width}px, labels visible)`);
   } else {
     // Below the breakpoint the labels aren't painted at all (the phone-sized
