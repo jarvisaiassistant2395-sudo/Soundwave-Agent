@@ -237,6 +237,41 @@ describe("the daily briefing", () => {
     expect(coreMorning.localDay(at(23, 30))).toBe("2026-10-02");
   });
 
+  it("doesn't consume the day when there's nothing to prepare from (no key, or no topics)", async () => {
+    // Nothing prepared at 10:00 by a fresh install that has no key yet: the
+    // placeholder would block the real briefing for the whole 10-hour window,
+    // so someone who adds their key later that morning would never get one.
+    settings.saveBrainSettings({ apiKey: null });
+    memory.setBriefingPlan({ topics: ["the latest news about open-source, free AI tools"], time: minutesAgo(2), auto: true });
+    conversation.resetConversationForTests?.();
+    briefing.resetBriefingForTests();
+    const noKey = await local(request(app).post("/api/v1/morning/briefing/prepare"));
+    expect(noKey.body.message).toBe(null);
+
+    // With a key but still no topics there is nothing to research either.
+    settings.saveBrainSettings({ apiKey: KEY });
+    memory.setBriefingPlan({ topics: [], time: minutesAgo(2), auto: true });
+    briefing.resetBriefingForTests();
+    const noTopics = await local(request(app).post("/api/v1/morning/briefing/prepare"));
+    expect(noTopics.body.message).toBe(null);
+
+    // …and the moment there are both, it prepares — so the refusal above is the
+    // missing input, not a broken scheduler.
+    memory.setBriefingPlan({ topics: ["the latest news about open-source, free AI tools"], time: minutesAgo(2), auto: true });
+    routeGemini({ briefing: "Good morning! Ollama 1.0 shipped." });
+    briefing.resetBriefingForTests();
+    const ready = await local(request(app).post("/api/v1/morning/briefing/prepare"));
+    expect(ready.body.message).toMatchObject({ briefingDate: coreMorning.localDay(new Date()) });
+
+    // The chip is a person asking, so it still answers without a key — with the
+    // sentence that says what to do. (It isn't the automatic path, so the guard
+    // above doesn't apply to it.)
+    settings.saveBrainSettings({ apiKey: null });
+    const chip = await local(request(app).post("/api/v1/morning/run"));
+    expect(chip.status).toBe(200);
+    expect(JSON.stringify(chip.body)).toMatch(/Add a Gemini key in Settings → Brain/);
+  });
+
   it("isn't prepared without a plan that's due, and the chip counts as today's briefing", async () => {
     memory.setBriefingPlan({ topics: [], time: "23:59", auto: true });
     const st = briefing.briefingStatus(new Date(2026, 9, 2, 12, 0));

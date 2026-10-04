@@ -20,13 +20,20 @@ afterAll(() => {
 
 describe("the voice stand-in (server/scripts/fake-edge-tts.ts)", () => {
   it("starts, binds the port, and answers with real MP3 bytes", async () => {
-    child = spawn(path.join(serverDir, "node_modules", ".bin", "tsx"), ["scripts/fake-edge-tts.ts", "--port", String(port)], {
+    // Run it through node itself, not node_modules/.bin/tsx: on Windows that
+    // shim is a .cmd file, which Node refuses to spawn without a shell
+    // (EINVAL) — the child never started and this test failed with an empty
+    // log. `node --import tsx <file>` works on every platform with Node 20+.
+    child = spawn(process.execPath, ["--import", "tsx", "scripts/fake-edge-tts.ts", "--port", String(port)], {
       cwd: serverDir,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let log = "";
     child.stdout?.on("data", (c: Buffer) => (log += c.toString()));
     child.stderr?.on("data", (c: Buffer) => (log += c.toString()));
+    // A failed spawn (missing tsx, wrong path) must show up in the message, not
+    // hide behind an empty log.
+    child.on("error", (err) => (log += `spawn error: ${err.message}\n`));
 
     // Poll briefly: the first run may spend a moment transpiling with tsx.
     let health: { ok?: boolean; track?: string; bytes?: number } | null = null;
@@ -39,7 +46,10 @@ describe("the voice stand-in (server/scripts/fake-edge-tts.ts)", () => {
       }
     }
 
-    expect(health?.ok, `stand-in did not answer /_fake/health. Its output:\n${log}`).toBe(true);
+    expect(
+      health?.ok,
+      `stand-in did not answer /_fake/health on port ${port} (${process.execPath} --import tsx, cwd ${serverDir}). Its output:\n${log}`,
+    ).toBe(true);
     // It must answer with a real, decodable-length MP3 — an empty or missing
     // track is exactly the failure this pins.
     expect(health?.bytes ?? 0, `answered with ${health?.track} (${health?.bytes} bytes)`).toBeGreaterThan(10_000);

@@ -15,6 +15,7 @@ import path from "node:path";
 import { config } from "../config.js";
 import { replyToMessage, type ChatMessage } from "./chatMessages.js";
 import { appendToConversation, getConversation } from "./conversation.js";
+import { activeBrain } from "./brain/settings.js";
 import { briefingPlan, memoryAvailable } from "./memory.js";
 import { runMorningSetup } from "./morning.js";
 import { BRIEFING_WINDOW_MINUTES, briefingDue, inBriefingWindow as inWindow, localDay } from "./brain/core/morning.js";
@@ -86,11 +87,33 @@ export function briefingStatus(now = new Date()) {
   };
 }
 
-/** Researches and writes today's briefing now (or returns the one that's there). */
+/**
+ * Researches and writes today's briefing now (or returns the one that's there).
+ *
+ * This is the *automatic* path (the scheduler, the Command Center opening, the
+ * phone). It refuses to run when there is nothing to prepare from — no Gemini
+ * key, or no topics — and that refusal is deliberate, not a shortcut:
+ *
+ *   • Without a key there is no research and no written briefing, only a
+ *     placeholder sentence telling the person to add a key.
+ *   • Without topics there is nothing to research.
+ *
+ * Either way the placeholder would *become* "today's briefing", and the
+ * existing-briefing check above means the real one could never be written for
+ * the rest of the 10-hour window: someone who added their key at 09:30, or
+ * their first topic at 10:00, would get no briefing that day. (That is also
+ * what made CI dependent on the hour — before 08:00 nothing was prepared, after
+ * it the day was consumed before the test could set its topics.)
+ *
+ * The 🌅 chip and the agent's run_morning_setup tool go through
+ * `/api/v1/morning/run`, which is the person asking, so those still work
+ * without a key and still say what to do.
+ */
 export function prepareTodaysBriefing(reason: "schedule" | "phone" | "app"): Promise<ChatMessage | null> {
   const day = localDay(new Date());
   const existing = todaysBriefingMessage(day);
   if (existing) return Promise.resolve(existing);
+  if (!activeBrain() || briefingPlan().topics.length === 0) return Promise.resolve(null);
   if (preparing) return preparing;
   preparing = (async () => {
     try {
