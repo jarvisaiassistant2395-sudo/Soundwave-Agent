@@ -1,0 +1,10 @@
+# Soundwave AI — sales site
+# Change the Sitemap line to your real domain before you go live.
+
+User-agent: *
+Allow: /
+Disallow: /success
+Disallow: /cancel
+Disallow: /api/
+
+Sitemap: https://soundwave.ai/sitemap.xml

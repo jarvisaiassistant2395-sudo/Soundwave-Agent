@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Soundwave AI — the AI agent that writes, narrates and renders your shorts</title>
+<meta name="description" content="Soundwave AI is a Windows desktop agent that writes the script, narrates it in a neural voice, burns in word-by-word captions and renders a vertical short over gameplay it hasn't used before. An Android app keeps the same conversation in your pocket. Free plan, no account required." />
+<meta name="theme-color" content="#0a0f1c" />
+<meta name="color-scheme" content="dark" />
+<link rel="canonical" href="https://soundwave.ai/" />
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+<!-- Social cards. Replace the URL with your real domain once it is live. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Soundwave AI" />
+<meta property="og:title" content="Soundwave AI — the agent that makes the short, not just the script" />
+<meta property="og:description" content="Writes it, narrates it, captions it, renders it. Runs on your PC. Free plan available." />
+<meta property="og:url" content="https://soundwave.ai/" />
+<meta property="og:image" content="assets/og-image.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Soundwave AI — the agent makes the short. Writes it, narrates it, captions it, renders it." />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="assets/og-image.jpg" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Soundwave AI",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "Windows 10, Windows 11, Android 7.0+",
+  "description": "An AI agent that writes, narrates and renders vertical shorts on your own PC, with an Android companion app.",
+  "softwareVersion": "1.6.5",
+  "offers": [
+    { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "USD" },
+    { "@type": "Offer", "name": "Pro", "price": "12", "priceCurrency": "USD", "category": "monthly subscription" },
+    { "@type": "Offer", "name": "Enterprise", "price": "39", "priceCurrency": "USD", "category": "monthly subscription" }
+  ]
+}
+</script>
+</head>
+<body>
+
+<!-- ── Icon sprite (stroke icons, lucide-style) ─────────────────────────── -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="g-logo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6" />
+      <stop offset="1" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M5 20h14" /></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7" /></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15" /><path d="m13 6 6 6-6 6" /></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z" /></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5.5" width="3.6" height="13" rx="1.2" /><rect x="13.4" y="5.5" width="3.6" height="13" rx="1.2" /></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" /><path d="M12 18v3" /><path d="M9 21h6" /></symbol>
+  <symbol id="i-captions" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7.5 14h3" /><path d="M13.5 14h3" /><path d="M7.5 10h1.5" /></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M9 5v14" /><path d="M15 5v14" /></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v6c0 4.4 2.9 7.6 7 9 4.1-1.4 7-4.6 7-9V6z" /><path d="m9 12 2 2 4-4" /></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5.5 13.5H11l-1 7.5L18.5 10H13z" /></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" /><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M9.5 3.5v-1M14.5 3.5v-1M9.5 21.5v-1M14.5 21.5v-1M3.5 9.5h-1M3.5 14.5h-1M21.5 9.5h-1M21.5 14.5h-1" /></symbol>
+  <symbol id="i-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="3" /><path d="M11 18.5h2" /></symbol>
+  <symbol id="i-android" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10h10v7a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 7 17z" /><path d="M9.5 6.5a2.5 2.5 0 0 1 5 0" /><circle cx="10" cy="13" r=".6" fill="currentColor" /><circle cx="14" cy="13" r=".6" fill="currentColor" /><path d="m8 7-1.5-2M16 7l1.5-2" /></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5a12 12 0 0 1 16 0" /><path d="M7 13a8 8 0 0 1 10 0" /><path d="M10 16.5a3.5 3.5 0 0 1 4 0" /><circle cx="12" cy="19.5" r=".8" fill="currentColor" /></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="3" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /><path d="M12 14.5v2" /></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 4 1.7 4.6L18.3 10l-4.6 1.4L12 16l-1.7-4.6L5.7 10l4.6-1.4z" /><path d="M18.5 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" /></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4 5.2 18.8" /></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="6.5" cy="17.5" r="2.5" /><path d="M8.6 8.1 20 18.5M8.6 15.9 20 5.5" /></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z" /><circle cx="12" cy="12" r="2.8" /></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5.5 6.5 9H4v6h2.5L11 18.5z" /><path d="M15 9.5a3.5 3.5 0 0 1 0 5" /><path d="M17.5 7a7 7 0 0 1 0 10" /></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.2l2 2.5H18a2.5 2.5 0 0 1 2.5 2.5v6.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9" /><path d="M20 4v5h-5" /></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16" /><path d="M7 20v-6M12 20V8M17 20v-9" /></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17" /><path d="M12 3.5c2.4 2.4 3.6 5.4 3.6 8.5S14.4 18.1 12 20.5c-2.4-2.4-3.6-5.4-3.6-8.5S9.6 5.9 12 3.5z" /></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="3.5" /><path d="M11.5 12H21" /><path d="M17.5 12v3M20 12v2.5" /></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="2.5" /><path d="M9 20h6M12 16.5V20" /></symbol>
+  <symbol id="i-gamepad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="5" /><path d="M7 10.5v3M5.5 12h3" /><circle cx="16" cy="11" r=".9" fill="currentColor" /><circle cx="18.2" cy="13.2" r=".9" fill="currentColor" /></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="3" /><path d="m4 8 8 5.5L20 8" /></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m8.5 8-4.5 4 4.5 4" /><path d="m15.5 8 4.5 4-4.5 4" /></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3" /><path d="m7.5 10 2.5 2.5-2.5 2.5" /><path d="M12.5 15h4" /></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16.5v-5a6 6 0 1 0-12 0v5l-1.5 2.5h15z" /><path d="M10 21.5a2.2 2.2 0 0 0 4 0" /></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8.5 4.5L12 12 3.5 7.5z" /><path d="m4 12.5 8 4.3 8-4.3" /><path d="m4 16.8 8 4.2 8-4.2" /></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12.2 2.5 2.5 4.5-5" /></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5" /><circle cx="12" cy="8" r=".9" fill="currentColor" /></symbol>
+</svg>
+
+<!-- ── Nav ──────────────────────────────────────────────────────────────── -->
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Soundwave AI — home">
+      <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="43" height="43" rx="12" fill="#0A0F1C" stroke="url(#g-logo)" stroke-width="2.4" />
+        <g stroke="url(#g-logo)" stroke-width="3.2" stroke-linecap="round">
+          <path d="M9 20v8" /><path d="M15 14v20" /><path d="M21 9v30" /><path d="M27 17v14" /><path d="M33 12v24" /><path d="M39 16v16" />
+        </g>
+        <circle cx="40" cy="9" r="3" fill="#8B5CF6" />
+      </svg>
+      Soundwave <span class="grad-text">AI</span>
+    </a>
+
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#voices">Voices</a>
+      <a href="#phone">Phone app</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-sm" href="#pricing">Pricing</a>
+      <a class="btn btn-primary btn-sm" href="#download" data-download="windowsInstaller">
+        <svg aria-hidden="true"><use href="#i-download" /></svg>
+        Download free
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false" aria-controls="navMobile">
+        <svg aria-hidden="true"><use href="#i-menu" /></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="nav-mobile" id="navMobile">
+  <a href="#features">Features</a>
+  <a href="#how">How it works</a>
+  <a href="#voices">Voices</a>
+  <a href="#phone">Phone app</a>
+  <a href="#pricing">Pricing</a>
+  <a href="#faq">FAQ</a>
+  <a class="btn btn-primary btn-block" href="#download" data-download="windowsInstaller">
+    <svg aria-hidden="true"><use href="#i-download" /></svg> Download free
+  </a>
+</div>
+
+<main id="top">
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="pill">
+        <span class="pill-tag">New</span>
+        <span><b>1.6.5</b> — it can look at your screen, read a file and set your volume</span>
+      </span>
+
+      <h1>The agent makes the short.<br /><span class="grad-text">You just say what it's about.</span></h1>
+
+      <p class="hero-lede">
+        Soundwave AI writes the script, narrates it in a neural voice, burns in word-by-word
+        captions and renders it over gameplay it hasn't used before — on your own PC. Ask it
+        anything out loud, or press one button and watch it work.
+      </p>
+
+      <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="#download" data-download="windowsInstaller">
+          <svg aria-hidden="true"><use href="#i-download" /></svg>
+          Download for Windows
+        </a>
+        <a class="btn btn-ghost btn-lg" href="#pricing">See pricing <svg aria-hidden="true"><use href="#i-arrow-right" /></svg></a>
+      </div>
+
+      <p class="hero-sub">
+        <span><svg aria-hidden="true"><use href="#i-check" /></svg> Free plan, no account</span>
+        <span><svg aria-hidden="true"><use href="#i-check" /></svg> Speech runs on your PC</span>
+        <span><svg aria-hidden="true"><use href="#i-check" /></svg> Windows 10/11 · Android companion</span>
+      </p>
+    </div>
+
+    <!-- The Command Center, animated -->
+    <div class="mock" id="mock" role="img" aria-label="The Soundwave Command Center writing, narrating and rendering a short.">
+      <div class="mock-bar">
+        <span class="mock-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="mock-title"><svg aria-hidden="true"><use href="#i-terminal" /></svg> Soundwave AI — Command Center</span>
+        <span class="mock-live"><i aria-hidden="true"></i> local</span>
+      </div>
+
+      <div class="mock-body">
+        <div class="mock-rail" aria-hidden="true">
+          <i class="on"></i><i></i><i></i><i></i><i></i>
+        </div>
+
+        <div class="mock-thread">
+          <div class="msg msg-user">make a short about why sleep beats caffeine</div>
+          <div class="msg msg-agent">
+            On it. Writing the script, then narrating and rendering it over a background this
+            project hasn't used yet.
+          </div>
+
+          <div class="steps" id="mockSteps">
+            <div class="step" data-step data-ms="1100">
+              <span class="step-icon" aria-hidden="true"></span>
+              <span class="step-name">Writing the script</span>
+              <span class="step-time">1.4s</span>
+            </div>
+            <div class="step" data-step data-ms="1500">
+              <span class="step-icon" aria-hidden="true"></span>
+              <span class="step-name">Narrating with Ava <span style="color:#7d879c">(most natural)</span></span>
+              <span class="step-time">3.1s</span>
+            </div>
+            <div class="step" data-step data-ms="2100">
+              <span class="step-icon" aria-hidden="true"></span>
+              <span class="step-name">Rendering 9:16 · 1080p · unused background #143</span>
+              <span class="step-time">11.8s</span>
+            </div>
+            <div class="prog" aria-hidden="true"><i id="mockProg"></i></div>
+          </div>
+
+          <div class="result" id="mockResult">
+            <div class="result-top">
+              <svg aria-hidden="true"><use href="#i-check-circle" /></svg>
+              Short ready — 0:42 · 1080×1920 · captions burnt in
+            </div>
+            <div class="result-meta">sleep-beats-caffeine.mp4 · 8.2 MB</div>
+            <div class="result-actions">
+              <span class="chip-mini"><svg aria-hidden="true"><use href="#i-download" /></svg> MP4</span>
+              <span class="chip-mini"><svg aria-hidden="true"><use href="#i-play" /></svg> Watch</span>
+              <span class="chip-mini"><svg aria-hidden="true"><use href="#i-film" /></svg> Post to YouTube</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-preview" aria-hidden="true">
+          <div class="phone">
+            <div class="phone-scene"></div>
+            <span class="phone-badge"><i></i> 0:42</span>
+            <div class="caption" id="mockCaption">
+              <span>Your</span><span>brain</span><span>cleans</span><span>itself</span><span>while</span><span>you</span><span>sleep.</span>
+            </div>
+            <div class="phone-wave" id="mockWave"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Trust strip ──────────────────────────────────────────────────────── -->
+<div class="strip">
+  <div class="wrap strip-inner">
+    <span class="strip-item"><svg aria-hidden="true"><use href="#i-mic" /></svg> <b>10</b> neural voices</span>
+    <span class="strip-item"><svg aria-hidden="true"><use href="#i-cpu" /></svg> Speech recognised <b>on your PC</b></span>
+    <span class="strip-item"><svg aria-hidden="true"><use href="#i-smartphone" /></svg> <b>Android</b> companion app</span>
+    <span class="strip-item"><svg aria-hidden="true"><use href="#i-layers" /></svg> A <b>fresh background</b> every render</span>
+    <span class="strip-item"><svg aria-hidden="true"><use href="#i-shield" /></svg> <b>No account</b> needed</span>
+  </div>
+</div>
+
+<!-- ── Features ─────────────────────────────────────────────────────────── -->
+<section id="features">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="eyebrow">What it does</span>
+      <h2 style="margin-top:14px">One agent from idea to uploaded Short</h2>
+      <p class="lede">
+        Not a timeline, not a template gallery — an agent with real tools. It writes, speaks,
+        captions, renders, posts, and tells you exactly what it did.
+      </p>
+    </div>
+
+    <div class="grid grid-4">
+      <article class="card reveal" style="--d:0ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-sparkles" /></svg></span>
+        <h3>Writes the script</h3>
+        <p>Give it a topic — it writes the hook, the body and the payoff for a vertical Short, in the length it needs to be.</p>
+      </article>
+
+      <article class="card reveal" style="--d:60ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-mic" /></svg></span>
+        <h3>Narrates in a real voice</h3>
+        <p>Ten Microsoft neural voices with American and British accents. Ask for a different one mid-conversation and it switches.</p>
+      </article>
+
+      <article class="card reveal" style="--d:120ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-captions" /></svg></span>
+        <h3>Burns in the captions</h3>
+        <p>Word-by-word, timed to the narration, rendered with the Inter font the app ships — so every PC looks the same.</p>
+      </article>
+
+      <article class="card reveal" style="--d:180ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-layers" /></svg></span>
+        <h3>Never repeats a background</h3>
+        <p>Tracks which gameplay clip each project has already used, so the next Short doesn't look like the last one.</p>
+      </article>
+
+      <article class="card reveal" style="--d:0ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-scissors" /></svg></span>
+        <h3>Cuts shorts from long videos</h3>
+        <p>Paste a YouTube link or a file. It listens with whisper.cpp, finds the moments that stand alone and renders each one vertically.</p>
+      </article>
+
+      <article class="card reveal" style="--d:60ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-eye" /></svg></span>
+        <h3>Watches channels for you</h3>
+        <p>“Watch @MrBeast, 2 shorts each.” Every new upload gets clipped automatically while the app is running.</p>
+      </article>
+
+      <article class="card reveal" style="--d:120ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-sun" /></svg></span>
+        <h3>Morning briefing</h3>
+        <p>Tell it what you want to hear about each morning. It researches your topics and starts talking the moment you open the app.</p>
+      </article>
+
+      <article class="card reveal" style="--d:180ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-chart" /></svg></span>
+        <h3>Knows how you're doing</h3>
+        <p>Connect YouTube once. Ask “how are my views?” and it reads the real numbers, plus what changed since last time.</p>
+      </article>
+    </div>
+
+    <!-- The hands-and-eyes row -->
+    <div class="grid grid-3" style="margin-top:16px">
+      <article class="card reveal">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-monitor" /></svg></span>
+        <h3>Looks at your screen</h3>
+        <p>“What does this error say?” — it photographs the screen it's on, reads it, and admits when something is too small to read.</p>
+      </article>
+      <article class="card reveal" style="--d:60ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-folder" /></svg></span>
+        <h3>Reads your files</h3>
+        <p>Give it a path. It reads the file or lists the folder — read-only, never searching your disk on its own.</p>
+      </article>
+      <article class="card reveal" style="--d:120ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-volume" /></svg></span>
+        <h3>Handles the small stuff</h3>
+        <p>Volume, reminders, timers, opening apps and websites — and it reads every change back so the number is the real one.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ── Tools ────────────────────────────────────────────────────────────── -->
+<section id="tools" class="section-tight">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="eyebrow">What it can actually do</span>
+      <h2 style="margin-top:14px">Real tools, not confident guesses</h2>
+      <p class="lede">
+        The agent acts through a fixed list of tools. If something isn't on the list, it says so
+        instead of inventing it — and it never claims something it didn't do.
+      </p>
+    </div>
+
+    <div class="tools reveal">
+      <div class="tool"><svg aria-hidden="true"><use href="#i-film" /></svg><div><b>Make a short</b><span><code>make_youtube_short</code> — script, voice, captions, render.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-scissors" /></svg><div><b>Clip a long video</b><span><code>make_shorts_from_video</code> — link or file to a set of Shorts.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-captions" /></svg><div><b>Read a video's transcript</b><span><code>read_video</code> — subtitles or auto-captions, and which one it used.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-globe" /></svg><div><b>Read a web page</b><span><code>read_web_page</code> — parsed on your PC with Firefox's reader mode.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-search" /></svg><div><b>Search YouTube</b><span><code>search_youtube</code> — titles, channels, lengths, view counts.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-eye" /></svg><div><b>Look at the screen</b><span><code>look_at_screen</code> — nothing written to disk.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-folder" /></svg><div><b>Read a file or folder</b><span><code>read_file</code> — one path you name, and nothing else.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-volume" /></svg><div><b>Set the volume</b><span><code>set_volume</code> — Windows CoreAudio, read back to confirm.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-bell" /></svg><div><b>Reminders</b><span><code>set_reminder</code> — rings into the conversation, once.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-chart" /></svg><div><b>Your YouTube numbers</b><span><code>youtube_views</code> — per channel, and what changed.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-mic" /></svg><div><b>Change its voice</b><span><code>set_voice</code> — “use Ava”, “switch to Ryan”.</span></div></div>
+      <div class="tool"><svg aria-hidden="true"><use href="#i-key" /></svg><div><b>Remember things</b><span><code>remember</code> / <code>forget</code> — shared with your phone.</span></div></div>
+    </div>
+
+    <p class="lede reveal" style="margin-top:26px; font-size:15px; color:var(--text-dim)">
+      Deliberately <b style="color:var(--text-soft)">not</b> on the list: sending emails, signing
+      into your accounts, clicking inside other apps, or scraping Twitter, Instagram, TikTok and
+      Reddit — those need a logged-in session, and Soundwave never asks for your cookies or
+      passwords.
+    </p>
+  </div>
+</section>
+
+<!-- ── How it works ─────────────────────────────────────────────────────── -->
+<section id="how">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <span class="eyebrow">How it works</span>
+      <h2 style="margin-top:14px">Three minutes to your first Short</h2>
+    </div>
+
+    <div class="steps-row">
+      <article class="step-card reveal" style="--d:0ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-download" /></svg></span>
+        <h3>Install it</h3>
+        <p class="lede" style="font-size:14.8px; margin-top:10px">
+          Run the Windows installer. FFmpeg, yt-dlp, the speech engine and the caption font are
+          already inside — no terminal, no Node, no Python, nothing to configure first.
+        </p>
+      </article>
+
+      <article class="step-card reveal" style="--d:80ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-key" /></svg></span>
+        <h3>Add your brain key</h3>
+        <p class="lede" style="font-size:14.8px; margin-top:10px">
+          Paste a free Google AI Studio key in <b style="color:var(--text-soft)">Settings → Brain</b>.
+          It's stored on your PC only. Without one, the app still makes Shorts from its built-in
+          scripts and tells you how to add a key.
+        </p>
+      </article>
+
+      <article class="step-card reveal" style="--d:160ms">
+        <span class="card-icon"><svg aria-hidden="true"><use href="#i-sparkles" /></svg></span>
+        <h3>Say what you want</h3>
+        <p class="lede" style="font-size:14.8px; margin-top:10px">
+          Type it, tap the mic, or press <b style="color:var(--text-soft)">Ctrl+Shift+Space</b> from
+          any app and just talk. Or press Generate and let the agent pick the topic.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ── Voices ───────────────────────────────────────────────────────────── -->
+<section id="voices" class="section-tight">
+  <div class="wrap">
+    <div class="grid grid-2" style="align-items:center; gap:clamp(28px,5vw,58px)">
+      <div class="reveal">
+        <span class="eyebrow">The Soundwave voices</span>
+        <h2 style="margin-top:14px">Hear one before you install</h2>
+        <p class="lede">
+          These are the app's neural voices, exactly as they sound in a Short — 24&nbsp;kHz MP3,
+          no model downloads, no GPU. The same voices narrate the videos and answer you in the
+          Command Center.
+        </p>
+        <ul class="check-list">
+          <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Say the name.</b> “Use Ava”, “switch to Ryan” — the agent changes its own voice and remembers it on your phone too.</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Ten to choose from.</b> American and British, male and female, including the newest Multilingual generation.</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Your own voice, optionally.</b> Run the self-hosted Chatterbox sidecar (MIT for code and weights) and narrate as yourself.</span></li>
+        </ul>
+      </div>
+
+      <div class="panel reveal" style="--d:80ms">
+        <div class="voice-grid" id="voiceGrid">
+          <!-- populated from the sample files; each card plays a real MP3 -->
+        </div>
+        <p class="lede" style="font-size:12.8px; margin-top:16px; color:var(--text-dim)">
+          Real samples shipped with the app. Four more multilingual voices are in the app but not
+          sampled here.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Phone ────────────────────────────────────────────────────────────── -->
+<section id="phone">
+  <div class="wrap split">
+    <div class="reveal">
+      <span class="eyebrow">Soundwave for Android</span>
+      <h2 style="margin-top:14px">The same conversation, in your pocket</h2>
+      <p class="lede">
+        Pair once by scanning the QR code in <b style="color:var(--text-soft)">Settings → Phone</b>.
+        From then on your phone is the Command Center: type or talk, start Shorts, watch them when
+        they land, run your Morning Setup.
+      </p>
+      <ul class="check-list">
+        <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Straight to your PC</b> over your own Wi-Fi, end-to-end encrypted — not through somebody's cloud.</span></li>
+        <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Works with the PC off.</b> The phone keeps chatting and researching on its own, then hands the conversation back.</span></li>
+        <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Real alarms.</b> Ask for one and it lands in Android's alarm clock — it rings with the PC unplugged, and can start your briefing.</span></li>
+      </ul>
+      <div class="hero-actions">
+        <a class="btn btn-ghost" href="#download" data-download="android">
+          <svg aria-hidden="true"><use href="#i-android" /></svg> Get the Android app
+        </a>
+      </div>
+    </div>
+
+    <div class="split-art reveal" style="--d:80ms">
+      <div class="panel">
+        <div class="transcript">
+          <div class="bubble bubble-you">did the sleep short finish?</div>
+          <div class="bubble bubble-agent">
+            Yes — 0:42, captions burnt in, posted to your channel ten minutes ago. It's had 214
+            views so far.
+          </div>
+          <div class="bubble bubble-you">set an alarm for 6:30</div>
+          <div class="bubble bubble-agent">
+            Done — 6:30, in your phone's alarm clock. Want the morning briefing 30 seconds after
+            you turn it off?
+          </div>
+        </div>
+        <div class="mono-line">
+          <span>paired · QR</span><span>wi-fi · encrypted</span><span>pc online</span><span>android 7.0+</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Privacy / honesty ────────────────────────────────────────────────── -->
+<section id="privacy" class="section-tight">
+  <div class="wrap split flip">
+    <div class="reveal">
+      <span class="eyebrow">Where your work lives</span>
+      <h2 style="margin-top:14px">It renders on your machine, not ours</h2>
+      <p class="lede">
+        Shorts are assembled by FFmpeg running on your own PC and stay in
+        <code style="font-family:var(--mono);font-size:.9em;background:rgba(255,255,255,.07);padding:2px 6px;border-radius:5px">%APPDATA%\Soundwave AI\</code>
+        until you upload them yourself. Nothing is queued on a server of ours, because there isn't one.
+      </p>
+      <ul class="check-list">
+        <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Speech recognition is local.</b> whisper.cpp with a bundled model transcribes your voice on your PC — no account, nothing uploaded. “Hey Soundwave” throws away every burst that isn't the phrase.</span></li>
+        <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Your key stays yours.</b> The Gemini key lives in a file on your PC and is never sent back to a web page.</span></li>
+        <li><svg aria-hidden="true"><use href="#i-check" /></svg><span><b>Renders that need a network say so.</b> Narration goes to Microsoft's neural voice service; reading a hard page falls back to a reader service only when your PC can't get the article itself.</span></li>
+      </ul>
+    </div>
+
+    <div class="split-art reveal" style="--d:80ms">
+      <div class="grid grid-2" style="gap:14px">
+        <article class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-code" /></svg></span>
+          <h3 style="font-size:17px">Licences audited in CI</h3>
+          <p style="font-size:14px">Every bundled dependency is listed with its licence, and the build fails on anything copyleft or non-commercial inside our code.</p>
+        </article>
+        <article class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-shield" /></svg></span>
+          <h3 style="font-size:17px">Honest by design</h3>
+          <p style="font-size:14px">No fake stats on this page, no invented testimonials, and a “can't do yet” list the agent itself reads out.</p>
+        </article>
+        <article class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-refresh" /></svg></span>
+          <h3 style="font-size:17px">Updates itself</h3>
+          <p style="font-size:14px">The app keeps yt-dlp current so YouTube imports survive their changes — restart if an import ever fails.</p>
+        </article>
+        <article class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-globe" /></svg></span>
+          <h3 style="font-size:17px">Proven by tests</h3>
+          <p style="font-size:14px">A test renders a real frame and reads libass' font choice back out, so “captions use Inter” is verified, not promised.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Pricing ──────────────────────────────────────────────────────────── -->
+<section id="pricing">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="eyebrow">Pricing</span>
+      <h2 style="margin-top:14px">Start free. Upgrade when it's earning.</h2>
+      <p class="lede">
+        The Windows app is free to install and free to keep — it writes, narrates and renders on
+        your own PC. Paid plans raise the limits of your <b style="color:var(--text-soft)">Soundwave
+        account</b>: the narration quota behind the hosted service and the phone, watermark-free
+        exports, cloud save and API access.
+      </p>
+      <div class="billing-toggle" role="group" aria-label="Billing period">
+        <button type="button" data-interval="monthly" aria-pressed="false">Monthly</button>
+        <button type="button" data-interval="annual" aria-pressed="true">
+          Annual <span class="save-tag" id="saveTag">Save 20%</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="price-grid" id="priceGrid">
+      <!-- plan cards are rendered from config.js so prices live in one place -->
+    </div>
+
+    <div class="price-foot reveal" id="priceFoot">
+      <span><svg aria-hidden="true"><use href="#i-shield" /></svg> Secure checkout by Stripe</span>
+      <span><svg aria-hidden="true"><use href="#i-refresh" /></svg> Cancel any time</span>
+      <span><svg aria-hidden="true"><use href="#i-lock" /></svg> No card needed for the free plan</span>
+    </div>
+
+    <p class="lede" id="priceNote" style="text-align:center; font-size:13px; color:var(--text-dim); margin-top:16px"></p>
+
+    <!-- Compare -->
+    <div style="margin-top:56px">
+      <h3 class="reveal" style="text-align:center; font-size:clamp(20px,2.4vw,26px)">Compare the plans</h3>
+      <div class="table-scroll reveal" style="margin-top:20px">
+        <table class="compare" id="compareTable">
+          <thead>
+            <tr id="compareHead"></tr>
+          </thead>
+          <tbody id="compareBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Download ─────────────────────────────────────────────────────────── -->
+<section id="download" class="section-tight">
+  <div class="wrap">
+    <div class="cta reveal">
+      <span class="eyebrow" style="justify-content:center">Get started</span>
+      <h2 style="margin-top:14px">Make the first Short tonight</h2>
+      <p class="lede">
+        Download it, paste a free Gemini key, say a topic out loud. If the free plan runs out of
+        room before you're convinced, your work is still on your PC.
+      </p>
+      <div class="cta-actions">
+        <a class="btn btn-primary btn-lg" href="#" data-download="windowsInstaller">
+          <svg aria-hidden="true"><use href="#i-download" /></svg>
+          Download installer (.exe)
+        </a>
+        <a class="btn btn-ghost btn-lg" href="#" data-download="windowsPortable">Portable version</a>
+        <a class="btn btn-ghost btn-lg" href="#" data-download="android">
+          <svg aria-hidden="true"><use href="#i-android" /></svg> Android app
+        </a>
+      </div>
+      <p class="hero-sub" style="justify-content:center; margin-top:20px">
+        <span id="versionNote"></span>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ──────────────────────────────────────────────────────────────── -->
+<section id="faq" class="section-tight">
+  <div class="wrap wrap-narrow">
+    <div class="section-head center reveal">
+      <span class="eyebrow">Questions</span>
+      <h2 style="margin-top:14px">The things people ask first</h2>
+    </div>
+
+    <div class="faq reveal">
+      <details open>
+        <summary>What do I actually need to run it?</summary>
+        <div class="faq-a">
+          Windows 10 or 11, 64-bit. Everything else is inside the installer: FFmpeg for rendering,
+          yt-dlp for YouTube, the whisper.cpp speech engine with its ~60&nbsp;MB model, the caption
+          font and the Microsoft C++ runtime. There's no Node, Python or terminal step. The Android
+          app needs Android 7.0 or newer.
+        </div>
+      </details>
+
+      <details>
+        <summary>Do I need an API key? Do I have to pay for one?</summary>
+        <div class="faq-a">
+          The agent's brain runs on Google Gemini with your own key — a free one from
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+          is enough, and it's stored only on your PC in
+          <code>%APPDATA%\Soundwave AI\data\brain.json</code>. Without a key, the app still makes
+          Shorts using its built-in scripts and voice tools, and the chat tells you how to add one.
+          Search-backed answers need a key with billing, which is Google's rule, not ours.
+        </div>
+      </details>
+
+      <details>
+        <summary>What exactly does paying for Pro or Enterprise change?</summary>
+        <div class="faq-a">
+          The limits on your <b>Soundwave account</b>: account narration characters per month,
+          export resolution, exports per hour, watermark-free exports, project count, cloud save
+          and API access. Those are the numbers in the compare table, and they're the ones the
+          service enforces.
+          <br /><br />
+          What a plan does <em>not</em> change is what the agent can do. It's the same agent, the
+          same ten voices, the same captions on every plan — and the Windows app renders on your
+          PC either way, so it isn't limited by your account quota. Nothing about the app's
+          features is held back for paying customers; the difference is how much voice, cloud and
+          API you get.
+        </div>
+      </details>
+
+      <details>
+        <summary>Where do my videos and my data go?</summary>
+        <div class="faq-a">
+          The Shorts are rendered on your PC and stay in <code>%APPDATA%\Soundwave AI\</code> until
+          you upload them. Voice input is transcribed on your PC. Two things do leave the machine
+          when you use them: the narration text goes to Microsoft's neural voice service, and your
+          conversation goes to Gemini when a key is set. Reading a page that your PC can't fetch
+          itself can fall back to a reader service — the app's own guide says when. There is no
+          Soundwave account, and no server of ours holding your work.
+        </div>
+      </details>
+
+      <details>
+        <summary>Will it post to YouTube for me?</summary>
+        <div class="faq-a">
+          If you connect your channel: <b>gear → YouTube &amp; Shorts → Connect YouTube</b>, then
+          sign in with Google. One press, nothing to create in Google Cloud — release builds ship
+          with Soundwave's own OAuth client. Posting a finished Short is a button in the chat (or
+          ask the agent). If you don't connect, everything else still works and the buttons say why.
+        </div>
+      </details>
+
+      <details>
+        <summary>Does it work on Mac, or in a browser?</summary>
+        <div class="faq-a">
+          Not today. It's a Windows desktop app with an Android companion — the agent's tools reach
+          into Windows itself (CoreAudio volume, the Start menu, screen capture), so a browser
+          version would be a different, smaller product. If you're on a Mac, join the list by
+          emailing <a href="#" data-mail="sales">sales</a>.
+        </div>
+      </details>
+
+      <details>
+        <summary>Can I use my own voice for narration?</summary>
+        <div class="faq-a">
+          Yes, if you're willing to run one extra piece yourself: an optional sidecar in the repo
+          runs Chatterbox, whose code <em>and</em> pre-trained weights are MIT licensed — which is
+          why it's the one we ship support for. Cloned voices use the same character quota as the
+          neural ones and are available on paid plans.
+        </div>
+      </details>
+
+      <details>
+        <summary>How do I cancel, and what happens to my work?</summary>
+        <div class="faq-a">
+          Cancel from the Stripe receipt or the customer portal link in your receipt email — no
+          email to us, no phone call. The plan runs to the end of the paid period, then the app
+          drops to the free limits. Your projects, uploads and settings live on your PC and are
+          never deleted by a downgrade. See <a href="refunds.html">refunds</a> for the guarantee.
+        </div>
+      </details>
+
+      <details>
+        <summary>Is this just another “AI video generator”?</summary>
+        <div class="faq-a">
+          It's narrower on purpose. It doesn't pretend to be a studio: it makes vertical Shorts
+          over gameplay, with a narration voice, burnt-in captions and a script written for the
+          format — and it does that end to end, unattended, on your desktop. The <a href="#tools">tool
+          list</a> is the honest boundary of what it can touch.
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ── Footer ───────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="#top">
+          <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="43" height="43" rx="12" fill="#0A0F1C" stroke="url(#g-logo)" stroke-width="2.4" />
+            <g stroke="url(#g-logo)" stroke-width="3.2" stroke-linecap="round">
+              <path d="M9 20v8" /><path d="M15 14v20" /><path d="M21 9v30" /><path d="M27 17v14" /><path d="M33 12v24" /><path d="M39 16v16" />
+            </g>
+            <circle cx="40" cy="9" r="3" fill="#8B5CF6" />
+          </svg>
+          Soundwave <span class="grad-text">AI</span>
+        </a>
+        <p id="footTagline"></p>
+      </div>
+
+      <div class="foot-col">
+        <h4>Product</h4>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#voices">Voices</a>
+        <a href="#phone">Android app</a>
+        <a href="#pricing">Pricing</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>Get it</h4>
+        <a href="#download" data-download="windowsInstaller">Windows installer</a>
+        <a href="#download" data-download="windowsPortable">Portable version</a>
+        <a href="#download" data-download="android">Android app</a>
+        <a href="#" data-download="releasesPage">All releases</a>
+      </div>
+
+      <div class="foot-col">
+        <h4>Company</h4>
+        <a href="#" data-mail="support">Support</a>
+        <a href="#" data-mail="sales">Sales</a>
+        <a href="#" data-link="github">Source &amp; releases</a>
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="refunds.html">Refunds</a>
+      </div>
+    </div>
+
+    <div class="foot-bottom">
+      <span id="copyright"></span>
+      <nav aria-label="Legal">
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="refunds.html">Refunds</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+<!-- ── Toast + dialog ───────────────────────────────────────────────────── -->
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="dialog" id="dialog" hidden>
+  <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <h3 id="dialogTitle">Payments aren't connected yet</h3>
+    <p id="dialogBody"></p>
+    <div class="dialog-actions">
+      <a class="btn btn-primary" href="#download" data-download="windowsInstaller" data-close-dialog>
+        <svg aria-hidden="true"><use href="#i-download" /></svg> Use the free plan
+      </a>
+      <a class="btn btn-ghost" href="#" id="dialogMail" data-close-dialog>
+        <svg aria-hidden="true"><use href="#i-mail" /></svg> Email us
+      </a>
+      <button class="btn btn-ghost" type="button" data-close-dialog>Close</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

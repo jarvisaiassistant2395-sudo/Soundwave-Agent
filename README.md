@@ -701,6 +701,31 @@ copyleft inside our code or non-commercial outright.
   plan tiers. Cloning now runs on **Chatterbox**, which is MIT for both code and
   weights. If you add a model here, check the *weights'* licence, not the repo's.
 
+## The sales site (`site/`)
+
+The product's marketing and checkout site lives in [`site/`](site/README.md) —
+hero, features, the real voice samples, plan cards, compare table, FAQ and the
+legal pages. It is separate from the app (nothing in `frontend/` builds it, and
+CI ignores it): plain HTML, CSS and ES modules with **no build step**, plus a
+dependency-free Node server whose only job is to create **real Stripe Checkout
+Sessions**. Run it with `node server.mjs`.
+
+Every commercial number — prices, plan names, feature lists, the compare table,
+download links, support emails — lives in one file, [`site/config.js`](site/config.js),
+which both the browser and the server read, so the cards and the compare table
+can't drift apart. Prices start out matching `server/src/lib/plans.ts`; move them
+together. Stripe keys go in `site/.env` (`STRIPE_SECRET_KEY` +
+`STRIPE_PRICE_*`, see `.env.example`); without them the site still serves and the
+Buy buttons say honestly that payments aren't connected yet instead of failing
+silently. Prefer no server at all? Paste Stripe Payment Links into
+`PAYMENTS.links` in the same config file and host the folder anywhere static.
+
+The pages claim only what the app really does — the tool list mirrors
+`brain/tools.ts`, the voice samples are the ones shipped in `frontend/public/`,
+and there are no invented testimonials or user counts. The README in `site/` has
+the deploy steps and a pre-launch checklist (including the legal placeholders
+that must be filled in before taking money).
+
 ## Design system
 
 Dark-only UI: background `#0A0F1C`, cards `#111827`, primary blue `#3B82F6`,

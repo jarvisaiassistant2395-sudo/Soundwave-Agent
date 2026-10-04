@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy — Soundwave AI</title>
+<meta name="description" content="What Soundwave AI sends where — and what never leaves your PC." />
+<meta name="theme-color" content="#0a0f1c" />
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="g-logo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6" /><stop offset="1" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M5 20h14" /></symbol>
+</svg>
+
+<header class="nav scrolled">
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html">
+      <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="43" height="43" rx="12" fill="#0A0F1C" stroke="url(#g-logo)" stroke-width="2.4" />
+        <g stroke="url(#g-logo)" stroke-width="3.2" stroke-linecap="round">
+          <path d="M9 20v8" /><path d="M15 14v20" /><path d="M21 9v30" /><path d="M27 17v14" /><path d="M33 12v24" /><path d="M39 16v16" />
+        </g>
+        <circle cx="40" cy="9" r="3" fill="#8B5CF6" />
+      </svg>
+      Soundwave <span class="grad-text">AI</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#pricing">Pricing</a>
+      <a href="index.html#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-primary btn-sm" href="index.html#download">
+        <svg aria-hidden="true"><use href="#i-download" /></svg> Get the app
+      </a>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="wrap wrap-narrow">
+    <span class="eyebrow">Legal</span>
+    <h1 style="margin-top:14px">Privacy</h1>
+    <p class="lede">Last updated: 4 October 2026. The short version first, then the details.</p>
+
+    <div class="prose">
+      <div class="note">
+        <b>Before you go live:</b> put your real company name and contact in section 9.
+      </div>
+
+      <h2>The short version</h2>
+      <ul>
+        <li><b>No account.</b> The app doesn't create one, and there's no Soundwave server holding your work.</li>
+        <li><b>Your videos render on your PC</b> and stay in <code>%APPDATA%\Soundwave AI\</code> until you upload them somewhere.</li>
+        <li><b>Your voice is transcribed on your PC</b> by whisper.cpp. Audio isn't uploaded, and "Hey Soundwave" throws away everything that isn't the phrase.</li>
+        <li><b>Four things do leave your machine</b>, only when you use them: narration text (Microsoft's voice service), your conversation (Google Gemini, with your own key), the pages the agent reads for you, and payments (Stripe).</li>
+        <li><b>This website sets no cookies and runs no analytics.</b></li>
+      </ul>
+
+      <h2>1. Nothing is uploaded by default</h2>
+      <p>
+        Soundwave AI is a desktop app. Projects, uploads, rendered MP4s, notes, memory, settings,
+        channel watch lists and your API key live in <code>%APPDATA%\Soundwave AI\</code> on your own
+        computer. We don't have a copy, because there's nowhere to put one — the app doesn't talk to
+        a server of ours.
+      </p>
+
+      <h2>2. What leaves your PC, and when</h2>
+      <ul>
+        <li>
+          <b>Narration (Microsoft's neural voice service).</b> When the agent speaks or narrates a
+          video, the text to be spoken is sent to Microsoft's Edge speech service, which returns
+          audio. Nothing else about you goes with it, and no key or account is used.
+        </li>
+        <li>
+          <b>Your conversation (Google Gemini).</b> With an API key set, the messages in your
+          conversation, the memory notes the agent keeps and its tool results are sent to Google to
+          produce the reply, the script or a research summary. The key is yours and stays on your
+          PC. Without a key, this doesn't happen at all — the app falls back to built-in scripts.
+        </li>
+        <li>
+          <b>Pages and videos you ask it to read.</b> Reading a YouTube transcript or a web page
+          fetches that page from your PC. If a page can't be read directly, the app may fetch it
+          through a reader service (r.jina.ai by default) — which means that page's address goes to
+          it. The app's own guide says when that happens, and you can run the optional local reader
+          (<code>scrapling/</code>) instead so it never does.
+        </li>
+        <li>
+          <b>Your screen, when you ask.</b> "What does this error say?" photographs the screen you're
+          on and sends that image to Gemini for the answer. It isn't written to disk.
+        </li>
+        <li>
+          <b>YouTube, if you connect it.</b> Connecting uses Google's OAuth with the app's own
+          client; the token is stored on your PC. It's used to read your channel stats and, when you
+          press the button, to upload a Short you made.
+        </li>
+        <li>
+          <b>Weather and research.</b> The morning briefing asks Open-Meteo for the weather forecast
+          of the city you configured, and may search Google News, GitHub and Hacker News for your
+          topics.
+        </li>
+      </ul>
+
+      <h2>3. Speech, alarms and the microphone</h2>
+      <p>
+        Voice input is recorded only while the microphone is on (the mic button, the voice bar, or
+        the wake phrase listener) and is transcribed locally by whisper.cpp with the model that
+        ships in the installer. The audio is not uploaded and not kept. The wake listener discards
+        every burst that isn't "Hey Soundwave" on the spot, and pauses itself while the app is
+        already recording or speaking. Alarms and notifications are set on your phone through the
+        paired app, not through us.
+      </p>
+
+      <h2>4. This website</h2>
+      <p>
+        The site you're reading is static: no cookies, no analytics, no tracking pixels, no
+        advertising. Two things worth naming honestly: the fonts are loaded from Google Fonts, which
+        sees your IP address when the page requests them, and if you pay, Stripe receives the
+        payment details needed to process the charge (see below). Server logs, if your host keeps
+        them, contain the usual request data — IP, user agent, time — and are used only to keep the
+        site up.
+      </p>
+
+      <h2>5. Payments</h2>
+      <p>
+        Checkout is handled by Stripe. Your card number goes from your browser to Stripe and never
+        to us — we only receive the email address and plan from the completed checkout, in order to
+        recognise your purchase. Stripe's own privacy policy governs what it keeps.
+      </p>
+
+      <h2>6. If you email us</h2>
+      <p>
+        We keep support threads so we can remember what we told you. Ask us to delete a thread and
+        we will, unless we're required to keep an invoice or similar record for tax purposes.
+      </p>
+
+      <h2>7. Children</h2>
+      <p>
+        The app isn't intended for children under 13, and we don't knowingly collect anything from
+        them. If you believe a child has used it, email us and we'll help you remove the data — the
+        app's data lives on your own computer, so uninstalling and deleting
+        <code>%APPDATA%\Soundwave AI\</code> removes all of it.
+      </p>
+
+      <h2>8. Your rights</h2>
+      <p>
+        Because we don't hold your content, most requests are already satisfied by your own machine.
+        For anything we do hold — a support thread, a purchase record — you can ask to see it,
+        correct it, or have it deleted, and you can ask us to port it elsewhere. You also have the
+        right to complain to your data-protection authority. Requests go to
+        <a href="#" data-mail="support">support</a>, answered within 30 days.
+      </p>
+
+      <h2>9. Who is responsible</h2>
+      <p>
+        The data controller is <b>[YOUR COMPANY LEGAL NAME]</b>,
+        <b>[STREET ADDRESS, CITY, POSTAL CODE, COUNTRY]</b>, reachable at
+        <a href="#" data-mail="support">support</a>. Third parties named above process data under
+        their own policies: Microsoft (speech), Google (Gemini, YouTube, News, AI Studio), Stripe
+        (payments), Open-Meteo (weather), GitHub and Hacker News (research), and the reader service.
+      </p>
+
+      <h2>10. Changes</h2>
+      <p>
+        If this policy changes in a way that affects you, we'll update the date at the top and say
+        what changed instead of quietly re-publishing it.
+      </p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-bottom" style="margin-top:0; border-top:0; padding-top:0">
+      <span id="copyright"></span>
+      <nav aria-label="Legal">
+        <a href="terms.html">Terms</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="refunds.html">Refunds</a>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

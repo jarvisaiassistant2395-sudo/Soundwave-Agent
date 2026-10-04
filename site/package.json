@@ -1,0 +1,19 @@
+{
+  "name": "soundwave-ai-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Soundwave AI sales site — static pages plus a dependency-free Node server that creates Stripe Checkout Sessions.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "check": "node --check server.mjs && node --check config.js && node --check app.js && node --check success.js",
+    "hash": "node tools/csp-hash.mjs",
+    "og-image": "./tools/make-og-image.sh"
+  },
+  "dependencies": {}
+}

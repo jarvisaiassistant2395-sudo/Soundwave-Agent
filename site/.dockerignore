@@ -1,0 +1,10 @@
+# Keep secrets and noise out of the image.
+.env
+.env.*
+!.env.example
+node_modules
+npm-debug.log*
+.git
+.gitignore
+.DS_Store
+README.md
