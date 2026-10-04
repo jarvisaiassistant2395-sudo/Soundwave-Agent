@@ -1,0 +1,62 @@
+# electron-builder configuration — Windows sellable build.
+# Signing: when the CSC_LINK / CSC_KEY_PASSWORD secrets are present in CI,
+# electron-builder signs the exe + installer automatically (standard env vars).
+appId: ai.soundwave.desktop
+productName: Soundwave AI
+copyright: Copyright © 2026 Soundwave AI
+
+directories:
+  buildResources: build
+  output: release
+
+# Everything ships as real files (no asar): the bundled server chdirs here and
+# spawns ffmpeg/yt-dlp/whisper against these paths. The tree that holds the
+# agent's brain (resources/app/server/dist) is rewritten by assemble.mjs on the
+# way in; the Electron shell and the UI bundle ship as built — no marker of the
+# brain is in either, and the packaged-app E2E drives both.
+# docs/PROTECTING_THE_CODE.md.
+asar: false
+
+# yt-dlp uses the app binary itself as its JavaScript runtime for YouTube
+# (ELECTRON_RUN_AS_NODE — see server/src/lib/jsRuntime.ts), so never disable
+# Electron's RunAsNode fuse (electronFuses.runAsNode: false). The app would
+# fall back to a system node/deno that most customers don't have; CI's
+# verify-runtime.mjs step fails the build if that happens.
+npmRebuild: false
+
+files:
+  - package.json
+  - src/**/*
+  - build/icon.png
+  # Tray icon (multi-size .ico stays crisp at 16/24/32 px).
+  - build/icon.ico
+  - app/**/*
+
+extraResources:
+  - from: bin
+    to: bin
+    filter:
+      - "**/*"
+
+win:
+  icon: build/icon.ico
+  # Standard user (asInvoker) — customers never see a UAC prompt.
+  requestedExecutionLevel: asInvoker
+  verifyUpdateCodeSignature: false
+  target:
+    - nsis
+    - portable
+
+nsis:
+  artifactName: SoundwaveAI-Setup-${version}.exe
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Soundwave AI
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+
+portable:
+  artifactName: SoundwaveAI-Portable-${version}.exe

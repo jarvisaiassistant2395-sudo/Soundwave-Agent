@@ -1,0 +1,70 @@
+# deps
+node_modules/
+
+# builds
+dist/
+frontend/dist/
+server/dist/
+*.tsbuildinfo
+
+# local speech engine for voice input (whisper.cpp + a ggml model) — the
+# desktop build fetches its own; see README "Voice input"
+vendor/whisper/
+
+# desktop packaging (assembled tree + installer output; binaries fetched at build time)
+desktop/app/
+desktop/release/
+desktop/bin/*
+!desktop/bin/.gitkeep
+# voice-input test assets (CI downloads them) + end-to-end screenshots
+desktop/jfk.wav
+desktop/e2e-mic.wav
+desktop/e2e-wake.mp3
+desktop/e2e-wake.wav
+desktop/e2e-shots/
+
+# env
+.env
+.env.*
+!.env.example
+
+# runtime data
+server/data/
+server/uploads/
+server/generated/
+soundwave_live_progress.html
+background_cache/
+
+# logs
+*.log
+npm-debug.log*
+
+# tooling
+.DS_Store
+.idea/
+.vscode/
+
+# test artifacts
+coverage/
+
+# python artifacts
+*.pyc
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*/*/*/__pycache__/
+.venv/
+
+
+# Soundwave's own Google OAuth client for one-click "Connect YouTube"
+# (CI writes it from a repository secret into the staged build only)
+desktop/config/youtube-client.json
+
+# voice-clone sidecar runtime artifacts
+voiceclone/profiles/
+voiceclone/.venv/
+voiceclone/__pycache__/
+__pycache__/
+
+# selftest.py --real writes the clip it measured, for you to hear.
+voiceclone/selftest-output.wav

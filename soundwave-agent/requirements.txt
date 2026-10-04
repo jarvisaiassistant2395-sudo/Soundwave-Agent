@@ -1,0 +1,5 @@
+# Soundwave AI Agent Requirements
+# Standard library is primarily used (urllib, json, subprocess, math, threading).
+# High-definition Neural Speech:
+edge-tts>=6.1.9
+requests>=2.31.0

@@ -1,0 +1,932 @@
+// ── App state: paired PC, live connection, conversation, voice replies ──────
+// …and chatting while the PC is off: with the brain kit the PC shared (its
+// Gemini key + settings) and its memory snapshot, messages are answered on
+// the phone (lib/offline.ts) and queued in an outbox that goes back to the PC
+// as soon as it's reachable (the client flushes it before syncing).
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CompanionClient,
+  CompanionError,
+  pairWithPc,
+  type ChatMessage,
+  type ConnectionState,
+  type Conversation,
+  type JobSnapshot,
+  type Outbox,
+  type PairingRecord,
+  type PcInfo,
+} from "../lib/client";
+import type { PairingLink } from "../lib/protocol";
+import { APP_VERSION, deviceInfo, onForegroundChange } from "../lib/native";
+import { DEFAULT_SETTINGS, storage, type AppSettings } from "../lib/storage";
+import { playReply, speakable, speakableBriefing, speakLong, SpeechPlaybackError, stopSpeaking } from "../lib/voice";
+import {
+  effectiveMemory,
+  offlineMorning,
+  offlineReply,
+  phoneMessageId,
+  transcribeOffline,
+  type BriefingPlan,
+  type MemoryOp,
+  type MemorySnapshot,
+  type PhoneKit,
+} from "../lib/offline";
+import { phoneVoiceAvailable, synthesizeOnPhone } from "../lib/phoneVoice";
+import {
+  alarmAudioOutput,
+  alarmAvailable,
+  cancelAlarm as cancelPhoneAlarm,
+  consumePendingBriefing,
+  getBriefingDelay,
+  listAlarms,
+  notificationsAllowed,
+  onBriefingDue,
+  raiseMediaVolumeForBriefing,
+  requestNotifications,
+  restoreMediaVolume,
+  setAlarmNow,
+  setAlarmEarbuds,
+  setBriefingDelay as setPhoneBriefingDelay,
+  type AlarmAudioOutput,
+  type PhoneAlarm,
+} from "../lib/alarm";
+import { alarmLabel, alarmTarget, DEFAULT_BRIEFING_AFTER_ALARM_SECONDS, clockLabel } from "../../../server/src/lib/brain/core/alarm";
+import { phoneFetchText } from "../lib/phoneFetch";
+import { toast } from "../lib/toast";
+import { inBriefingWindow, localDay } from "../../../server/src/lib/brain/core/morning";
+import { briefingFailureNote, canWriteBriefingOnPhone, type CompanionPhase } from "../lib/briefingSource";
+
+export type PairingPhase = { kind: "idle" } | { kind: "working"; pcName: string } | { kind: "failed"; message: string; code: string };
+
+/** The morning briefing on this phone: being prepared (by the PC or here), being spoken, or not. */
+export type BriefingPhase =
+  | { kind: "idle" }
+  | { kind: "preparing"; by: "pc" | "phone"; topics: string[] }
+  | { kind: "speaking"; messageId: string };
+
+/** Can the phone chat on its own right now (and if not, why)? */
+export type PhoneChat =
+  | { ready: true; modelLabel: string }
+  | { ready: false; reason: "sharing_off" | "no_key" | "old_pc" | "unknown" };
+
+export interface Companion {
+  /** undefined while loading from storage. */
+  record: PairingRecord | null | undefined;
+  state: ConnectionState;
+  conversation: Conversation | null;
+  jobs: JobSnapshot[];
+  pc: PcInfo | null;
+  settings: AppSettings;
+  speaking: boolean;
+  pairing: PairingPhase;
+  client: CompanionClient | null;
+  /** The PC can't be reached but the phone can answer by itself. */
+  phoneMode: boolean;
+  phoneChat: PhoneChat;
+  memory: MemorySnapshot | null;
+  /** Messages and memory changes waiting to go back to the PC. */
+  pendingForPc: number;
+  briefing: BriefingPhase;
+  /** The briefing plan (topics, time, automatic), from the agent's memory. */
+  briefingPlan: BriefingPlan | null;
+  /** Alarms set on this phone (the agent sets them; the next one shows in Settings). */
+  alarms: PhoneAlarm[];
+  /** Seconds after an alarm is turned off before the morning briefing starts. */
+  briefingDelaySeconds: number;
+  /** Where an alarm rings right now (the earbuds' name when they're connected), null off the phone. */
+  alarmOutput: AlarmAudioOutput | null;
+  /** Ring on the Bluetooth earbuds when they're connected. */
+  setAlarmEarbuds: (enabled: boolean) => Promise<void>;
+  /** Android lets the app notify — alarms need it. */
+  notifications: boolean;
+  cancelAlarm: (id: string) => Promise<void>;
+  setBriefingDelaySeconds: (seconds: number) => Promise<void>;
+  allowNotifications: () => Promise<void>;
+  /** Today's briefing now — even if it was heard already. */
+  hearBriefing: () => Promise<void>;
+  stopBriefing: () => void;
+  pair: (link: PairingLink) => Promise<boolean>;
+  resetPairing: () => void;
+  unpair: () => Promise<void>;
+  send: (text: string, opts?: { viaVoice?: boolean }) => Promise<ChatMessage | null>;
+  morning: () => Promise<ChatMessage | null>;
+  transcribe: (wav: Uint8Array, signal?: AbortSignal) => Promise<{ text: string; noSpeech: boolean }>;
+  speak: (m: ChatMessage) => Promise<void>;
+  stopSpeaking: () => void;
+  updateSettings: (patch: Partial<AppSettings>) => void;
+  retry: () => void;
+}
+
+const EMPTY_OUTBOX: Outbox = { messages: [], memoryOps: [] };
+const timeLabel = (at: number) => new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+
+export function useCompanion(): Companion {
+  const [record, setRecord] = useState<PairingRecord | null | undefined>(undefined);
+  const [state, setState] = useState<ConnectionState>({ kind: "connecting" });
+  const [conversation, setConversationState] = useState<Conversation | null>(null);
+  const [jobs, setJobs] = useState<JobSnapshot[]>([]);
+  const [pc, setPc] = useState<PcInfo | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [speaking, setSpeaking] = useState(false);
+  const [pairing, setPairing] = useState<PairingPhase>({ kind: "idle" });
+  const [client, setClient] = useState<CompanionClient | null>(null);
+  const [kit, setKitState] = useState<PhoneKit | null>(null);
+  const [kitRefusal, setKitRefusal] = useState<"sharing_off" | "no_key" | null>(null);
+  const [memory, setMemoryState] = useState<MemorySnapshot | null>(null);
+  const [outbox, setOutboxState] = useState<Outbox>(EMPTY_OUTBOX);
+  const [briefing, setBriefing] = useState<BriefingPhase>({ kind: "idle" });
+  const [alarms, setAlarms] = useState<PhoneAlarm[]>([]);
+  const [briefingDelaySeconds, setBriefingDelayState] = useState(DEFAULT_BRIEFING_AFTER_ALARM_SECONDS);
+  const [notifications, setNotifications] = useState(true);
+  const [alarmOutput, setAlarmOutput] = useState<AlarmAudioOutput | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const pcRef = useRef(pc);
+  pcRef.current = pc;
+  const conversationRef = useRef<Conversation | null>(null);
+  const kitRef = useRef<PhoneKit | null>(null);
+  /**
+   * Asks the PC for the shared brain kit (which carries the Gemini key used to
+   * research on the phone) and stores it. Held in a ref because the briefing
+   * path — which an alarm can start at any moment — has to be able to call it:
+   * an alarm at 06:30 must not fail because the kit hadn't been fetched yet in
+   * that app session, when the PC is right there and can hand it over.
+   */
+  const refreshKitRef = useRef<(() => Promise<void>) | null>(null);
+  const memoryRef = useRef<MemorySnapshot | null>(null);
+  const outboxRef = useRef<Outbox>(EMPTY_OUTBOX);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const clientRef = useRef<CompanionClient | null>(null);
+  /** Days whose briefing this phone already spoke. */
+  const heardRef = useRef<string[]>([]);
+  const briefingBusy = useRef(false);
+  const briefingStop = useRef(false);
+  /** Shorts asked for by voice: their "ready" message is read aloud too. */
+  const voiceJobs = useRef(new Set<string>());
+  const seenIds = useRef<Set<string> | null>(null);
+  const speakRef = useRef<(m: ChatMessage) => Promise<void>>(async () => undefined);
+  /** Alarms the PC asked for that this phone already set (it must run them once). */
+  const alarmControlsDone = useRef<string[]>([]);
+  const runAlarmControls = useRef<(messages: ChatMessage[]) => Promise<void>>(async () => undefined);
+
+  const setConversation = useCallback((c: Conversation | null) => {
+    conversationRef.current = c;
+    setConversationState(c);
+  }, []);
+  const setKit = useCallback((k: PhoneKit | null) => {
+    kitRef.current = k;
+    setKitState(k);
+    void storage.saveKit(k);
+  }, []);
+  const setMemory = useCallback((m: MemorySnapshot | null) => {
+    memoryRef.current = m;
+    setMemoryState(m);
+    void storage.saveMemory(m);
+  }, []);
+  const setOutbox = useCallback((o: Outbox) => {
+    outboxRef.current = o;
+    setOutboxState(o);
+    void storage.saveOutbox(o);
+  }, []);
+
+  // Load what we remember.
+  useEffect(() => {
+    void (async () => {
+      const [r, c, s, k, m, o, heard] = await Promise.all([
+        storage.loadPairing(),
+        storage.loadConversation(),
+        storage.loadSettings(),
+        storage.loadKit(),
+        storage.loadMemory(),
+        storage.loadOutbox(),
+        storage.loadHeard(),
+      ]);
+      heardRef.current = heard;
+      alarmControlsDone.current = await storage.loadAlarmsDone();
+      if (alarmAvailable()) {
+        void getBriefingDelay().then(setBriefingDelayState);
+        void notificationsAllowed().then(setNotifications);
+        void listAlarms().then(setAlarms);
+        void alarmAudioOutput().then(setAlarmOutput);
+      }
+      setSettings(s);
+      settingsRef.current = s;
+      if (r && c) {
+        setConversation(c);
+        // An alarm the PC asked for while this app was closed: set it now.
+        void runAlarmControls.current(c.messages);
+      }
+      if (r) {
+        kitRef.current = k;
+        setKitState(k);
+        memoryRef.current = m;
+        setMemoryState(m);
+        outboxRef.current = o;
+        setOutboxState(o);
+      }
+      // A soundwave:// link may have paired already while this loaded: keep that.
+      setRecord((prev) => (prev === undefined ? r : prev));
+      setLoaded(true);
+    })();
+  }, [setConversation]);
+
+  /** Shows messages made on the phone and queues them (and memory changes) for the PC. */
+  const addLocal = useCallback(
+    (msgs: ChatMessage[], ops: MemoryOp[] = []) => {
+      const conv = conversationRef.current ?? { epoch: "", rev: -1, messages: [] };
+      const next = { ...conv, messages: [...conv.messages, ...msgs].slice(-100) };
+      setConversation(next);
+      void storage.saveConversation(next);
+      setOutbox({ messages: [...outboxRef.current.messages, ...msgs], memoryOps: [...outboxRef.current.memoryOps, ...ops] });
+    },
+    [setConversation, setOutbox],
+  );
+
+  /**
+   * An alarm the PC asked for: a control message in the conversation (set by
+   * the PC's set_phone_alarm tool). The phone sets it natively — once — and
+   * answers in the chat so both the PC and the phone show what happened.
+   */
+  const runControls = useCallback(
+    async (messages: ChatMessage[]) => {
+      const pending = messages.filter((m) => m.control?.kind === "alarm.set" && !alarmControlsDone.current.includes(m.control.id));
+      for (const message of pending) {
+        const control = message.control!;
+        alarmControlsDone.current = [...alarmControlsDone.current, control.id].slice(-50);
+        void storage.saveAlarmsDone(alarmControlsDone.current);
+        if (!alarmAvailable()) continue; // a desktop browser: nothing to ring
+        const run = await setAlarmNow({ at: control.at, label: control.label, briefingAfterSeconds: control.briefingAfterSeconds });
+        setAlarms(await listAlarms());
+        const at = Date.now();
+        const alarm = run.alarm;
+        // Say where it will ring, the way the phone sees it right now: the
+        // earbuds when they're connected (and wanted), the phone otherwise.
+        const audio = await alarmAudioOutput().catch(() => null);
+        setAlarmOutput(audio);
+        const where =
+          audio?.bluetooth && audio.useEarbuds
+            ? ` It rings in ${audio.bluetooth}; if the phone can't hand the sound over, it rings on the phone and the alarm screen says so.`
+            : "";
+        const text = run.problem
+          ? `⚠️ ${run.problem}`
+          : `⏰ Alarm set for ${clockLabel(alarm!.at)}${alarm!.label ? ` — “${alarm!.label}”` : ""}. When you turn it off, your briefing starts ${alarm!.briefingAfterSeconds === 0 ? "right away" : `${alarm!.briefingAfterSeconds} seconds later`}.${where}`;
+        addLocal([{ id: phoneMessageId(at), sender: "assistant", text, time: timeLabel(at), at, tag: "SYS", answeredBy: "phone" }]);
+      }
+    },
+    [addLocal],
+  );
+  runAlarmControls.current = runControls;
+
+  /** The alarms Android has right now — re-read whenever the app comes back to
+   *  the front, so one that was just turned off disappears from Settings. */
+  const refreshAlarms = useCallback(async () => {
+    if (!alarmAvailable()) return;
+    setAlarms(await listAlarms());
+    // Earbuds come and go (the alarm screen says where it rang).
+    setAlarmOutput(await alarmAudioOutput());
+  }, []);
+
+  // One client per paired PC; it runs while the app is in front.
+  useEffect(() => {
+    if (!record) {
+      setClient(null);
+      return;
+    }
+    const c = new CompanionClient(record, {
+      conversation: conversationRef.current,
+      memoryRev: memoryRef.current?.rev ?? null,
+      kitRev: kitRef.current?.rev ?? null,
+      appVersion: APP_VERSION,
+    });
+    c.setOutbox(() => outboxRef.current);
+    seenIds.current = conversationRef.current ? new Set(conversationRef.current.messages.map((m) => m.id)) : null;
+
+    const refreshKit = async () => {
+      try {
+        const k = await c.fetchKit();
+        if (k.enabled) {
+          setKit(k);
+          setKitRefusal(null);
+        } else {
+          setKit(null); // sharing turned off or no key on the PC: the phone forgets the key
+          setKitRefusal(k.reason);
+        }
+      } catch (err) {
+        if ((err as CompanionError).code === "UNKNOWN_OP") setKitRefusal(null); // an older Soundwave AI on the PC
+      }
+    };
+
+    refreshKitRef.current = refreshKit;
+
+    const offs = [
+      c.on("state", (s) => {
+        setState(s);
+        if (s.kind === "forgotten") {
+          // The PC removed this phone: don't keep its key or memory.
+          setKit(null);
+          setMemory(null);
+          setOutbox(EMPTY_OUTBOX);
+        }
+      }),
+      c.on("conversation", (conv) => {
+        setConversation(conv);
+        void storage.saveConversation(conv);
+        void runAlarmControls.current(conv.messages);
+        // Read aloud the outcome of a short you asked for by voice.
+        const seen = seenIds.current;
+        if (seen) {
+          for (const m of conv.messages) {
+            if (seen.has(m.id)) continue;
+            if (m.jobId && (m.jobState === "done" || m.jobState === "failed") && voiceJobs.current.has(m.jobId)) {
+              voiceJobs.current.delete(m.jobId);
+              if (settingsRef.current.speak !== "never") void speakRef.current(m);
+            }
+          }
+        }
+        seenIds.current = new Set(conv.messages.map((m) => m.id));
+      }),
+      c.on("jobs", setJobs),
+      c.on("pc", (info) => {
+        setPc(info);
+        if (info.brain && info.brain.kitRev !== kitRef.current?.rev) void refreshKit();
+        if (info.brain && !info.brain.phoneChat) setKitRefusal(info.brain.reason ?? null);
+      }),
+      c.on("kitRev", () => void refreshKit()),
+      c.on("memory", (m) => setMemory(m)),
+      c.on("flushed", (sent) => {
+        const ids = new Set(sent.messages.map((m) => m.id));
+        const rest = outboxRef.current;
+        setOutbox({
+        messages: rest.messages.filter((m) => !ids.has(m.id)),
+        memoryOps: rest.memoryOps.slice(sent.memoryOps.length),
+        heard: (rest.heard ?? []).filter((d) => !(sent.heard ?? []).includes(d)),
+      });
+      }),
+      c.on("record", (r) => void storage.savePairing(r)),
+    ];
+    setClient(c);
+    clientRef.current = c;
+    setState(c.state);
+    c.start();
+    const offForeground = onForegroundChange((active) => {
+      if (active) {
+        c.start();
+        c.retryNow();
+        // An alarm may have rung while the app was away (turned off, snoozed or
+        // cancelled on the alarm screen): the list must say what's true now.
+        void refreshAlarms();
+        // Opened in the morning (or after an alarm was turned off): the briefing starts by itself.
+        void (async () => {
+          const due = await consumePendingBriefing();
+          void deliverBriefingRef.current(due ? { force: true } : undefined);
+        })();
+      } else {
+        c.stop();
+        briefingStop.current = true;
+        stopSpeaking();
+      }
+    });
+    return () => {
+      offs.forEach((off) => off());
+      offForeground();
+      c.stop();
+      if (clientRef.current === c) clientRef.current = null;
+    };
+    // The client is rebuilt only when the pairing itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.deviceId]);
+
+  const online = state.kind === "online";
+  const phoneMode = !online && state.kind !== "forgotten" && Boolean(kit);
+
+  /** The Soundwave voice to speak with: the phone's pick, else the PC's. */
+  const voiceFor = useCallback(() => settingsRef.current.voice ?? pcRef.current?.voice ?? kitRef.current?.voice ?? "en-US-GuyNeural", []);
+
+  /**
+   * Who makes the speech: the PC while it's reachable, else the phone itself
+   * (Android app). When the PC is online but its voice service won't answer,
+   * the phone's own Soundwave voice reads it instead — the same Microsoft
+   * neural voice, so the briefing is never silently skipped.
+   */
+  const synthesizer = useCallback((): ((piece: string) => Promise<{ audio: Uint8Array; mime: string }>) | null => {
+    const c = clientRef.current;
+    const pcSpeech = c && stateRef.current.kind === "online" ? (piece: string) => c.speak(piece, voiceFor()) : null;
+    const phoneSpeech = phoneVoiceAvailable() ? (piece: string) => synthesizeOnPhone(piece, voiceFor()) : null;
+    if (!pcSpeech) return phoneSpeech;
+    if (!phoneSpeech) return pcSpeech;
+    return (piece) => pcSpeech(piece).catch(() => phoneSpeech(piece));
+  }, [voiceFor]);
+
+  const speak = useCallback(
+    async (m: ChatMessage) => {
+      const synth = synthesizer();
+      if (!synth) return;
+      try {
+        setSpeaking(true);
+        if (m.briefingDate) {
+          briefingStop.current = false;
+          await speakLong(speakableBriefing(m.text), synth, () => briefingStop.current);
+        } else {
+          const text = speakable(m);
+          if (!text) return;
+          const { audio, mime } = await synth(text);
+          await playReply(audio, mime);
+        }
+      } catch (err) {
+        // The voice service being down is not worth nagging about (the reply is
+        // on screen), but a phone that made no sound at all is worth saying.
+        if (err instanceof SpeechPlaybackError) toast("I couldn't make a sound just now — the phone's media volume may be at zero.", "error", 6000);
+      } finally {
+        setSpeaking(false);
+      }
+    },
+    [synthesizer],
+  );
+  speakRef.current = speak;
+
+  // ── The morning briefing ──────────────────────────────────────────────────
+
+  const markHeard = useCallback(
+    (day: string, msg: ChatMessage) => {
+      if (!heardRef.current.includes(day)) {
+        heardRef.current = [...heardRef.current, day].slice(-14);
+        void storage.saveHeard(heardRef.current);
+      }
+      const c = clientRef.current;
+      if (c && stateRef.current.kind === "online") void c.briefingHeard(day).catch(() => undefined);
+      else if (msg.answeredBy !== "phone") {
+        // The PC's briefing, heard while it was unreachable: tell it later.
+        const box = outboxRef.current;
+        if (!box.heard?.includes(day)) setOutbox({ ...box, heard: [...(box.heard ?? []), day] });
+      }
+    },
+    [setOutbox],
+  );
+
+  /** Waits (≤ ms) until it's clear whether the PC answers. */
+  const settled = useCallback(async (ms: number) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      const k = stateRef.current.kind;
+      if (k === "online" || k === "offline" || k === "forgotten") return;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }, []);
+
+  /**
+   * Writes today's briefing here, with Gemini on the phone, and queues it for
+   * the PC — the same thing the phone does when the PC is off. Used after an
+   * alarm too: a person who turns an alarm off is asking to be briefed, no
+   * matter what the PC happens to have ready (no topics there yet, its morning
+   * window long past, its key gone). Returns null only when this phone has no
+   * key of its own to write with.
+   */
+  const writeBriefingOnPhone = useCallback(
+    async (plan: BriefingPlan | null, why: "pc-off" | "pc-nothing", whyNote?: string): Promise<ChatMessage | null> => {
+      const kit = kitRef.current;
+      if (!kit) return null;
+      setBriefing({ kind: "preparing", by: "phone", topics: plan?.topics ?? [] });
+      const r = await offlineMorning({
+        kit,
+        memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps),
+        fetchText: phoneFetchText,
+      });
+      const at = Date.now();
+      const msg: ChatMessage = {
+        id: phoneMessageId(at),
+        sender: "assistant",
+        text: r.text,
+        time: timeLabel(at),
+        at,
+        tag: "SYS",
+        answeredBy: "phone",
+        briefingDate: r.briefingDate,
+        actionOutput: [
+          why === "pc-off"
+            ? "Your PC is off: researched and written on the phone."
+            : whyNote
+              ? `Your PC couldn't write today's briefing (${whyNote}), so it was researched and written on the phone.`
+              : "Your PC had nothing ready for today, so it was researched and written on the phone.",
+          r.research,
+          r.weatherNote ? `Weather: ${r.weatherNote}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+      addLocal([msg]);
+      return msg;
+    },
+    [addLocal],
+  );
+
+  /**
+   * Opened after the briefing time: speak today's briefing — the PC's (it
+   * wrote it when it was due, or writes it now), or, with the PC off, one the
+   * phone researches and writes itself. Once per day per phone (and not if
+   * it was already heard on the PC), unless `force`.
+   */
+  /**
+   * Why the PC said it couldn't write one *this time*, for the sentence the
+   * person reads. Cleared at the start of every attempt: quoting a refusal from
+   * an hour ago blamed a key the PC had been given long since, and a run went
+   * red on that sentence rather than on what actually happened.
+   */
+  const lastPrepareRefused = useRef<string | null>(null);
+
+  const deliverBriefing = useCallback(
+    async (opts: { force?: boolean } = {}) => {
+      if (briefingBusy.current || !clientRef.current) return;
+      const plan = effectiveMemory(memoryRef.current, outboxRef.current.memoryOps)?.briefing ?? null;
+      const now = new Date();
+      const day = localDay(now);
+      if (!opts.force && (!settingsRef.current.talkOnOpen || !plan?.auto || !inBriefingWindow(plan.time, now) || heardRef.current.includes(day))) return;
+      briefingBusy.current = true;
+      briefingStop.current = false;
+      lastPrepareRefused.current = null;
+      // A briefing the person asked for right now (they turned an alarm off, or
+      // tapped to hear it): if the media volume — which the voice plays on, and
+      // which the alarm does not touch — is at zero, turn it up so it is heard.
+      // The level is put back when the briefing is done.
+      const volumeBefore = opts.force ? await raiseMediaVolumeForBriefing().catch(() => -1) : -1;
+      if (volumeBefore >= 0) toast("Your media volume was at zero — I turned it up so you can hear the briefing.", "info", 6000);
+      try {
+        await settled(8000);
+        const c = clientRef.current;
+        if (!c || stateRef.current.kind === "forgotten") return;
+        /** The kit — fetched from the PC if this session hasn't got it yet. */
+        const ensureKit = async (): Promise<PhoneKit | null> => {
+          if (kitRef.current) return kitRef.current;
+          // Not a state check beyond "this phone still belongs to that PC":
+          // while the connection is still being decided (""connecting"",
+          // ""searching"") the PC may well answer, and a fetch with no
+          // connection fails at once. Only a PC that removed this phone stops
+          // the question being asked at all.
+          if (stateRef.current.kind === "forgotten") return null;
+          await refreshKitRef.current?.().catch(() => undefined);
+          return kitRef.current;
+        };
+        const find = () => [...(conversationRef.current?.messages ?? [])].reverse().find((m) => m.sender === "assistant" && m.briefingDate === day) ?? null;
+        let msg = find();
+        if (stateRef.current.kind === "online") {
+          const status = await c.briefingToday();
+          if (!opts.force && status.heard) {
+            // Already heard on the PC: just remember it.
+            heardRef.current = [...heardRef.current, day].slice(-14);
+            void storage.saveHeard(heardRef.current);
+            return;
+          }
+          msg = status.message ?? msg;
+          if (!msg) {
+            setBriefing({ kind: "preparing", by: "pc", topics: plan?.topics ?? [] });
+            // `prepare` is this phone asking the PC to write today's briefing
+            // now — it answers with the briefing (an alarm was turned off, so
+            // this has to work even before the planned time). If the PC answers
+            // that it is still writing, wait for it instead of concluding it
+            // has nothing: giving up here told a person at 06:30 that "your PC
+            // has no briefing" while the PC simply hadn't reached 07:00 yet.
+            let answer = await c.briefingToday({ prepare: true });
+            // Keep asking while the PC has neither handed a briefing over nor
+            // named what it is missing: it may still be writing it (the PC's own
+            // scheduler writes the briefing at its planned time, and that write
+            // can land right after this question — that race is exactly what a
+            // red CI run showed, with the phone giving up a second too early).
+            for (let i = 0; i < 20 && !answer.message && !answer.prepareRefused && !briefingStop.current; i++) {
+              await new Promise((r) => setTimeout(r, 3000));
+              answer = await c.briefingToday();
+            }
+            msg = answer.message;
+            lastPrepareRefused.current =
+              answer.prepareRefused === "no-key"
+                ? "no Gemini key on the PC"
+                : answer.prepareRefused === "no-topics"
+                  ? "nothing in the PC's Morning Setup to research"
+                  : answer.prepareRefused === "no-memory"
+                    ? "the PC's memory isn't available"
+                    : answer.prepareRefused
+                      ? answer.prepareRefused
+                      : "its research came back empty";
+            if (!msg) {
+              // The PC named what it is missing (no key there, no topics, no
+              // memory): write it here — fetching the kit from the PC first if
+              // this session hasn't got it, since that kit holds the key this
+              // phone would research with.
+              const why =
+                answer.prepareRefused === "no-key"
+                  ? "no Gemini key on the PC yet"
+                  : answer.prepareRefused === "no-topics"
+                    ? "no topics in Morning Setup on the PC"
+                    : answer.prepareRefused === "no-memory"
+                      ? "the PC's memory isn't available"
+                      : undefined;
+              await ensureKit();
+              msg = await writeBriefingOnPhone(plan, "pc-nothing", why);
+            }
+          }
+        } else if (!msg && canWriteBriefingOnPhone(stateRef.current.kind as CompanionPhase, Boolean(await ensureKit()))) {
+          // The PC is not answering — or has not finished being decided about
+          // ("connecting"/"searching" take seconds after the app opens). The
+          // phone holds the PC's key, which is all it needs to research and
+          // write today's briefing itself; waiting for a definitive "offline"
+          // told a person at 06:30 that there would be no briefing, and blamed
+          // a key they had.
+          msg = await writeBriefingOnPhone(plan, "pc-off");
+        }
+        if (briefingStop.current) return;
+        if (!msg) {
+          // Nothing to read: say why instead of leaving the bar and going quiet.
+          // The sentence is built from what was actually true (lib/briefingSource):
+          // a phone holding the key is never told it has none, and a PC that never
+          // answered is described as unreachable rather than off.
+          const note = briefingFailureNote(stateRef.current.kind as CompanionPhase, {
+            pcRefusedNote: lastPrepareRefused.current,
+            hasKit: Boolean(kitRef.current),
+          });
+          // The ingredients, on the console: a red run can be read from its page
+          // log, and a person reporting this can copy one line instead of guessing.
+          console.warn(
+            `[briefing] nothing to speak: ${note} (state ${stateRef.current.kind}, kit ${kitRef.current ? "yes" : "no"}, plan ${plan ? `${plan.time} auto=${plan.auto} topics=${plan.topics.length}` : "none"}, pc refused ${lastPrepareRefused.current ?? "nothing"})`,
+          );
+          throw new Error(note);
+        }
+        markHeard(day, msg);
+        // This run IS the briefing: clear the "an alarm was turned off" flag so the
+        // next time the app comes to the front it doesn't say it all again.
+        if (opts.force) void consumePendingBriefing().catch(() => undefined);
+        const synth = synthesizer();
+        if (!synth) throw new Error("this device can't speak (no Soundwave voice here) — the briefing is written in the chat");
+        setBriefing({ kind: "speaking", messageId: msg.id });
+        setSpeaking(true);
+        await speakLong(speakableBriefing(msg.text), synth, () => briefingStop.current);
+      } catch (err) {
+        if (!briefingStop.current) throw err;
+      } finally {
+        briefingBusy.current = false;
+        setSpeaking(false);
+        setBriefing({ kind: "idle" });
+        // Give the media volume back exactly as it was before we raised it.
+        if (volumeBefore >= 0) void restoreMediaVolume(volumeBefore);
+      }
+    },
+    [settled, addLocal, markHeard, synthesizer, writeBriefingOnPhone],
+  );
+  const deliverBriefingRef = useRef<(opts?: { force?: boolean }) => Promise<void>>(async () => undefined);
+  deliverBriefingRef.current = (opts) =>
+    deliverBriefing(opts).catch((err) => {
+      const message = (err as Error).message || "something went wrong";
+      // Keep it in the chat too: a toast is gone in seconds, and this is
+      // something the person should be able to read (and ask about) later.
+      const at = Date.now();
+      addLocal([{ id: phoneMessageId(at), sender: "assistant", text: `⚠️ The morning briefing didn't work this time: ${message}.`, time: timeLabel(at), at, tag: "SYS", answeredBy: "phone" }]);
+      toast(`The morning briefing didn't work this time: ${message}`, "error", 6000);
+    });
+
+  // On open (after loading, once paired) — and when the plan first reaches the phone.
+  // An alarm that was turned off means the briefing starts now, even outside
+  // the usual morning window (that's what the alarm is for).
+  const planKey = memory?.briefing ? `${memory.briefing.auto}|${memory.briefing.time}|${memory.briefing.topics.length}` : "";
+  useEffect(() => {
+    if (!loaded || !record) return;
+    void (async () => {
+      const due = await consumePendingBriefing();
+      void deliverBriefingRef.current(due ? { force: true } : undefined);
+    })();
+  }, [loaded, record?.deviceId, planKey]);
+
+  // The alarm was turned off while the app was already running: start the briefing.
+  useEffect(() => {
+    if (!alarmAvailable()) return;
+    return onBriefingDue(() => {
+      void refreshAlarms();
+      void deliverBriefingRef.current({ force: true });
+    });
+  }, [refreshAlarms]);
+
+  const stopBriefing = useCallback(() => {
+    briefingStop.current = true;
+    stopSpeaking();
+    setSpeaking(false);
+  }, []);
+
+  /** Said while the PC is off: Gemini answers here, the PC gets it all later. */
+  const sendOffline = useCallback(
+    async (text: string, viaVoice: boolean): Promise<ChatMessage> => {
+      const k = kitRef.current!;
+      const now = Date.now();
+      const history = (conversationRef.current?.messages ?? []).map((m) => ({ sender: m.sender, text: m.text }));
+      addLocal([{ id: phoneMessageId(now), sender: "user", text, time: timeLabel(now), at: now, via: "phone", ...(viaVoice ? { viaVoice: true } : {}) }]);
+      const ops: MemoryOp[] = [];
+      const reply = await offlineReply({
+        kit: k,
+        memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps),
+        history,
+        message: text,
+        record: (op) => ops.push(op),
+        alarm: async (args) => {
+          const target = alarmTarget(args);
+          if (!target) return { set: false, reason: 'I need a clock time (HH:MM, e.g. "06:30") or in_seconds.' };
+          const run = await setAlarmNow({
+            at: target.at,
+            label: alarmLabel(args.label),
+            ...(typeof args.briefing_after_seconds === "number" ? { briefingAfterSeconds: args.briefing_after_seconds } : {}),
+          });
+          setAlarms(await listAlarms());
+          return run.result;
+        },
+      });
+      const at = Math.max(Date.now(), now + 1);
+      const msg: ChatMessage = { id: phoneMessageId(at), sender: "assistant", text: reply.text, time: timeLabel(at), at, tag: reply.failed ? "SYS" : "VOICE", answeredBy: "phone" };
+      addLocal([msg], ops);
+      const mode = settingsRef.current.speak;
+      if (mode === "always" || (mode === "voice" && viaVoice)) void speakRef.current(msg);
+      return msg;
+    },
+    [addLocal],
+  );
+
+  const send = useCallback(
+    async (text: string, opts: { viaVoice?: boolean } = {}) => {
+      const c = client;
+      if (!c) return null;
+      stopSpeaking();
+      if (stateRef.current.kind !== "online") {
+        if (!kitRef.current) throw new CompanionError("OFFLINE", `Can't reach ${c.record.pcName} right now.`);
+        return sendOffline(text, Boolean(opts.viaVoice));
+      }
+      const reply = await c.send(text, { viaVoice: opts.viaVoice, voice: settingsRef.current.voice ?? undefined });
+      if (reply.jobId && reply.jobState === "started" && opts.viaVoice) voiceJobs.current.add(reply.jobId);
+      const mode = settingsRef.current.speak;
+      if (mode === "always" || (mode === "voice" && opts.viaVoice)) void speak(reply);
+      return reply;
+    },
+    [client, speak, sendOffline],
+  );
+
+  const morning = useCallback(async () => {
+    const c = client;
+    if (!c) return null;
+    stopSpeaking();
+    if (stateRef.current.kind === "online") {
+      const reply = await c.morning();
+      if (reply.briefingDate && !heardRef.current.includes(reply.briefingDate)) {
+        heardRef.current = [...heardRef.current, reply.briefingDate].slice(-14);
+        void storage.saveHeard(heardRef.current);
+      }
+      if (settingsRef.current.speak !== "never") void speak(reply);
+      return reply;
+    }
+    const k = kitRef.current;
+    if (!k) throw new CompanionError("OFFLINE", `Can't reach ${c.record.pcName} right now.`);
+    const now = Date.now();
+    addLocal([{ id: phoneMessageId(now), sender: "user", text: "🌅 Morning Setup", time: timeLabel(now), at: now, via: "phone" }]);
+    const r = await offlineMorning({ kit: k, memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps), fetchText: phoneFetchText });
+    const at = Math.max(Date.now(), now + 1);
+    const msg: ChatMessage = {
+      id: phoneMessageId(at),
+      sender: "assistant",
+      text: r.text,
+      time: timeLabel(at),
+      at,
+      tag: "SYS",
+      answeredBy: "phone",
+      briefingDate: r.briefingDate,
+      actionOutput: [`Your PC is off, so nothing was opened there.`, r.research, r.weatherNote ? `Weather: ${r.weatherNote}` : ""].filter(Boolean).join("\n"),
+    };
+    addLocal([msg]);
+    if (!heardRef.current.includes(r.briefingDate)) {
+      heardRef.current = [...heardRef.current, r.briefingDate].slice(-14);
+      void storage.saveHeard(heardRef.current);
+    }
+    if (settingsRef.current.speak !== "never") void speak(msg);
+    return msg;
+  }, [client, speak, addLocal]);
+
+  const transcribe = useCallback(
+    async (wav: Uint8Array, signal?: AbortSignal) => {
+      const c = client;
+      if (c && stateRef.current.kind === "online") return c.transcribe(wav, signal);
+      const k = kitRef.current;
+      if (!k) throw new Error("Voice input needs your PC (or chatting without the PC turned on).");
+      return transcribeOffline({ kit: k, wav, signal });
+    },
+    [client],
+  );
+
+  const pair = useCallback(
+    async (link: PairingLink) => {
+      setPairing({ kind: "working", pcName: link.pcName });
+      try {
+        const r = await pairWithPc(link, await deviceInfo());
+        await storage.clearAll();
+        await storage.savePairing(r);
+        setConversation(null);
+        setJobs([]);
+        setPc(null);
+        kitRef.current = null;
+        setKitState(null);
+        setKitRefusal(null);
+        memoryRef.current = null;
+        setMemoryState(null);
+        outboxRef.current = EMPTY_OUTBOX;
+        setOutboxState(EMPTY_OUTBOX);
+        setRecord(r);
+        setPairing({ kind: "idle" });
+        return true;
+      } catch (err) {
+        const e = err instanceof CompanionError ? err : new CompanionError("FAILED", (err as Error).message || "Pairing failed.");
+        setPairing({ kind: "failed", message: e.message, code: e.code });
+        return false;
+      }
+    },
+    [setConversation],
+  );
+
+  const unpair = useCallback(async () => {
+    stopSpeaking();
+    await client?.unpair();
+    await storage.clearAll();
+    setConversation(null);
+    setJobs([]);
+    setPc(null);
+    kitRef.current = null;
+    setKitState(null);
+    memoryRef.current = null;
+    setMemoryState(null);
+    outboxRef.current = EMPTY_OUTBOX;
+    setOutboxState(EMPTY_OUTBOX);
+    setRecord(null);
+  }, [client, setConversation]);
+
+  /** Settings → "Alarm & the briefing" (the phone's own list and delay). */
+  const cancelAlarm = useCallback(async (id: string) => {
+    await cancelPhoneAlarm(id);
+    setAlarms(await listAlarms());
+  }, []);
+  const setEarbuds = useCallback(async (enabled: boolean) => {
+    await setAlarmEarbuds(enabled);
+    setAlarmOutput(await alarmAudioOutput());
+  }, []);
+  const setBriefingDelaySeconds = useCallback(async (seconds: number) => {
+    setBriefingDelayState(await setPhoneBriefingDelay(seconds));
+  }, []);
+  const allowNotifications = useCallback(async () => {
+    setNotifications(await requestNotifications());
+  }, []);
+
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      void storage.saveSettings(next);
+      if (next.speak === "never") stopSpeaking();
+      return next;
+    });
+  }, []);
+
+  const phoneChat: PhoneChat = kit
+    ? { ready: true, modelLabel: kit.modelLabel }
+    : { ready: false, reason: kitRefusal ?? (pc && !pc.brain ? "old_pc" : "unknown") };
+
+  return {
+    record,
+    state,
+    conversation,
+    jobs,
+    pc,
+    settings,
+    speaking,
+    pairing,
+    client,
+    phoneMode,
+    phoneChat,
+    memory,
+    pendingForPc: outbox.messages.length + outbox.memoryOps.length,
+    briefing,
+    briefingPlan: effectiveMemory(memory, outbox.memoryOps)?.briefing ?? null,
+    alarms,
+    briefingDelaySeconds,
+    alarmOutput,
+    setAlarmEarbuds: setEarbuds,
+    notifications,
+    cancelAlarm,
+    setBriefingDelaySeconds,
+    allowNotifications,
+    hearBriefing: () => deliverBriefingRef.current({ force: true }),
+    stopBriefing,
+    pair,
+    resetPairing: () => setPairing({ kind: "idle" }),
+    unpair,
+    send,
+    morning,
+    transcribe,
+    speak,
+    stopSpeaking: () => {
+      stopSpeaking();
+      setSpeaking(false);
+    },
+    updateSettings,
+    retry: () => client?.retryNow(),
+  };
+}

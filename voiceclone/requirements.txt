@@ -1,0 +1,43 @@
+# Dependencies of Soundwave's local voice service: cloned voices (Chatterbox)
+# and narration on this machine (Kokoro-82M).
+#
+# INSTALL IN THIS ORDER (install.sh does it):
+#
+#   1) pip install -r requirements.txt        # everything below, no GPL extras
+#   2) pip install --no-deps kokoro           # upstream's model code only
+#
+# Why step 2 is a separate, --no-deps install: `kokoro` declares
+# `misaki[en]` as a requirement, and that extra is `phonemizer-fork` (GPL-3.0)
+# plus `espeakng-loader` (which ships espeak-ng, GPL-3.0). We don't need either —
+# kokoro_engine.py drives the model with `misaki.en` directly (Apache-2.0, its
+# own FallbackNetwork for out-of-dictionary words) and never imports the
+# espeak path. Installing with --no-deps keeps the GPL packages out of the
+# environment entirely, and `KokoroEngine` refuses to start if they ever appear.
+#
+# Also install PyTorch for your hardware FIRST if you want CUDA/ROCm (see
+# README.md) — chatterbox-tts and kokoro's model code reuse it.
+
+# Cloned voices — MIT, code AND weights (github.com/resemble-ai/chatterbox).
+chatterbox-tts
+
+# Kokoro's permissive dependency set (the model code itself is step 2 above).
+#   misaki         Apache-2.0  English G2P (dictionary + FallbackNetwork)
+#   spacy          MIT         tokeniser/tagger; misaki downloads en_core_web_sm
+#   num2words      LGPL-2.1    digits → words. Unmodified, installed separately;
+#                              its licence text ships with this service.
+#   transformers   Apache-2.0  imported by misaki.en
+#   huggingface-hub            model/voice download
+misaki
+spacy
+num2words
+transformers
+huggingface-hub
+
+# Service plumbing.
+fastapi
+uvicorn[standard]
+python-multipart
+# WAV handling for reference clips (Kokoro's own output is encoded with the
+# standard library, deliberately — see server.py's _encode_wav).
+soundfile
+numpy

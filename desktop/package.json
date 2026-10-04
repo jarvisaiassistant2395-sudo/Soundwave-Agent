@@ -1,0 +1,24 @@
+{
+  "name": "soundwave-ai-desktop",
+  "productName": "Soundwave AI",
+  "version": "1.6.5",
+  "private": true,
+  "description": "Soundwave AI \u2014 an AI agent that makes YouTube Shorts; talk to it with a global voice shortcut.",
+  "author": {
+    "name": "Soundwave AI"
+  },
+  "license": "UNLICENSED",
+  "main": "src/main.js",
+  "scripts": {
+    "assemble": "node assemble.mjs",
+    "smoke": "node smoke.mjs",
+    "test": "node --test test/desktop-settings.test.cjs test/check-dlls.test.mjs test/youtube-client.test.cjs test/protect.test.mjs test/wake.test.cjs",
+    "dist:win": "electron-builder --win",
+    "dist:dir": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "javascript-obfuscator": "5.8.1"
+  }
+}

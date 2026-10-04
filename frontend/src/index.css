@@ -1,0 +1,187 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-navy text-gray-100 font-sans antialiased;
+  background-color: #0c0d12;
+  color: #f3f4f6;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.35);
+  color: #ffffff;
+}
+
+/* ── Focus visibility (WCAG 2.1 AA) ─────────────────────────────────── */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px #0c0d12,
+    0 0 0 4px #2563eb;
+  border-radius: 6px;
+}
+
+/* ── Custom dark scrollbars ──────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #272a37 transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #272a37;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #373b4d;
+}
+
+/* ── Scroll hint: fade the bottom edge of a scroll box with more below ── */
+@media (min-width: 1024px) {
+  .sw-fade-bottom {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+  }
+}
+
+/* ── Desktop voice bar (/overlay): a transparent, frameless window ───── */
+html.sw-overlay,
+html.sw-overlay body,
+html.sw-overlay #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+/* ── Custom range inputs ─────────────────────────────────────────────── */
+.sw-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: #1e202c;
+  cursor: pointer;
+  outline-offset: 4px;
+}
+.sw-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 2px solid #0c0d12;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease-in-out;
+}
+.sw-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.sw-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 2px solid #0c0d12;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Refined gradient text helper ────────────────────────────────────── */
+.text-gradient {
+  background-image: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Shimmer skeleton ────────────────────────────────────────────────── */
+.skeleton {
+  @apply rounded-md bg-white/[0.04] relative overflow-hidden;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.04),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* ── Premium SaaS Surfaces ────────────────────────────────────────────── */
+.surface-card {
+  background-color: #13141c;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.surface-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.surface-elevated {
+  background-color: #191b26;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.subtle-border {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+/* Backward compatibility aliases */
+.cyber-panel {
+  background-color: #13141c;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+}
+
+.cyber-panel-glow-cyan,
+.cyber-panel-glow-violet {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.cyber-scanlines {
+  display: none;
+}
+
+.cyber-grid {
+  background-image: none;
+}
+
+/* ── Word-by-word karaoke highlight ──────────────────────────────────── */
+.karaoke-word {
+  display: inline-block;
+  white-space: pre-wrap;
+  transition: color 120ms ease-in-out;
+}

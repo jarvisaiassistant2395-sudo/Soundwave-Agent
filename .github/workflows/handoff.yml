@@ -1,0 +1,75 @@
+# Handoff: mirror RELEASE installers to a scratch branch so an egress-restricted
+# client (a sandbox that can reach github.com git but NOT the release/artifact
+# CDNs) can fetch them with plain git.
+#
+# One-off, MANUAL: it used to run whenever this file changed, which meant every
+# edit to it failed on repositories that have no such release. Run it from the
+# Actions tab (Run workflow) when you actually want the mirror; delete the
+# `artifact-handoff` branch after fetching.
+name: Artifact Handoff
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to mirror (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      pattern:
+        description: "Asset glob to download"
+        required: true
+        default: "SoundwaveAI-*.exe"
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    outputs:
+      debug: ${{ steps.mirror.outputs.debug }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download release installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p handoff
+          gh release download "${HANDOFF_TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${HANDOFF_PATTERN}" --dir handoff
+          ls -la handoff
+
+      - name: Split + mirror to artifact-handoff branch
+        id: mirror
+        run: |
+          set -euo pipefail
+          trap 'echo "debug=FAILED_AT: ${BASH_COMMAND}" >> "$GITHUB_OUTPUT"' ERR
+          cd handoff
+          manifest=manifest.json
+          echo "{" > "$manifest"
+          first=1
+          for f in ${HANDOFF_PATTERN}; do
+            sum=$(sha256sum "$f" | cut -d' ' -f1)
+            size=$(stat -c%s "$f")
+            if [ $first -eq 0 ]; then echo "," >> "$manifest"; fi
+            first=0
+            echo "  \"$f\": {\"sha256\": \"$sum\", \"size\": $size}" >> "$manifest"
+            # split into 60MB chunks (git max file size is 100MB without LFS)
+            split -b 60m -d -a 3 "$f" "${f}.part"
+          done
+          echo "}" >> "$manifest"
+          cat "$manifest"
+          ls -la
+
+          git config user.name "artifact-handoff"
+          git config user.email "handoff@local"
+          git checkout --orphan artifact-handoff
+          git add -f *.part* manifest.json
+          git commit -m "artifact handoff for ${HANDOFF_TAG} (run ${GITHUB_RUN_ID})"
+          git push --force origin artifact-handoff
+        env:
+          HANDOFF_TAG: ${{ inputs.tag }}
+          HANDOFF_PATTERN: ${{ inputs.pattern }}

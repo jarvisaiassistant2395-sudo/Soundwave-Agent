@@ -1,0 +1,312 @@
+name: Android Companion
+
+# Builds the Soundwave phone app (mobile/) into an APK, then runs it on an
+# Android emulator against the real PC server (the phone companion on, set up
+# like the desktop app) and drives it end to end — including chat answered by
+# Gemini (a stand-in on the CI machine: desktop/test/fake-gemini.mjs). The APK
+# is uploaded as the `soundwave-companion-apk` artifact (a test build —
+# nothing is published).
+#
+# Signing: with the repository secrets ANDROID_KEYSTORE_BASE64 (+ _PASSWORD,
+# optional ANDROID_KEY_ALIAS) every build is signed with that permanent key,
+# so new versions install over old ones. Without them each build gets a
+# one-off key: uninstall the previous test build before installing a new one.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "mobile/**"
+      - "frontend/src/lib/agentChat.ts"
+      - "frontend/src/lib/voiceInput.ts"
+      - "frontend/src/lib/voices.ts"
+      - "frontend/src/lib/desktop.ts"
+      - "frontend/src/lib/types.ts"
+      - "frontend/public/audio/**"
+      - "server/src/lib/companion/**"
+      - "server/src/lib/brain/**"
+      - "server/src/lib/memory.ts"
+      - "server/src/lib/morning.ts"
+      - "server/src/lib/briefing.ts"
+      - "server/src/lib/conversation.ts"
+      - "server/src/lib/chatMessages.ts"
+      - "server/src/routes/companion.ts"
+      - "server/src/routes/agent.ts"
+      - "desktop/test/fake-gemini.mjs"
+      - ".github/workflows/android-companion.yml"
+    tags: ["companion-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-companion-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Install the phone app's dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck and unit-test the phone app
+        working-directory: mobile
+        run: |
+          npm run typecheck
+          npm test
+
+      # The APK bundles the shared agent core (and, in phone-alone mode, the
+      # packaged server), so the same licence gate runs here: nothing copyleft,
+      # nothing non-commercial, no bundled program without its licence text.
+      - name: Audit the licences of everything in the APK
+        working-directory: mobile
+        run: node ../scripts/license-audit.mjs
+
+      - name: Build the app page and copy it into the Android project
+        working-directory: mobile
+        run: |
+          npx vite build
+          # The page in the APK is plain JavaScript and includes the shared agent
+          # core (the instruction, the guide, the briefing). Rewrite it before it
+          # is copied, then check the copies that actually ship. Fails the build
+          # if a phrase from code-protection.json still reads.
+          node scripts/protect-dist.mjs
+          npx cap sync android
+          node scripts/protect-dist.mjs --verify android/app/src/main/assets/public
+
+      - name: Signing key
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          ks="$RUNNER_TEMP/soundwave-release.p12"
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$ks"
+            pw="$KEYSTORE_PASSWORD"
+            alias="${KEY_ALIAS:-soundwave}"
+            echo "::notice title=APK signing::Signed with the permanent key from the repository secrets — installs over earlier builds."
+          else
+            pw="$(openssl rand -hex 24)"
+            alias="soundwave"
+            keytool -genkeypair -keystore "$ks" -storetype PKCS12 -alias "$alias" -keyalg RSA -keysize 3072 -validity 36500 \
+              -storepass "$pw" -keypass "$pw" -dname "CN=Soundwave AI phone companion (test build)" >/dev/null
+            echo "::notice title=APK signing::One-off key for this build (no ANDROID_KEYSTORE_BASE64 secret) — uninstall an older test build before installing this one."
+          fi
+          echo "::add-mask::$pw"
+          {
+            echo "SW_KEYSTORE=$ks"
+            echo "SW_KEYSTORE_PASSWORD=$pw"
+            echo "SW_KEY_ALIAS=$alias"
+            echo "SW_KEY_PASSWORD=$pw"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the APKs (release to install, debug for the emulator test)
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon --stacktrace assembleRelease assembleDebug
+
+      - name: Check the APK (signature, package, permissions)
+        id: meta
+        run: |
+          set -euo pipefail
+          apk=mobile/android/app/build/outputs/apk/release/app-release.apk
+          bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$bt/apksigner" verify --verbose --print-certs "$apk" | tee "$RUNNER_TEMP/apksigner.txt"
+          "$bt/aapt2" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          head -3 "$RUNNER_TEMP/badging.txt"
+          grep -E "uses-permission|sdkVersion|targetSdkVersion" "$RUNNER_TEMP/badging.txt" || true
+          version="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" "$RUNNER_TEMP/badging.txt" | head -1)"
+          pkg="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$RUNNER_TEMP/badging.txt")"
+          min="$(grep -oE "^(minSdkVersion|sdkVersion):'[0-9]+'" "$RUNNER_TEMP/badging.txt" | head -1 | grep -oE "[0-9]+" || true)"
+          target="$(sed -n "s/^targetSdkVersion:'\([0-9]*\)'.*/\1/p" "$RUNNER_TEMP/badging.txt")"
+          perms="$(sed -n "s/^uses-permission: name='android.permission.\([A-Z_]*\)'.*/\1/p" "$RUNNER_TEMP/badging.txt" | tr '\n' ' ')"
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" "$RUNNER_TEMP/apksigner.txt"
+          [ "$pkg" = "ai.soundwave.companion" ]
+          # What the customer actually downloads must not read either: grep the
+          # signed APK's own JavaScript for the agent's instruction (it is a real
+          # phrase from code-protection.json — if the marker list moves, the
+          # desktop test fails first, so this can't rot silently).
+          if unzip -p "$apk" "assets/public/assets/*.js" 2>/dev/null | grep -qF "You are Soundwave, the AI assistant inside the Soundwave AI app on the user's PC."; then
+            echo "::error title=APK check::the agent's instruction is readable inside the APK"
+            exit 1
+          fi
+          echo "::notice title=APK check::the app page inside the APK is protected (no readable instruction)"
+          mkdir -p dist
+          cp "$apk" "dist/SoundwaveCompanion-$version.apk"
+          size="$(du -h "dist/SoundwaveCompanion-$version.apk" | cut -f1)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Soundwave phone app::SoundwaveCompanion-$version.apk ($size) — $pkg, Android ${min}+ (target API $target), permissions: $perms"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: soundwave-companion-apk
+          path: dist/SoundwaveCompanion-*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload the debug APK (for the emulator test)
+        uses: actions/upload-artifact@v7
+        with:
+          name: companion-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
+          if-no-files-found: error
+
+  emulator-e2e:
+    needs: apk
+    runs-on: ubuntu-latest
+    # The flow keeps growing (boot, install, and a full morning/afternoon on the
+    # phone: settings, chat, briefing, alarm, wake word, push-to-talk). At 45
+    # minutes one run was killed mid-flow — "The job has exceeded the maximum
+    # execution time" — which tells you nothing about the app. The cap is a
+    # backstop for a hang, not a target: the emulator boots in minutes and every
+    # wait inside the flow is bounded (the briefing diagnosis, which runs after a
+    # failure and once sat here, is capped at 8 seconds).
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: companion-debug-apk
+          path: ${{ runner.temp }}/apk
+
+      - name: Enable KVM (hardware-accelerated emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start the PC side (Soundwave server with the phone companion on)
+        working-directory: server
+        env:
+          COMPANION: "1"
+          # Like the desktop app: Settings → Brain and the agent's PC tools.
+          DESKTOP_APP: "1"
+          # "Gemini" is a stand-in on this machine; the test saves its key in Settings → Brain.
+          # (The phone reaches the same stand-ins at 10.0.2.2 when it chats with the PC off.)
+          GEMINI_API_BASE: http://127.0.0.1:4100
+          OPEN_METEO_GEOCODING_URL: http://127.0.0.1:4100/geocode
+          OPEN_METEO_FORECAST_URL: http://127.0.0.1:4100/forecast
+          # The voice is Microsoft's neural service — also reachable from a runner
+          # *sometimes*, which is a red build that says nothing about Soundwave.
+          # The stand-in below speaks the same wire protocol with real MP3, and the
+          # phone app is pointed at it too (the test writes its URL in the app's
+          # own storage). The live service is checked from the desktop build.
+          EDGE_TTS_WSS_URL: ws://127.0.0.1:4200/consumer/speech/synthesize/readaloud/edge/v1
+          # The emulator reaches this machine at 10.0.2.2 — put it in the pairing code.
+          COMPANION_HOSTS: 10.0.2.2
+          BIND_HOST: 0.0.0.0
+          PORT: "4000"
+          DATA_DIR: ${{ runner.temp }}/swdata
+          UPLOADS_DIR: ${{ runner.temp }}/swdata/uploads
+          JWT_ACCESS_SECRET: ci-access-secret-for-the-phone-e2e
+          JWT_REFRESH_SECRET: ci-refresh-secret-for-the-phone-e2e
+        # Install/build with dev dependencies (NODE_ENV=production would make
+        # npm skip them, and tsc fail); only the server itself runs in production mode.
+        run: |
+          # Every step here names itself if it fails: the Actions log host is not
+          # reachable from the maintainer's machine, so the annotations are how a
+          # red build gets diagnosed (same reason the backend tests have theirs).
+          step() { echo "::notice title=PC side::$1"; }
+          die() { echo "::error title=PC side::$1"; shift; for f in "$@"; do echo "--- $f"; cat "$f" 2>/dev/null | tail -40; done; exit 1; }
+          # --host 0.0.0.0: the emulator reaches this machine at 10.0.2.2, which
+          # does not land on a loopback-only listener (the PC server binds 0.0.0.0
+          # too, which is why the companion itself always worked).
+          step "starting the fake Gemini"
+          nohup node ../desktop/test/fake-gemini.mjs --port 4100 --host 0.0.0.0 > "$RUNNER_TEMP/fake-gemini.log" 2>&1 &
+          step "npm ci"
+          npm ci > "$RUNNER_TEMP/npm-ci.log" 2>&1 || die "npm ci failed in server/" "$RUNNER_TEMP/npm-ci.log"
+          step "npm run build"
+          npm run build 2>&1 | tee "$RUNNER_TEMP/tsc.log"
+          [ "${PIPESTATUS[0]}" = "0" ] || die "the backend build (tsc) failed" "$RUNNER_TEMP/tsc.log"
+          curl -sf -o /dev/null http://127.0.0.1:4100/_fake/requests || die "the fake Gemini didn't start" "$RUNNER_TEMP/fake-gemini.log"
+          # The voice stand-in (0.0.0.0: the PC reaches it at 127.0.0.1, the
+          # emulator at 10.0.2.2) — it logs every synthesis it answers.
+          step "starting the voice stand-in"
+          nohup node_modules/.bin/tsx scripts/fake-edge-tts.ts --port 4200 > "$RUNNER_TEMP/fake-edge-tts.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:4200/_fake/health >/dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:4200/_fake/health || die "the voice stand-in didn't start" "$RUNNER_TEMP/fake-edge-tts.log"
+          step "starting the Soundwave server"
+          NODE_ENV=production nohup node dist/index.js > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:4000/api/health >/dev/null && break; sleep 1; done
+          curl -sf -o "$RUNNER_TEMP/companion.json" http://127.0.0.1:4000/api/v1/companion || die "the server never answered /api/v1/companion on :4000" "$RUNNER_TEMP/server.log"
+          cat "$RUNNER_TEMP/companion.json"; echo
+          # Prove the PC's voice really goes through the stand-in (and not out to
+          # Microsoft, where the token/time behaviour could fail the run).
+          curl -sf --max-time 45 -X POST http://127.0.0.1:4000/api/v1/agent/speak -H 'Content-Type: application/json' \
+            -d '{"text":"Soundwave voice check","voice":"en-US-GuyNeural"}' \
+            | head -c 120 > "$RUNNER_TEMP/speak.json"
+          echo "speak reply starts: $(head -c 60 "$RUNNER_TEMP/speak.json")…"
+          if [ "$(curl -s http://127.0.0.1:4200/_fake/health | sed -n 's/.*"served":\([0-9]*\).*/\1/p')" = "0" ]; then
+            die "the PC's speech never reached the stand-in" "$RUNNER_TEMP/fake-edge-tts.log"
+          fi
+          step "the PC side is up: fake Gemini, voice stand-in, Soundwave server"
+          echo "::notice title=Voice stand-in::the PC's speech is answered locally ($(cat "$RUNNER_TEMP/speak.json" | head -c 60)…)"
+
+      - name: Install the test driver (Playwright for Android)
+        run: npm install --no-save --no-package-lock --prefix mobile/e2e playwright-core@1.63.0
+
+      - name: Run the phone app on an Android 15 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          COMPANION_APK: ${{ runner.temp }}/apk/app-debug.apk
+          PC_URL: http://127.0.0.1:4000
+          FAKE_GEMINI_URL: http://127.0.0.1:4100
+          SHOTS_DIR: mobile/e2e-shots
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          script: node mobile/e2e/android-e2e.mjs
+
+      - name: PC server log
+        if: always()
+        run: |
+          tail -n 80 "$RUNNER_TEMP/server.log" || true
+          tail -n 5 "$RUNNER_TEMP/fake-gemini.log" || true
+          # The phone-related lines as annotations too (readable without the log download).
+          grep -E "\[(companion|brain|briefing)\]" "$RUNNER_TEMP/server.log" | tail -n 8 | sed 's/^/::notice title=PC server log::/' || true
+
+      - name: Upload emulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: companion-e2e-screenshots
+          path: mobile/e2e-shots
+          retention-days: 3
+          if-no-files-found: ignore
