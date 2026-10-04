@@ -30,6 +30,10 @@ import { pcMemoryStore } from "../memory.js";
 import { prepareMorning } from "../morning.js";
 import type { GeminiFunctionDeclaration } from "./gemini.js";
 import { openApp, openWebsite, pcStatus } from "./pc.js";
+import { readScreen } from "../screen.js";
+import { readPath } from "../files.js";
+import { describeVolume, getVolume, setMuted, setVolume, volumeSupported } from "../pcControl.js";
+import { cancelReminder, createReminder, listReminders } from "../reminders.js";
 import { guideTool } from "./core/guide.js";
 import { memoryTools, type MemoryStore } from "./core/memory.js";
 import { localDay } from "./core/morning.js";
@@ -950,6 +954,185 @@ AGENT_TOOLS.push(
         })),
         errors,
       };
+    },
+  },
+  {
+    declaration: {
+      name: "look_at_screen",
+      description:
+        "Look at the user's screen right now and answer from the picture — \"what does this error say?\", \"what's on my screen?\", \"read me that dialog\", \"why is this not working?\". The app takes a screenshot of the screen the Soundwave window is on and Gemini reads it; you then answer the user's question from what is actually there. It reads only what is visible: nothing is clicked, nothing is typed, and if a word is too small to read it says so instead of guessing. Needs the desktop app and a Gemini key.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          question: {
+            type: "STRING",
+            description: "What to find out from the screen, in the user's own words (\"what does the error say?\", \"which button do I press?\"). Leave out to get a description of what is on screen.",
+          },
+        },
+      },
+    },
+    // A screenshot needs a window to photograph, and a key to read it with.
+    available: (ctx) => ctx.desktop,
+    async run(args) {
+      const question = str(args.question, 600);
+      const read = await readScreen(question);
+      if (!read.ok) return { ok: false, reason: read.reason, needsBrain: read.needsBrain };
+      return {
+        ok: true,
+        answer: read.answer ?? "",
+        lookedAt: read.display ?? "",
+        size: `${read.width ?? 0}×${read.height ?? 0}`,
+        note: "That is what the picture shows — answer the user from it.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "read_file",
+      description:
+        "Read a text file on this PC, or list a folder, when the user names the path (\"what does C:\\Users\\me\\notes.txt say?\", \"what's in my Downloads folder?\"). Reads only the path it is given — it never searches the disk by itself — and it is read-only: nothing is changed, moved or deleted. Refuses binary files (images, videos, apps) and very large ones, and says why instead of returning something useless.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          path: { type: "STRING", description: "The full path of the file or folder, e.g. C:\\Users\\me\\Downloads or ~/notes.txt." },
+        },
+        required: ["path"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    async run(args) {
+      const target = str(args.path, 500);
+      if (!target) return { ok: false, reason: "Which file or folder? Give me its full path." };
+      const result = readPath(target);
+      if (!result.ok) return result;
+      if (result.kind === "folder") {
+        return {
+          ok: true,
+          kind: "folder",
+          path: result.path,
+          count: result.total,
+          entries: result.entries.map((e) => `${e.kind === "folder" ? "[folder]" : e.bytes != null ? `${Math.round(e.bytes / 1024)} KB` : ""} ${e.name}`.trim()),
+          truncated: result.truncated,
+        };
+      }
+      return {
+        ok: true,
+        kind: "file",
+        path: result.path,
+        name: result.name,
+        bytes: result.bytes,
+        lines: result.lines,
+        text: result.text,
+        truncated: result.truncated,
+        note: result.truncated ? "Only the beginning fits here — say so if the answer might be further down." : undefined,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "set_volume",
+      description:
+        "Change this PC's sound: set the level (\"turn it down to 30%\", \"volume 80\") or mute/unmute it. Windows only — it reads the real level back after changing it, so the answer is never a guess. Call it with no arguments to just hear the current level.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          percent: { type: "NUMBER", description: "The level to set, 0–100. Leave out to just read the current level." },
+          mute: { type: "BOOLEAN", description: "true mutes the sound, false unmutes it. Leave out to leave muting alone." },
+        },
+      },
+    },
+    // Windows only, and only inside the desktop app: it is the person's PC.
+    available: (ctx) => ctx.desktop && volumeSupported(ctx.platform),
+    async run(args) {
+      try {
+        const wantedMute = typeof args.mute === "boolean" ? args.mute : undefined;
+        const wantedLevel = typeof args.percent === "number" && Number.isFinite(args.percent) ? Number(args.percent) : undefined;
+        if (wantedMute === undefined && wantedLevel === undefined) {
+          const state = await getVolume();
+          return { ok: true, ...state, summary: describeVolume(state) };
+        }
+        let state = await getVolume();
+        if (wantedMute !== undefined && state.muted !== wantedMute) state = await setMuted(wantedMute);
+        if (wantedLevel !== undefined) state = await setVolume(wantedLevel);
+        return {
+          ok: true,
+          ...state,
+          summary: describeVolume(state),
+          changed: [wantedMute !== undefined ? (wantedMute ? "muted" : "unmuted") : "", wantedLevel !== undefined ? `level ${state.level}%` : ""].filter(Boolean).join(", "),
+        };
+      } catch (err) {
+        return { ok: false, reason: (err as Error).message || "Windows wouldn't change the sound." };
+      }
+    },
+  },
+  {
+    declaration: {
+      name: "set_reminder",
+      description:
+        "Set a timer or a reminder that rings on this PC. Give the time the way the person said it: \"in 10 minutes\", \"in 1 hour 30 minutes\", \"at 17:30\", \"tomorrow at 8am\", \"friday at 9\", \"tonight\". It rings into the chat (PC and phone) with a notification, and stays listed until it's cancelled. Soundwave has to be running on this PC (the tray counts) for it to ring — say that when you set one. A time it can't read is refused, never guessed.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          when: { type: "STRING", description: 'When it should ring: "in 10 minutes", "in 1 hour 30 minutes", "at 17:30", "tomorrow at 8am", "tonight".' },
+          label: { type: "STRING", description: "What it is for, in the person's words: \"check the render\", \"call mum\". Shown when it rings." },
+        },
+        required: ["when"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args) {
+      const when = str(args.when, 120);
+      const label = str(args.label, 200);
+      const result = createReminder(when, label);
+      if (!result.ok || !result.reminder) return { ok: false, reason: result.error ?? "I couldn't read that time." };
+      return {
+        ok: true,
+        id: result.reminder.id,
+        at: result.reminder.at,
+        when: result.reminder.when,
+        label: result.reminder.label,
+        kind: result.reminder.kind,
+        note: "It rings into this conversation (and the phone) with a notification, as long as Soundwave is running on the PC.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "list_reminders",
+      description:
+        "Everything waiting to ring: timers and reminders, soonest first, with how long until each one. Call it whenever someone asks what they set, or before cancelling one so the name is right.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    available: (ctx) => ctx.desktop,
+    async run() {
+      const waiting = listReminders();
+      return {
+        ok: true,
+        count: waiting.length,
+        reminders: waiting.map((r) => ({ id: r.id, text: r.text, when: r.when, at: r.at, kind: r.kind })),
+        note: waiting.length ? undefined : "Nothing is waiting.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "cancel_reminder",
+      description: "Cancel a timer or reminder that hasn't rung yet — by its label (\"the render one\") or from list_reminders.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          which: { type: "STRING", description: 'The label of the reminder, or its id from list_reminders (e.g. "call mum", "rem_abc12").' },
+        },
+        required: ["which"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    async run(args) {
+      const which = str(args.which, 200);
+      const result = cancelReminder(which);
+      if (!result.ok || !result.cancelled) return { ok: false, reason: result.error ?? "I couldn't find that one." };
+      return { ok: true, cancelled: result.cancelled.text, was: result.cancelled.when };
     },
   },
 );

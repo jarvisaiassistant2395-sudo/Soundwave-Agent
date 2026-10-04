@@ -18,6 +18,14 @@ interface DesktopHost {
   writeClipboard?(text: string): void;
   /** A Windows notification from the app itself. Returns false when they're turned off. */
   notify?(opts: { title: string; body: string; route?: string }): boolean;
+  /** One PNG of the screen the app is on — the agent's eyes (lib/screen.ts reads it). */
+  captureScreen?(): Promise<
+    | { png: Uint8Array | ArrayBuffer | string; width?: number; height?: number; display?: string }
+    | Uint8Array
+    | ArrayBuffer
+    | string
+    | null
+  >;
 }
 
 function desktopHost(): DesktopHost | null {

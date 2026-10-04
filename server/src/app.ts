@@ -22,6 +22,7 @@ import jarvisShortRoutes from "./routes/jarvisShort.js";
 import creatorRoutes from "./routes/creator.js";
 import ghostRoutes from "./routes/ghost.js";
 import youtubeRoutes from "./routes/youtube.js";
+import { clipsRoutes } from "./routes/clips.js";
 import companionRoutes from "./routes/companion.js";
 import brainRoutes from "./routes/brain.js";
 import memoryRoutes from "./routes/memory.js";
@@ -83,6 +84,9 @@ export function createApp() {
   app.use("/api/v1/creator", creatorRoutes);
   app.use("/api/v1/ghost", ghostRoutes);
   app.use("/api/v1/youtube", youtubeRoutes);
+  // Cutting Shorts out of a long video, started from the Command Center or the
+  // agent's make_shorts_from_video tool — the same job either way.
+  app.use("/api/v1/clips", clipsRoutes);
   // Phone companion: Settings → Phone + the conversation the phone shares (desktop app only).
   app.use("/api/v1/companion", companionRoutes);
   // The agent's brain (Gemini): status + Settings → Brain.

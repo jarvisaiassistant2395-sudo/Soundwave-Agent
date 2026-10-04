@@ -1,9 +1,9 @@
 {
   "name": "soundwave-ai-desktop",
   "productName": "Soundwave AI",
-  "version": "1.5.9",
+  "version": "1.6.0",
   "private": true,
-  "description": "Soundwave AI — an AI agent that makes YouTube Shorts; talk to it with a global voice shortcut.",
+  "description": "Soundwave AI \u2014 an AI agent that makes YouTube Shorts; talk to it with a global voice shortcut.",
   "author": {
     "name": "Soundwave AI"
   },

@@ -21,6 +21,7 @@ const {
   Notification,
   Tray,
   clipboard,
+  desktopCapturer,
   dialog,
   globalShortcut,
   ipcMain,
@@ -548,6 +549,38 @@ async function main() {
         if (typeof win.showInactive === "function") win.showInactive();
         else win.show();
       }
+    },
+    /**
+     * The agent's eyes (server/src/lib/screen.ts): one PNG of the screen the
+     * Soundwave window is on, plus which display it was. This is what answers
+     * "what does this error say?". Read-only — nothing is clicked, nothing is
+     * written to disk — and the picture is only ever sent to the person's own
+     * Gemini key for that one question. A locked screen or a refused permission
+     * comes back empty and the agent says so instead of guessing.
+     */
+    captureScreen: async () => {
+      const win = mainWindow;
+      const display = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+      const size = display.size;
+      // Gemini reads a ~2 MP picture as well as a 4K one, and faster: scale the
+      // long edge down to 1920 px at most, keeping the aspect ratio.
+      const scale = Math.min(1, 1920 / Math.max(size.width, size.height));
+      const thumbnailSize = {
+        width: Math.max(1, Math.round(size.width * scale)),
+        height: Math.max(1, Math.round(size.height * scale)),
+      };
+      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize });
+      if (!sources || !sources.length) return null;
+      const source = sources.find((s) => String(s.display_id) === String(display.id)) || sources[0];
+      const png = source.thumbnail.toPNG();
+      if (!png || png.length < 1000) return null;
+      const read = source.thumbnail.getSize();
+      return {
+        png,
+        width: read.width,
+        height: read.height,
+        display: `${source.name ? String(source.name) : `Display ${display.id}`} (${size.width}×${size.height})`,
+      };
     },
   };
 

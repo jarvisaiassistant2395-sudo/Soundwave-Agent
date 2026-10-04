@@ -41,9 +41,20 @@ const trustIp = (req: { ip?: string; headers: Record<string, string | string[] |
   return req.ip ?? "unknown";
 };
 
+/**
+ * How many requests a minute one client gets. A hosted server keeps the tight
+ * 120; the desktop app is one person on their own PC whose window polls stats,
+ * jobs and the conversation, and 120 was small enough that the app rate-limited
+ * itself — the packaged end-to-end run hit "Too many requests" saving a memory
+ * note. The desktop ceiling is still a runaway guard, not an open door.
+ */
+export function generalLimitPerMinute(desktop: boolean = config.desktopApp): number {
+  return desktop ? 2000 : 120;
+}
+
 export const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit: generalLimitPerMinute(),
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => {

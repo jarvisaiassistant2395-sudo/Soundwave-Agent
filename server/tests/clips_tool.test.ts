@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import request from "supertest";
 
 const mocks = vi.hoisted(() => ({
   clipsBusy: vi.fn(() => ({ busy: false }) as { busy: boolean; source?: string }),
@@ -31,6 +32,7 @@ const { config } = await import("../src/config.js");
 const { JsonStore, setStoreForTests } = await import("../src/lib/store.js");
 const { toolsFor } = await import("../src/lib/brain/tools.js");
 const clips = await import("../src/lib/videoClips.js");
+const { createApp } = await import("../src/app.js");
 
 let i = 0;
 const ctx = (desktop = true) => ({
@@ -124,5 +126,54 @@ describe("reading a source that isn't there", () => {
     fs.writeFileSync(text, "not a video");
     await expect(clips.checkSource(text)).rejects.toThrow(/isn't a video file/);
     await expect(clips.checkSource("   ")).rejects.toThrow(/paste a YouTube link/);
+  });
+});
+
+// ── The same job, started from the Command Center card ──────────────────────
+// The card posts to this route, so it must behave exactly like the tool: one
+// video at a time, a real reason when the source is wrong, and no pretending.
+
+describe("POST /api/v1/clips — the card's way in", () => {
+  it("starts the job and answers with what will happen", async () => {
+    const app = createApp();
+    const res = await request(app).post("/api/v1/clips").send({ video: "https://youtu.be/dQw4w9WgXcQ", count: 2, focus: "the funny bits" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, video: "A Long Talk", count: 2, jobIds: ["job-clip-1", "job-clip-2"] });
+    expect(String(res.body.message)).toContain("Listening to “A Long Talk”");
+    expect(mocks.startClipsJob).toHaveBeenCalledWith(expect.objectContaining({ video: "https://youtu.be/dQw4w9WgXcQ", count: 2, focus: "the funny bits" }));
+  });
+
+  it("refuses a second video while one is being cut", async () => {
+    mocks.clipsBusy.mockReturnValue({ busy: true, source: "A Long Talk" });
+    const app = createApp();
+    const res = await request(app).post("/api/v1/clips").send({ video: "https://youtu.be/another" });
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ ok: false, busy: true, source: "A Long Talk" });
+    expect(String(res.body.error)).toContain("one video at a time");
+    expect(mocks.startClipsJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty source instead of starting nothing", async () => {
+    const app = createApp();
+    const res = await request(app).post("/api/v1/clips").send({ video: "" });
+    expect(res.status).toBe(400);
+    expect(mocks.startClipsJob).not.toHaveBeenCalled();
+  });
+
+  it("passes on the real reason when the source can't be read", async () => {
+    mocks.startClipsJob.mockRejectedValueOnce(new Error("There's no file at C:\\nope.mp4"));
+    const app = createApp();
+    const res = await request(app).post("/api/v1/clips").send({ video: "C:\\nope.mp4" });
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(String(res.body.error)).toContain("There's no file at");
+  });
+
+  it("says what the card is allowed to offer", async () => {
+    const app = createApp();
+    const res = await request(app).get("/api/v1/clips");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ busy: false, defaultCount: 3, maxCount: 5 });
+    expect(typeof res.body.available).toBe("boolean");
   });
 });

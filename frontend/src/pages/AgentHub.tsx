@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { 
   Sparkles, 
@@ -31,6 +31,7 @@ import {
   HeartPulse,
   Trash,
   Info,
+  Scissors,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { IconButton, IconLink } from "../components/ui/IconButton";
@@ -1837,6 +1838,10 @@ export function AgentHub() {
             </div>
           </div>
 
+          {/* Long video → Shorts: the same job the agent's make_shorts_from_video
+              tool starts, on screen so it can be found without asking in chat. */}
+          <ClipsCard />
+
           {/* Persistent Latest Rendered Video Card */}
           {completedVideoUrl && (
             <div className="rounded-xl border border-cyan-500/40 bg-[#0A1224] p-3.5 space-y-2.5 font-mono shadow-lg shadow-cyan-950/30">
@@ -3516,6 +3521,159 @@ function ChannelRow({
  * “i” grows the button and shows the description under the title; pressing the
  * button itself picks the niche. Nothing else is written on the grid.
  */
+interface ClipsStatus {
+  available: boolean;
+  busy: boolean;
+  source: string | null;
+  defaultCount: number;
+  maxCount: number;
+}
+
+/**
+ * Cut Shorts out of a long video — the visible half of the agent's
+ * make_shorts_from_video tool. A YouTube link or a file path, how many clips,
+ * optionally what to look for; the server runs the exact same job and posts the
+ * finished clips into the conversation. Hidden on a server without the desktop
+ * app (that's where ffmpeg, yt-dlp and the speech engine live).
+ */
+function ClipsCard() {
+  const [status, setStatus] = useState<ClipsStatus | null>(null);
+  const [video, setVideo] = useState("");
+  const [count, setCount] = useState(3);
+  const [focus, setFocus] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/clips");
+      if (!res.ok) return;
+      const data = (await res.json()) as ClipsStatus;
+      setStatus(data);
+      // The server's own default (3) — only until the person picks a number.
+      setCount((c) => (c === 3 && data.defaultCount ? data.defaultCount : c));
+    } catch {
+      /* the card simply stays hidden until the server answers */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // While clips are being cut, ask again so the card isn't left saying "working"
+  // after the last clip has landed in the chat.
+  useEffect(() => {
+    if (!status?.busy) return;
+    const t = setInterval(() => void refresh(), 10_000);
+    return () => clearInterval(t);
+  }, [status?.busy, refresh]);
+
+  if (!status?.available) return null;
+
+  const cut = async () => {
+    const source = video.trim();
+    if (!source || starting || status.busy) return;
+    setStarting(true);
+    setNote(null);
+    try {
+      const res = await fetch("/api/v1/clips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video: source, ...(count ? { count } : {}), ...(focus.trim() ? { focus: focus.trim() } : {}) }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string; count?: number };
+      if (res.ok && data.ok) {
+        setNote(data.message ?? "Cutting now — the clips appear in the chat.");
+        setVideo("");
+        setFocus("");
+        toast.success("Cutting Shorts", data.message);
+        void refresh();
+      } else {
+        setNote(data.error ?? "That video didn't work out.");
+        toast.error("Couldn't start", data.error);
+      }
+    } catch {
+      setNote("The server didn't answer.");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  // One line under the controls: what just happened, or what is happening now.
+  const cutting = status.source ? `Cutting “${status.source}” — the clips appear in the chat.` : "Cutting — the clips appear in the chat.";
+  const line = note ?? (status.busy ? cutting : null);
+
+  return (
+    <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-2 font-mono" data-testid="clips-card">
+      <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+        <span className="flex items-center gap-1.5 font-semibold text-gray-200">
+          <Scissors className="h-3.5 w-3.5 text-fuchsia-400" />
+          Shorts from a video
+        </span>
+        {status.busy ? (
+          <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title={status.source ?? ""} data-testid="clips-busy">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            CUTTING
+          </span>
+        ) : null}
+      </div>
+
+      <input
+        value={video}
+        onChange={(e) => setVideo(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void cut();
+        }}
+        placeholder="YouTube link or video file path"
+        className="w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
+        data-testid="clips-video"
+      />
+
+      <div className="flex items-center gap-1.5">
+        <label className="flex flex-1 items-center gap-1.5 text-[10px] text-gray-500" title="Optional: what to look for in the video">
+          <input
+            value={focus}
+            onChange={(e) => setFocus(e.target.value)}
+            placeholder="what to look for"
+            className="w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
+            data-testid="clips-focus"
+          />
+        </label>
+        <select
+          value={count}
+          onChange={(e) => setCount(Number(e.target.value))}
+          title="How many shorts to cut out"
+          aria-label="How many shorts to cut out"
+          className="rounded border border-[#172A4A] bg-[#070D18] px-1 py-1 text-[11px] text-gray-300 focus:border-cyan-500/60 focus:outline-none cursor-pointer"
+          data-testid="clips-count"
+        >
+          {Array.from({ length: Math.max(1, status.maxCount - 1) }, (_, i) => i + 1).map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <IconButton
+          label="Cut Shorts out of this video"
+          tone="cyan"
+          onClick={() => void cut()}
+          disabled={!video.trim() || starting || status.busy}
+          data-testid="clips-cut"
+        >
+          {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
+        </IconButton>
+      </div>
+
+      {line ? (
+        <p className="text-[10px] leading-snug text-gray-500" data-testid="clips-note">
+          {line}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function NicheButton({
   niche,
   selected,

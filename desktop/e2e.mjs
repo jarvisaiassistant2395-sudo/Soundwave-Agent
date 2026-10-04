@@ -662,6 +662,26 @@ try {
   // moment and renders a vertical clip with captions — watch it in the chat.
   await main.goto(`${appBase}/agent`);
   await main.waitForSelector('input[placeholder="Message…"]', { timeout: 30_000 });
+  // The same job has to be findable without knowing to ask for it: the card on
+  // the Command Center is the visible half of make_shorts_from_video.
+  const clipsCard = await main.evaluate(() => {
+    const card = document.querySelector('[data-testid="clips-card"]');
+    if (!card) return null;
+    return {
+      hasInput: !!card.querySelector('[data-testid="clips-video"]'),
+      hasCount: !!card.querySelector('[data-testid="clips-count"]'),
+      hasButton: !!card.querySelector('[data-testid="clips-cut"]'),
+      offered: card.textContent?.trim().slice(0, 60) ?? "",
+    };
+  });
+  if (!clipsCard) await fail('the "Shorts from a video" card is missing from the Command Center');
+  else if (!clipsCard.hasInput || !clipsCard.hasCount || !clipsCard.hasButton) await fail(`the "Shorts from a video" card is incomplete: ${JSON.stringify(clipsCard)}`);
+  else ok(`the Command Center shows the "Shorts from a video" card (${clipsCard.offered})`);
+  const clipsOffered = await main.evaluate(async () => {
+    const res = await fetch("/api/v1/clips");
+    return res.ok ? await res.json() : { error: res.status };
+  });
+  if (clipsOffered.available !== true) await fail(`the clips endpoint doesn't offer the card here: ${JSON.stringify(clipsOffered)}`);
   await main.fill('input[placeholder="Message…"]', `cut 1 clip out of this video: ${clipSource}`);
   await main.press('input[placeholder="Message…"]', "Enter");
   // The clips pipeline starts in the background; if its first line never shows,

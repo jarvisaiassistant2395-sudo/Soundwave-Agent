@@ -48,6 +48,7 @@ Left column (scrolls on its own):
 - Orbital NCG Backgrounds: how many channel videos are still unused, how many were used (never reused), the last imported background, a link to youtube.com/@OrbitalNCG, a clock button for the history and a refresh button that re-checks the channel for new uploads.
 - YouTube Automation: shows the linked channel (or "NOT LINKED"), the Auto-Post switch, the default visibility, "Post to YouTube" for the latest video, and "Setup" (opens the YouTube settings).
 - Latest Rendered Video (after the first short): a player, "Download Short (MP4)" and "1-Click Post to YouTube Shorts".
+- Shorts from a Video: a YouTube link or a file on this PC, how many clips and (optionally) what to look for — the same cut-the-best-bits job the agent does in chat, one button to start it. Hidden when Soundwave isn't running as the desktop app (the cutting happens on this PC).
 - System Uptime: how long the PC has been on, session and command counters, system load.
 
 Center: the thinking orb (click it to talk) with a status line under it, and the dock with four buttons — film icon (1-Click Viral Short Generator), microphone (tap to talk, hold for push-to-talk), workflow icon (Ghost Operator macros) and gear (Assistant Configuration).
@@ -83,7 +84,7 @@ To cut Shorts out of a video that already exists (a long recording, someone else
     id: "clips",
     title: "Shorts from a long video",
     summary: "paste a long video (a YouTube link or a file) and the agent cuts the best moments into vertical Shorts with captions",
-    text: `Ask for it in plain words — "make shorts out of this video", "cut the best bits out of <link>", "find 3 clips from this" — and give a YouTube link, or the path of a video file already on this PC. The agent downloads the video (links only) and listens to it: it looks for the parts that stand on their own — a hook, a surprising fact, a strong opinion, a laugh — ignoring intros and housekeeping. You can steer it: "the funny bits", "the part about pricing".
+    text: `Two ways in, same job: the "Shorts from a video" card on the Command Center — paste the link or file path, pick how many — or just ask in plain words — "make shorts out of this video", "cut the best bits out of <link>", "find 3 clips from this" and give a YouTube link, or the path of a video file already on this PC. Either way the agent downloads the video (links only) and listens to it: it looks for the parts that stand on their own — a hook, a surprising fact, a strong opinion, a laugh — ignoring intros and housekeeping. You can steer it: "the funny bits", "the part about pricing".
 
 It then cuts each moment into a vertical Short: the video cropped to 9:16, the sound exactly as recorded, and captions of what is being said, burned in. Nothing else is added — no narration, no new background — it's your own footage. Ask for 1 to 5 (3 by default); 720p or 1080p comes from Settings → Quality, as for every short.
 
@@ -205,7 +206,7 @@ Privacy: your messages and the recent conversation go to Google with your key (o
   {
     id: "chat-tools",
     title: "What the agent can and can't do in chat",
-    summary: "its real abilities (shorts, videos, PC actions, memory, Morning Setup, guide) with example requests, and its limits",
+    summary: "its real abilities (shorts, videos, PC actions, your screen, your files, the volume, timers, memory, Morning Setup, guide) with example requests, and its limits",
     text: `In the chat (typed or spoken, on the PC or the phone) the agent can:
 - Make shorts: "make a short about the deep sea, for kids". Only one renders at a time.
 - Follow progress: "how far is my short?", "how many backgrounds are left?"
@@ -217,12 +218,16 @@ Privacy: your messages and the recent conversation go to Google with your key (o
 - Run the Morning Setup: "good morning, run my morning setup".
 - Change the daily briefing: "brief me on trending GitHub repos every morning", "make my briefing 7:30", "remove the football topic".
 - Explain Soundwave: any question about a feature, setting or setup.
+- Look at your screen: "what does this error say?", "what's on my screen?", "which button do I press?". Soundwave takes a screenshot of the screen it's on and Gemini reads it — it sees only what's visible, clicks nothing and types nothing, and when a word is too small to read it says so instead of guessing.
+- Read a file or list a folder: "what does C:\\Users\\me\\notes.txt say?", "what's in my Downloads folder?". Give the full path; it reads only that path (it never searches your disk by itself), it is read-only, and it turns down binaries and huge files by saying why.
+- Change the PC's volume: "turn it down to 30%", "mute", "how loud is it?". Windows only. It reads the level back after every change, so it reports the real number.
+- Set timers and reminders: "remind me in 10 minutes to check the render", "at 17:30 tell me to go", "tomorrow at 8am", "what's waiting?", "cancel the render one". They ring in the chat (the phone sees it) with a Windows notification, and they stay listed until cancelled — Soundwave has to be running on the PC (the tray counts) for the ring to happen.
 - Talk: answer questions, brainstorm topics, hooks, titles and descriptions, write scripts, translate, quick maths.
 - Search the web, if Search is on in Settings → Brain (needs billing).
 
-It can't (yet): change the volume or other PC settings, read the screen or files, set timers or reminders, send emails or messages, or edit videos after they're made. It never claims to have done something it didn't.
+It can't: send emails or messages, sign into accounts, change PC settings other than the volume, act inside another app (it can open one, not click in it), or edit videos after they're made. It never claims to have done something it didn't.
 
-When the PC is off, the phone's agent can chat, explain the app, use the memory, change the daily briefing and give it (researching your topics with Gemini) — making shorts, videos and PC actions wait for the PC.`,
+When the PC is off, the phone's agent can chat, explain the app, use the memory, change the daily briefing and give it (researching your topics with Gemini) — making shorts, videos, and anything on the PC (screen, files, volume, timers) waits for it to be back.`,
   },
   {
     id: "memory",
@@ -289,7 +294,7 @@ Install and pair (once):
 
 With the PC on (Soundwave AI running — the tray counts — and the phone on the same Wi-Fi): chat and talk to the full agent, make shorts, watch finished shorts (Watch button), hear replies in the Soundwave voices, and run the Morning Setup (it opens your morning apps on the PC). Messages from the phone show as "YOU (PHONE)" on the PC.
 
-With the PC off or out of reach: the app keeps chatting — Gemini answers directly on the phone, with the conversation and the agent's memory, so it knows what you did. It can explain every Soundwave feature, change your morning briefing, give you the daily briefing on your own topics (it researches them with Gemini), and set alarms on the phone itself. Voice input works (Gemini transcribes it) and replies are read aloud in your Soundwave voice by the phone itself. It can't make shorts, show or download videos, or open things on the PC until the PC is back. Everything you said goes back into the PC's conversation and memory as soon as the phone reaches the PC again.
+With the PC off or out of reach: the app keeps chatting — Gemini answers directly on the phone, with the conversation and the agent's memory, so it knows what you did. It can explain every Soundwave feature, change your morning briefing, give you the daily briefing on your own topics (it researches them with Gemini), and set alarms on the phone itself. Voice input works (Gemini transcribes it) and replies are read aloud in your Soundwave voice by the phone itself. It can't make shorts, show or download videos, or do anything on the PC (see the screen, read its files, change the volume, set a timer that rings there) until the PC is back. Everything you said goes back into the PC's conversation and memory as soon as the phone reaches the PC again.
 
 Chatting without the PC needs "Chat from the phone when this PC is off" in Settings → Phone on the PC (on by default) and a Gemini key in Settings → Brain. The PC then gives your paired phones a copy of the key and the memory, end-to-end encrypted. Turn it off and phones delete the key next time they connect.
 
@@ -383,11 +388,11 @@ In the Command Center, the gear button opens Assistant Configuration: General & 
   {
     id: "workflow-macros",
     title: "The Workflow button (Ghost Operator macros)",
-    summary: "saved multi-step automations that really run on the PC — and what they can't do yet",
+    summary: "saved multi-step automations that really run on the PC — and which steps are skipped",
     text: `The workflow icon in the dock opens "Ghost Operator Macros": saved multi-step automations that really run on this PC.
 - Built in: "🎬 1-Click Viral Short" (starts a real short and reminds you to check it) and "🧹 Workspace & System Diagnostics" (scans the Soundwave data folder for real — size, biggest files, what hasn't been touched in 30+ days — then reports the PC's live CPU, memory, disk and uptime and reads your memory; nothing is deleted).
 - Steps can really: open a web page or an app, search the web in the browser, read the PC's live status, scan a folder, read the clipboard, set a reminder (a chat message now, a Windows notification when it's due), start a short, run Morning Setup, and read the agent's memory.
-- Steps Soundwave can't do yet — changing the system volume, screenshots, moving windows, running code — are skipped and the reason is shown. Nothing is faked.
+- Steps a macro can't do yet — changing the system volume, taking a screenshot, moving windows, running code — are skipped and the reason is shown; nothing is faked. (The agent itself can change the volume, look at your screen and read files in chat — a macro just can't contain those as steps yet.)
 - Your own macros are kept per user in DATA_DIR/macros/, and plain English works too: "open youtube, set a 5 minute timer and check system stats".`,
   },
   {

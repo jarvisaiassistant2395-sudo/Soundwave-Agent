@@ -11,6 +11,7 @@ import { initBriefingScheduler } from "./lib/briefing.js";
 import { initChannelWatch } from "./lib/channelWatch.js";
 import { initTrendScout } from "./lib/trends.js";
 import { initPublishPlan } from "./lib/publishPlan.js";
+import { initReminders } from "./lib/reminders.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[soundwave] Handled asynchronous rejection:", reason);
@@ -64,6 +65,9 @@ async function main() {
   initTrendScout();
   // The channels' own plans: what goes where, made and posted without asking.
   initPublishPlan();
+  // Timers and reminders the agent set: they ring into the conversation (and the
+  // phone sees it) while the app is running, once each, exactly when due.
+  initReminders();
   if (config.companionAvailable) {
     initCompanion().catch((err) => console.warn("[companion] could not start:", (err as Error).message));
   }

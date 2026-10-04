@@ -175,9 +175,10 @@ export const REAL_ACTIONS = [
 /** Recognised actions Soundwave can't do yet — each step is SKIPPED with this reason. */
 export const NOT_BUILT_YET: Record<string, string> = {
   computer_settings:
-    "Soundwave can't change the system volume or mute yet. Volume, timers, screen and file control are on the roadmap — for now the PC's own volume keys are the way.",
-  computer_control: "Soundwave can't move or minimise windows yet.",
-  screen_processor: "Soundwave can't look at your screen yet — it can't take screenshots.",
+    "A macro can't contain a volume step yet — the agent itself changes the volume and mutes in chat (\"mute it\", \"turn it down to 30%\"). For a macro, the PC's own volume keys are the way.",
+  computer_control: "A macro can't move or minimise windows yet.",
+  screen_processor:
+    "A macro can't take a screenshot step yet — the agent itself can look at your screen in chat: ask it \"what does this error say?\".",
   code_helper: "Soundwave doesn't run code or Python scripts.",
 };
 

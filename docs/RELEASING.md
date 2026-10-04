@@ -351,6 +351,47 @@ dead sign-in, deltas, and the wording), the guide checks in
 labels as tooltips, still minimized after a reload) and proves a voice set on
 the PC's conversation reaches the open window.
 
+1.6.0 is the "hands and eyes" release — four new abilities, all of them real,
+all of them tested without a Windows machine in CI:
+
+- `look_at_screen` (`lib/screen.ts`): the desktop shell gains
+  `captureScreen()` (Electron `desktopCapturer`, the display the app window is
+  on, long edge scaled to 1920 px, nothing written to disk) and the server sends
+  that PNG to Gemini as `inlineData` with an instruction that forbids guessing
+  and tells it to say when a word is too small to read. Without a Gemini key it
+  says exactly that (`needsBrain`) instead of inventing an answer;
+  `server/tests/screen.test.ts` pins the request shape, the fake-host capture
+  and the blank/no-shell failures.
+- `read_file` (`lib/files.ts`): text files come back whole (cut at 200 KB with
+  `truncated` set, size and line count included), folders list with sizes and
+  dates, binaries and >40 MB files are refused with the reason, and a missing
+  path says there's no file at that path. `server/tests/files.test.ts`.
+- `set_volume` (`lib/pcControl.ts`): master volume and mute through Windows'
+  own `IAudioEndpointVolume` (inline C# over PowerShell, no download). The
+  script and the `"62|0"` report are pure functions
+  (`volumeScript`/`parseVolumeReport`), the runner is injectable so CI on Linux
+  drives the whole path, and **an unreadable report throws** instead of a
+  made-up number. `server/tests/pcControl.test.ts`.
+- Timers and reminders (`lib/reminders.ts`, `brain/core/reminders.ts`):
+  `parseWhen` is a pure parser ("in 10 minutes", "1h30", "half an hour", "in
+  20", "at 17:30", "8pm", "tomorrow at 8", "tonight", "friday at 9") that
+  refuses what it can't read; the store keeps `DATA_DIR/reminders.json`, rings
+  each one exactly once (`firedAt` set and saved *before* announcing, so a
+  throwing announcement can't double-ring), appends a `tag: "SYS"` message to
+  the shared conversation so the phone sees it, and pops a Windows notification.
+  `initReminders()` ticks every 20 s (unref'd) from `server/src/index.ts`.
+  `server/tests/reminders.test.ts`.
+- The Command Center card for long videos → Shorts: `POST/GET /api/v1/clips`
+  (`routes/clips.ts`) starts the same `startClipsJob` the agent's tool uses,
+  with the honest 409 when one video is already being cut and the source's real
+  error passed straight through; the card hides itself when `DESKTOP_APP` is
+  off. `server/tests/clips_tool.test.ts` (route blocks) and the packaged E2E
+  asserts the card and its controls exist on the Command Center.
+- The chat guide's four "can't yet" lists are gone; what remains is what is
+  still true (no emails or messages, no signing in, no clicking inside other
+  apps, other PC settings than the volume). The macros section now says a
+  *macro* can't contain a volume/screenshot step while the agent itself can.
+
 1.5.9 is the minimal pass over the whole UI: the screens keep the information
 and drop the prose. Buttons that had a caption now show the icon alone (download
 the MP4, post to YouTube, open on YouTube, refresh, forget a note, export the

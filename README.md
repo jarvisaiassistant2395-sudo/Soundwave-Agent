@@ -150,6 +150,33 @@ sidebar also has a **minimize** button (the small chevron at its top): it folds
 to a 4rem rail of icons — same tabs, labels as tooltips — and remembers the
 choice between restarts.
 
+**Its hands and eyes on your PC** (desktop 1.6.0): the agent can finally look
+and touch, for real, with the key you already have — no extra service. *Look at
+the screen*: "what does this error say?", "what's on my screen?", "which button
+do I press?" — the app photographs the screen it is on (`desktopCapturer`,
+nothing written to disk) and Gemini reads that picture, answering exactly and
+only from it and saying so when a word is too small to read instead of guessing
+(`lib/screen.ts`, the new `look_at_screen` tool). *Read a file*: give a full
+path — "what does C:\Users\me\notes.txt say?", "what's in my Downloads
+folder?" — and it reads that file (or lists that folder) and answers from the
+real contents; read-only, never searching your disk on its own, refusing
+binaries and huge files by saying why (`lib/files.ts`, `read_file`). *The
+sound*: "turn it down to 30%", "mute", "how loud is it?" — Windows' own CoreAudio
+through PowerShell, and every change is read straight back so the number it
+reports is the real one (`lib/pcControl.ts`, `set_volume`). *Timers and
+reminders*: "remind me in 10 minutes to check the render", "at 17:30 tell me to
+go", "tomorrow at 8am", "what's waiting?", "cancel the render one" — they ring
+into the conversation (the phone sees it) with a Windows notification while
+Soundwave runs, once each, never twice (`lib/reminders.ts` +
+`brain/core/reminders.ts`, `set_reminder`/`list_reminders`/`cancel_reminder`).
+And the long-video pipeline now has a face: the Command Center's left column
+carries a **"Shorts from a video"** card — paste a YouTube link or a video file
+path, pick how many, press the scissors — which starts the *same* job as the
+chat's `make_shorts_from_video` (`POST /api/v1/clips`, one video at a time,
+clips posted into the conversation). The guide's "can't yet" lists were rewritten
+to the limits that are still true (no emails, no signing in, no clicking inside
+other apps) instead of listing volume, screen and files.
+
 **Minimal screens** (desktop 1.5.9): the same features with far less writing on
 them. Actions with an unmistakable icon are icon-only, with the words kept as
 the tooltip and the screen-reader name (`components/ui/IconButton.tsx`) —
