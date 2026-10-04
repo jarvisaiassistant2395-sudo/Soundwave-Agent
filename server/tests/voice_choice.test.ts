@@ -11,10 +11,12 @@ vi.hoisted(() => {
 });
 
 const { config } = await import("../src/config.js");
-const { voices, conversation, tools } = {
+const { voices, conversation, tools, edgeTts, frontendVoices } = {
   voices: await import("../src/lib/voices.js"),
   conversation: await import("../src/lib/conversation.js"),
   tools: await import("../src/lib/brain/tools.js"),
+  edgeTts: await import("../src/lib/edgeTts.js"),
+  frontendVoices: await import("../../frontend/src/lib/voices.ts"),
 };
 
 beforeAll(() => {
@@ -68,6 +70,31 @@ describe("every voice the app plays is one the agent knows", () => {
     const ids = [...ui.matchAll(/\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1]!);
     expect(ids.length).toBeGreaterThan(0);
     expect([...ids].sort()).toEqual(voices.VOICES.map((v) => v.id).sort());
+  });
+
+  it("defaults chat to the newer natural male voice without removing Guy", () => {
+    const modernVoice = "en-US-AndrewMultilingualNeural";
+    expect(edgeTts.DEFAULT_AGENT_VOICE).toBe(modernVoice);
+    expect(voices.getVoice(modernVoice)).toMatchObject({ displayName: "Andrew (most natural)", gender: "Male" });
+    expect(voices.getVoice("en-US-GuyNeural")?.id).toBe("en-US-GuyNeural");
+
+    const ui = fs.readFileSync(path.join(__dirname, "..", "..", "frontend", "src", "lib", "voices.ts"), "utf8");
+    expect(ui).toMatch(new RegExp(`DEFAULT_AGENT_VOICE_ID\\s*=\\s*"${modernVoice}"`));
+  });
+
+  it("keeps an explicitly saved voice when the default changes", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+    try {
+      expect(frontendVoices.loadAgentVoice()).toBe("en-US-AndrewMultilingualNeural");
+      frontendVoices.saveAgentVoice("en-US-GuyNeural");
+      expect(frontendVoices.loadAgentVoice()).toBe("en-US-GuyNeural");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("understands how people actually say a name", () => {

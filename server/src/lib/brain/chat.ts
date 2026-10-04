@@ -23,6 +23,7 @@ import { toolsFor, type AgentTool, type ToolContext, type ToolEffects } from "./
 import { agentInstruction, plainReply, type MemoryForPrompt } from "./prompt.js";
 import { memoryForPrompt } from "../memory.js";
 import { DEFAULT_SECONDS } from "./core/viral.js";
+import { DEFAULT_AGENT_VOICE } from "../edgeTts.js";
 
 export { buildRequest, contentsFor, HISTORY_MESSAGES, searchRefused, TURN_BUDGET_MS };
 
@@ -65,7 +66,7 @@ function fallbackText(effects: ToolEffects, finish: string): string {
 export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps: BrainDeps = defaultDeps): Promise<ChatReply> {
   const ctx: ToolContext = {
     userId: input.userId || "local-user",
-    voice: input.voice || "en-US-GuyNeural",
+    voice: input.voice || DEFAULT_AGENT_VOICE,
     resolution: input.resolution || "1080p",
     seconds: input.seconds && input.seconds > 0 ? Math.round(input.seconds) : DEFAULT_SCRIPT_SECONDS, // eslint-disable-line @typescript-eslint/no-use-before-define
     desktop: config.desktopApp,

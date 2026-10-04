@@ -68,8 +68,10 @@ export const SAMPLE_SENTENCE =
 // ── The agent's voice ───────────────────────────────────────────────────────
 // One setting, shared by the Command Center (replies + shorts), Settings and
 // the Voice Library's "Use in Command Center". Only Soundwave voices allowed.
+// Andrew is Microsoft's newer Multilingual generation; Guy remains available
+// for people who chose him explicitly.
 export const AGENT_VOICE_STORAGE_KEY = "soundwave_voice";
-export const DEFAULT_AGENT_VOICE_ID = "en-US-GuyNeural";
+export const DEFAULT_AGENT_VOICE_ID = "en-US-AndrewMultilingualNeural";
 
 /**
  * A Soundwave voice: one of Microsoft's neural voices, which is what the app

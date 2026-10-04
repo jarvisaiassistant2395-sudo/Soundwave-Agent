@@ -135,7 +135,7 @@ function VoicePreviewSection() {
       <div className="text-center">
         <h2 className="text-3xl font-bold text-white sm:text-4xl">Hear Our Voices</h2>
         <p className="mx-auto mt-3 max-w-xl text-gray-400">
-          Six natural-sounding Microsoft Neural voices. Tap any voice to hear a real sample.
+          Ten Microsoft Neural voices, including the newer Multilingual voices. Tap any voice to hear a sample.
         </p>
       </div>
       <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -269,7 +269,7 @@ export function Landing() {
               {
                 n: "1",
                 title: "Choose a Voice",
-                desc: "Pick from six Microsoft Neural voices — American and British, male and female. Tap any voice to hear a real sample before you generate.",
+                desc: "Pick from ten Microsoft Neural voices — including the newer Multilingual generation — with American and British accents, male and female. Preview a voice before you generate.",
               },
               {
                 n: "2",

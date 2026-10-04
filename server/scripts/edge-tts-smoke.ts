@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EdgeTTS } from "node-edge-tts";
-import { OUTPUT_FORMAT, streamEdgeTTS, synthesizeEdgeTTS } from "../src/lib/edgeTts.js";
+import { DEFAULT_AGENT_VOICE, OUTPUT_FORMAT, streamEdgeTTS, synthesizeEdgeTTS } from "../src/lib/edgeTts.js";
 
 const SOUNDWAVE_VOICES = [
   // The newest generation (listed first in the app's picker): the most natural
@@ -37,7 +37,7 @@ try {
   let firstChunkMs = 0;
   let chunks = 0;
   const r = await streamEdgeTTS(
-    { text: "Soundwave voice check. The agent is online and ready to make your next short.", voice: "en-US-GuyNeural" },
+    { text: "Soundwave voice check. The agent is online and ready to make your next short.", voice: DEFAULT_AGENT_VOICE },
     {
       onAudio: () => {
         if (chunks++ === 0) firstChunkMs = performance.now() - t0;
@@ -46,7 +46,7 @@ try {
   );
   const totalMs = performance.now() - t0;
   notice(
-    `Streaming (Guy): first audio after ${Math.round(firstChunkMs)} ms, ${r.duration.toFixed(1)} s of speech in ${chunks} chunks, done after ${Math.round(totalMs)} ms (${OUTPUT_FORMAT}).`,
+    `Streaming (${DEFAULT_AGENT_VOICE}): first audio after ${Math.round(firstChunkMs)} ms, ${r.duration.toFixed(1)} s of speech in ${chunks} chunks, done after ${Math.round(totalMs)} ms (${OUTPUT_FORMAT}).`,
   );
 } catch (err) {
   failures++;

@@ -75,7 +75,7 @@ function timeouts(): { connectMs: number; firstAudioMs: number; idleMs: number }
   return { connectMs: 8_000, firstAudioMs: 12_000, idleMs: 12_000 };
 }
 
-export const DEFAULT_AGENT_VOICE = "en-US-GuyNeural";
+export const DEFAULT_AGENT_VOICE = "en-US-AndrewMultilingualNeural";
 
 /** Seconds to add to the local clock (learned from the service's Date header on a 403). */
 let clockSkewSeconds = 0;

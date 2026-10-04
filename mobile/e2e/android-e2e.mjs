@@ -364,7 +364,7 @@ try {
   // below goes through the stand-in this workflow starts (a local WebSocket that
   // answers in Microsoft's own framing with real MP3; fake-edge-tts.ts).
   const liveVoice = await page.evaluate(async () => {
-    const call = window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-GuyNeural" });
+    const call = window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-AndrewMultilingualNeural" });
     const timeout = new Promise((resolve) => setTimeout(() => resolve({ slow: true }), 20_000));
     try {
       const r = await Promise.race([call, timeout]);
@@ -562,13 +562,13 @@ try {
   // plugin's protocol/decoding changed under us).
   const voice = await page.evaluate(async (url) => {
     try {
-      const r = await window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-GuyNeural", url });
+      const r = await window.Capacitor.Plugins.EdgeTts.synthesize({ text: "Good morning from Soundwave, speaking on your phone.", voice: "en-US-AndrewMultilingualNeural", url });
       return { ok: true, bytes: r.bytes };
     } catch (e) {
       return { ok: false, error: String(e?.message ?? e) };
     }
   }, TTS_STANDIN);
-  if (voice.ok && voice.bytes > 2000) ok(`the phone made Soundwave speech itself: Guy, ${voice.bytes} bytes of MP3 (through the stand-in, the same wire format as Microsoft's service)`);
+  if (voice.ok && voice.bytes > 2000) ok(`the phone made Soundwave speech itself: Andrew (Multilingual), ${voice.bytes} bytes of MP3 (through the stand-in, the same wire format as Microsoft's service)`);
   else fail(`the phone couldn't make Soundwave speech itself: ${voice.error ?? `${voice.bytes} bytes`}`);
 
   // Morning Setup with the PC off: the phone's own briefing (weather from the stand-in Open-Meteo).

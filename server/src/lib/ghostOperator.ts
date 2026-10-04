@@ -26,6 +26,7 @@ import { startShortJob, getActiveShortJobs } from "../routes/agentShort.js";
 import { desktopNotify, openApp, openWebsite, pcStatus, readClipboard, writeClipboard } from "./brain/pc.js";
 import { morningCity, morningWeather, runMorningSetup } from "./morning.js";
 import { memoryState } from "./memory.js";
+import { DEFAULT_AGENT_VOICE } from "./edgeTts.js";
 
 export interface MacroStep {
   id: string;
@@ -83,7 +84,7 @@ export function defaultGhostContext(overrides: Partial<GhostContext> = {}): Ghos
     userId: "local-user",
     desktop: config.desktopApp,
     platform: process.platform,
-    voice: "en-US-GuyNeural",
+    voice: DEFAULT_AGENT_VOICE,
     resolution: "1080p",
     ...overrides,
   };

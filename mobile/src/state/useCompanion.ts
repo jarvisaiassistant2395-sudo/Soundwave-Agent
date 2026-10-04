@@ -32,7 +32,7 @@ import {
   type MemorySnapshot,
   type PhoneKit,
 } from "../lib/offline";
-import { phoneVoiceAvailable, synthesizeOnPhone } from "../lib/phoneVoice";
+import { DEFAULT_PHONE_VOICE_ID, phoneVoiceAvailable, synthesizeOnPhone } from "../lib/phoneVoice";
 import {
   alarmAudioOutput,
   alarmAvailable,
@@ -425,7 +425,7 @@ export function useCompanion(): Companion {
   const phoneMode = !online && state.kind !== "forgotten" && Boolean(kit);
 
   /** The Soundwave voice to speak with: the phone's pick, else the PC's. */
-  const voiceFor = useCallback(() => settingsRef.current.voice ?? pcRef.current?.voice ?? kitRef.current?.voice ?? "en-US-GuyNeural", []);
+  const voiceFor = useCallback(() => settingsRef.current.voice ?? pcRef.current?.voice ?? kitRef.current?.voice ?? DEFAULT_PHONE_VOICE_ID, []);
 
   /**
    * Who makes the speech: the PC while it's reachable, else the phone itself

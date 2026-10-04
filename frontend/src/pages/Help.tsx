@@ -104,7 +104,7 @@ export function Help() {
         {/* The agent's voice */}
         <Section icon={<Mic className="h-4 w-4" />} title="The Agent's Voice">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">Soundwave voices only:</strong> the agent speaks its replies and narrates every short in the voice picked in the Command Center (or in the Voice Library / Settings) — Guy, Christopher, Ryan, Jenny, Ana or Sonia, Microsoft's neural voices.</li>
+            <li><strong className="text-white">Soundwave voices only:</strong> the agent speaks its replies and narrates every short in the voice picked in the Command Center (or in the Voice Library / Settings) — Ava, Andrew, Emma and Brian (the newer, most natural voices), plus Guy, Christopher, Ryan, Jenny, Ana and Sonia — all Microsoft's neural voices.</li>
             <li><strong className="text-white">Starts talking right away:</strong> replies are streamed while they're synthesized, so there's no wait for the whole answer.</li>
             <li><strong className="text-white">Needs the internet:</strong> the voices come from Microsoft's online speech service. If it can't be reached, the app says why instead of falling back to a robotic computer voice — and a short is never rendered with a stand-in voice.</li>
           </ul>

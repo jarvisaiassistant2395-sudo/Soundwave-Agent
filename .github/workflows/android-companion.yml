@@ -265,7 +265,7 @@ jobs:
           # Prove the PC's voice really goes through the stand-in (and not out to
           # Microsoft, where the token/time behaviour could fail the run).
           curl -sf --max-time 45 -X POST http://127.0.0.1:4000/api/v1/agent/speak -H 'Content-Type: application/json' \
-            -d '{"text":"Soundwave voice check","voice":"en-US-GuyNeural"}' \
+            -d '{"text":"Soundwave voice check","voice":"en-US-AndrewMultilingualNeural"}' \
             | head -c 120 > "$RUNNER_TEMP/speak.json"
           echo "speak reply starts: $(head -c 60 "$RUNNER_TEMP/speak.json")…"
           if [ "$(curl -s http://127.0.0.1:4200/_fake/health | sed -n 's/.*"served":\([0-9]*\).*/\1/p')" = "0" ]; then

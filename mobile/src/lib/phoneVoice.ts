@@ -12,6 +12,8 @@ interface EdgeTtsPlugin {
 
 const EdgeTts = registerPlugin<EdgeTtsPlugin>("EdgeTts");
 
+export const DEFAULT_PHONE_VOICE_ID = "en-US-AndrewMultilingualNeural";
+
 export function phoneVoiceAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("EdgeTts");
 }
@@ -45,6 +47,6 @@ function fromBase64(b64: string): Uint8Array {
 /** One piece of speech (≤ ~2000 characters) in a Soundwave voice, as MP3. */
 export async function synthesizeOnPhone(text: string, voice: string | null | undefined): Promise<{ audio: Uint8Array; mime: string }> {
   if (!phoneVoiceAvailable()) throw new Error("Speaking without the PC works in the Android app.");
-  const r = await EdgeTts.synthesize({ text, voice: voice || "en-US-GuyNeural", rate: "-5%", url: testTtsUrl() });
+  const r = await EdgeTts.synthesize({ text, voice: voice || DEFAULT_PHONE_VOICE_ID, rate: "-5%", url: testTtsUrl() });
   return { audio: fromBase64(r.audio), mime: r.mime || "audio/mpeg" };
 }

@@ -20,6 +20,7 @@ import {
   type MacroWorkflow,
 } from "../lib/ghostOperator.js";
 import { getConversation } from "../lib/conversation.js";
+import { DEFAULT_AGENT_VOICE } from "../lib/edgeTts.js";
 import { config } from "../config.js";
 
 const router = Router();
@@ -188,7 +189,7 @@ router.post("/execute", optionalAuth, validate({ body: executeSchema }), async (
     const ctx = defaultGhostContext({
       userId,
       desktop: config.desktopApp,
-      voice: getConversation().voice || "en-US-GuyNeural",
+      voice: getConversation().voice || DEFAULT_AGENT_VOICE,
     });
 
     const report = await executeWorkflow(targetWorkflow, ctx);

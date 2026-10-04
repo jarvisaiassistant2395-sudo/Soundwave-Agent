@@ -76,14 +76,14 @@ public class EdgeTtsPlugin extends Plugin {
     @PluginMethod
     public void synthesize(final PluginCall call) {
         final String text = call.getString("text", "");
-        String voice = call.getString("voice", "en-US-GuyNeural");
+        String voice = call.getString("voice", "en-US-AndrewMultilingualNeural");
         String rate = call.getString("rate", "-5%");
         final String base = call.getString("url", WSS_URL);
         if (text == null || text.trim().isEmpty()) {
             call.reject("Nothing to say.");
             return;
         }
-        if (voice == null || !VOICE_ID.matcher(voice).matches()) voice = "en-US-GuyNeural";
+        if (voice == null || !VOICE_ID.matcher(voice).matches()) voice = "en-US-AndrewMultilingualNeural";
         if (rate == null || !RATE.matcher(rate).matches()) rate = "-5%";
         final String finalVoice = voice;
         final String finalRate = rate;
