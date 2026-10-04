@@ -116,8 +116,14 @@ export const config = {
   youtubeApiBase: str("YOUTUBE_API_BASE", "https://www.googleapis.com").replace(/\/+$/, ""),
   googleOAuthAuthUrl: str("GOOGLE_OAUTH_AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
   googleOAuthTokenUrl: str("GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
+  // Local page reader (the Scrapling sidecar, ../scrapling): pages that answer a
+  // plain fetch with a bot check or need JavaScript. Empty = off, and Soundwave
+  // reads hard pages exactly as before. Point SCRAPLING_URL at a stand-in in tests.
+  scraplingUrl: str("SCRAPLING_URL", "").replace(/\/+$/, ""),
   // Reader fallback for pages that can't be read directly (JS-only, blocked).
-  // Free, no key; point JINA_READER_URL at a stand-in in tests.
+  // Free, no key; point JINA_READER_URL at a stand-in in tests. This is the last
+  // resort — it sends the page's address to a service on the internet, so the
+  // local sidecar above gets the first try.
   jinaReaderUrl: str("JINA_READER_URL", "https://r.jina.ai"),
 } as const;
 

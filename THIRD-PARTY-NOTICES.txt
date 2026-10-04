@@ -586,37 +586,60 @@ Phone app (mobile/) — everything in the APK
 
 Local voice service (voiceclone/) — Python (installed separately, not bundled)
 ------------------------------------------------------------
+• apify-fingerprint-datapoints — Apache-2.0
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    Fingerprint data for Scrapling's fetchers, from Apify.
+• browserforge — Apache-2.0
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    Fingerprint generation for Scrapling's fetchers.
+• Camoufox — MPL-2.0
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    The stealth browser Scrapling drives, only if the person installs it (scrapling/install.sh STEALTH=1). MPL-2.0 is file-level copyleft over Mozilla's own code: we do not modify it, do not bundle it, and do not link it — the sidecar runs it as a separate program, like ffmpeg (GPL) is run. Its ~200 MB download is exactly why it is not in the installer.
 • chatterbox-tts (Resemble AI Chatterbox) — MIT
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
     Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights).
+• curl_cffi — MIT
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    Scrapling's fast fetcher: a real browser's TLS/HTTP-2 fingerprint, no browser involved.
 • FastAPI — MIT
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 • graphemes_to_phonemes_en_us (G2P fallback model downloaded by misaki) — Not stated by the publisher
     A ~3 MB BART model (PeterReid/graphemes_to_phonemes_en_us) that misaki's FallbackNetwork loads for out-of-dictionary words. Its Hugging Face card is empty and carries no licence tag (checked 2026-10-04). Nothing we ship conveys it — it is downloaded to the user's own machine when the voice service runs — but the licence gap is recorded here rather than papered over.
 • huggingface-hub — Apache-2.0
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 • kokoro (Kokoro-82M) — Apache-2.0
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
     On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them.
 • misaki — Apache-2.0
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
     Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is.
+• msgspec — BSD-3-Clause
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 • num2words — LGPL-2.1
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
     Used by misaki to speak digits. LGPL-2.1 is acceptable here for three reasons, all of them checkable: nothing is bundled (see above), the module is unmodified, and a pure-Python module is trivially replaceable, so our own code's licence is unaffected. The audit still refuses an LGPL *npm* dependency in our trees.
 • numpy — BSD-3-Clause
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+• patchright — Apache-2.0
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    Part of Scrapling's optional fetcher extra. No browser binaries are downloaded by installing it.
+• protego — Apache-2.0
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    robots.txt parsing, pulled in by Scrapling.
 • python-multipart — Apache-2.0
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 • PyTorch — BSD-3-Clause
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+• Scrapling — BSD-3-Clause
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    The local page reader (scrapling/server.py). BSD-3-Clause, checked 2026-10-04 against the repository's LICENSE (repos/d4vinci/Scrapling). It fetches one page at a time and never follows links.
 • soundfile — BSD-3-Clause
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 • spacy (with en_core_web_sm) — MIT
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
     Tokenizer/tagger misaki drives. en_core_web_sm is MIT as well.
 • transformers — Apache-2.0
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 • Uvicorn — BSD-3-Clause
-    NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.
+    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
 

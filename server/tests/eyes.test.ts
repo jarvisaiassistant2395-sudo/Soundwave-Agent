@@ -4,7 +4,7 @@
 // with a stand-in reader so no test touches the network.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { capText, clock, decodeEntities, htmlTitle, htmlToText, vttToText } from "../src/lib/brain/core/transcript.js";
 import { MAX_ARTICLE_HTML, articleMarkdown, defaultEyes, safePublicUrl } from "../src/lib/eyes.js";
 import { config } from "../src/config.js";
@@ -249,6 +249,109 @@ describe("readPage", () => {
     (config as { jinaReaderUrl: string }).jinaReaderUrl = "http://127.0.0.1:1"; // nothing listens
     await expect(defaultEyes.readPage("https://example.com/an-article")).rejects.toThrow(/example\.com/);
     (config as { jinaReaderUrl: string }).jinaReaderUrl = wasUrl;
+  });
+});
+
+// ── the local page reader (the Scrapling sidecar) ─────────────────────────
+// A page that answers a plain fetch with a wall is fetched next by this
+// machine's own reader, and only then by the reader service on the internet.
+// That order is the whole point: the address of the page stays local whenever
+// the person installed the sidecar. Two stand-ins make the order observable —
+// the sidecar counts what it was asked for, the reader service counts whether
+// it was asked at all.
+
+const SIDECAR_ARTICLE_HTML = `<!doctype html><html><head><title>Pipes, explained</title></head><body>
+<nav><a href="/">Home</a><a href="/about">About</a></nav>
+<article><h1>Pipes, explained</h1>
+<p>${"A pipe moves a fluid from one place to another. ".repeat(6)}</p>
+<p>${"Pressure is what makes it move, and the diameter decides how much. ".repeat(4)}</p>
+</article>
+<footer>© 2026</footer></body></html>`;
+// A shell with nothing in it: even the local reader can't make an article of it.
+const SIDECAR_SHELL_HTML = `<html><body><div id="root"></div><script>render()</script></body></html>`;
+
+describe("readPage: the local page reader gets the first try", () => {
+  let reader: http.Server;   // the reader service (r.jina.ai stand-in)
+  let sidecar: http.Server;  // the Scrapling sidecar stand-in
+  let readerBase = "";
+  let sidecarBase = "";
+  let readerAsked = 0;
+  let sidecarAsked: Array<{ url: string; mode: string }> = [];
+  let sidecarHtml = SIDECAR_ARTICLE_HTML;
+  const originalReader = config.jinaReaderUrl;
+  const originalSidecar = config.scraplingUrl;
+
+  beforeAll(async () => {
+    reader = http.createServer((_req, res) => {
+      readerAsked += 1;
+      res.setHeader("Content-Type", "text/plain");
+      res.end("Rendered by the reader service.\n\nTitle: Pipes\n\n" + "A pipe moves a fluid. ".repeat(10));
+    });
+    await new Promise<void>((r) => reader.listen(0, "127.0.0.1", r));
+    readerBase = `http://127.0.0.1:${(reader.address() as AddressInfo).port}`;
+
+    sidecar = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", () => {
+        const parsed = JSON.parse(body || "{}") as { url?: string; mode?: string };
+        sidecarAsked.push({ url: parsed.url ?? "", mode: parsed.mode ?? "" });
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true, url: parsed.url, status: 200, title: "Pipes, explained", html: sidecarHtml, mode: "fast", ms: 12, note: "", error: "" }));
+      });
+    });
+    await new Promise<void>((r) => sidecar.listen(0, "127.0.0.1", r));
+    sidecarBase = `http://127.0.0.1:${(sidecar.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    (config as { jinaReaderUrl: string }).jinaReaderUrl = originalReader;
+    (config as { scraplingUrl: string }).scraplingUrl = originalSidecar;
+    await new Promise<void>((r) => reader.close(() => r()));
+    await new Promise<void>((r) => sidecar.close(() => r()));
+  });
+
+  beforeEach(() => {
+    readerAsked = 0;
+    sidecarAsked = [];
+    sidecarHtml = SIDECAR_ARTICLE_HTML;
+    (config as { jinaReaderUrl: string }).jinaReaderUrl = readerBase;
+    (config as { scraplingUrl: string }).scraplingUrl = sidecarBase;
+  });
+
+  it("reads a walled page through the local sidecar — and never asks the reader service", async () => {
+    const read = await defaultEyes.readPage("https://example.com/an-article");
+    expect(read.via).toBe("scrapling");
+    // The article, extracted by the same Readability path as a direct fetch:
+    // navigation and footer are gone, the body is there.
+    expect(read.text).toMatch(/A pipe moves a fluid/);
+    expect(read.text).not.toMatch(/Home|About|© 2026/);
+    expect(read.title).toBe("Pipes, explained");
+    expect(sidecarAsked).toEqual([{ url: "https://example.com/an-article", mode: "auto" }]);
+    expect(readerAsked).toBe(0);
+  });
+
+  it("still falls through to the reader service when the sidecar can't make an article of it", async () => {
+    sidecarHtml = SIDECAR_SHELL_HTML;
+    const read = await defaultEyes.readPage("https://example.com/an-article");
+    expect(read.via).toBe("reader");
+    expect(sidecarAsked).toHaveLength(1);
+    expect(readerAsked).toBe(1);
+  });
+
+  it("falls through when the sidecar isn't running, without a hang or a crash", async () => {
+    (config as { scraplingUrl: string }).scraplingUrl = "http://127.0.0.1:1"; // nothing listens
+    const read = await defaultEyes.readPage("https://example.com/an-article");
+    expect(read.via).toBe("reader");
+    expect(readerAsked).toBe(1);
+  });
+
+  it("is off by default: with SCRAPLING_URL unset the sidecar is never called", async () => {
+    (config as { scraplingUrl: string }).scraplingUrl = "";
+    const read = await defaultEyes.readPage("https://example.com/an-article");
+    expect(read.via).toBe("reader");
+    expect(sidecarAsked).toHaveLength(0);
+    expect(readerAsked).toBe(1);
   });
 });
 

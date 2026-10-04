@@ -401,6 +401,57 @@ dead sign-in, deltas, and the wording), the guide checks in
 labels as tooltips, still minimized after a reload) and proves a voice set on
 the PC's conversation reaches the open window.
 
+1.3.4 (phone-only, with the PC's companion 1.6.4): an alarm-triggered briefing can fetch the brain
+kit it needs. The Android run at c6e43ab failed the alarm stage one more time —
+and this time the run said why: `prepareRefused: no-key` on the PC, with the
+phone's diagnosis showing `own key false`, i.e. the phone held no kit (the shared
+brain kit, which is where the phone's research key comes from). So after an alarm
+the phone could neither get a briefing from the PC nor write one itself, and
+reported failure — even though the PC it was talking to could have handed the kit
+over. `deliverBriefing` now calls `ensureKit()` before writing its own briefing:
+if the kit isn't in memory and the PC is reachable, it asks the PC for it
+(`fetchKit`) and writes the briefing with it. The e2e's diagnosis also stopped
+mislabeling that flag ("own key" → "kit from the PC") and now prints the PC's
+brain state (key set / NO KEY, and whether it comes from the environment) — the
+one line that would have explained this failure a run earlier.
+
+1.6.4 gives the agent a second way to read a hard page: Scrapling on this PC.
+
+`read_web_page` already fetched the page and pulled the article out locally
+(Mozilla's Readability), but a page that answered that fetch with a bot check —
+"are you a robot?" — or that only exists after JavaScript ran had exactly one
+next step, and it was the reader service on the internet (r.jina.ai): the page's
+address left the machine. The audit's whole point this round has been to cut
+those paths, so this closes the biggest one left.
+
+`scrapling/` is a small optional service (FastAPI) that fetches such a page
+*here*, on this PC, using [Scrapling](https://github.com/D4Vinci/Scrapling)
+(BSD-3-Clause): `curl_cffi` with a real browser's TLS/HTTP-2 fingerprint for the
+fast path, and — only if the person installs it explicitly — a headless browser
+for the hardest cases. It returns HTML and nothing else; the server's single
+article extractor (Readability + Turndown) turns it into text, so a page read
+through the sidecar is read by exactly the same code as a page fetched directly.
+`server/src/lib/eyes.ts` tries it before the reader service and only when
+`SCRAPLING_URL` is set (`via: "scrapling"` in the result); unset, Soundwave
+behaves exactly as before. `server/tests/eyes.test.ts` proves the order with two
+stand-ins: a walled page is read through the sidecar and the reader service is
+never asked, a page the sidecar can't make an article of still falls through, and
+an unset or unreachable sidecar changes nothing.
+
+It is never bundled: the installer ships no Python (`electron-builder.yml` copies
+`bin/` only), and `scripts/license-audit.mjs` records Scrapling, curl_cffi,
+patchright, browserforge, msgspec, protego, apify-fingerprint-datapoints and
+Camoufox (MPL-2.0 — run as a separate program, not modified, not linked, not
+shipped) as NOT BUNDLED, the same rule the voice service has. Two things only
+running it could teach, both now in the code: plain `scrapling` installs only the
+parsers — its fetchers import playwright, so `requirements.txt` installs
+`scrapling[fetchers]`; and importing `StealthyFetcher` succeeds with no browser
+downloaded, so readiness is checked against the disk, not the import, and the
+health endpoint says "no stealth browser is downloaded (run: python3 -m scrapling
+install)" rather than "ready". It refuses `localhost`, private ranges and service
+ports itself, so a URL can't be used to make it poke the machine's own services,
+and it never follows a link or touches a login.
+
 1.6.3 makes the channels people post to — and the channels they *watch* —
 things you can see and press instead of sentences you have to remember.
 

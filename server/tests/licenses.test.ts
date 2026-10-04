@@ -46,7 +46,12 @@ describe("the ship-licence audit", () => {
     // next to the component — an exemption without its reasoning is how these
     // things rot.
     expect(notices).toMatch(/num2words — LGPL-2\.1/);
-    expect(notices).toMatch(/NOT BUNDLED — the voice service is installed by the user/);
+    expect(notices).toMatch(/NOT BUNDLED — the local services \(the voice service and the page reader\) are installed by the user/);
+    // The local page reader (scrapling/) is a second user-installed service, and
+    // the reason it exists is in the paper: a walled page's address must not have
+    // to leave the machine for the reader service on the internet.
+    expect(notices).toMatch(/Scrapling — BSD-3-Clause/);
+    expect(notices).toMatch(/Camoufox — MPL-2\.0/);
     // The one licence we could NOT verify: misaki's G2P fallback model. It must
     // appear by name with the gap stated, and must stay off the "we can ship
     // this" list until someone confirms its terms.

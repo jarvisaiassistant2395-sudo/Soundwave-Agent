@@ -115,7 +115,7 @@ const BINARIES = [
  * desktop/{src,app,bin}, and bin/ holds ffmpeg, yt-dlp and whisper.cpp.
  */
 const NOT_BUNDLED =
-  "NOT BUNDLED — the voice service is installed by the user, from PyPI, on their own machine; it is not part of the desktop installer or any Soundwave release.";
+  "NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.";
 const PYTHON = [
   { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", notBundled: true, note: "Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights)." },
   { name: "kokoro (Kokoro-82M)", licence: "Apache-2.0", notBundled: true, note: "On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them." },
@@ -134,6 +134,20 @@ const PYTHON = [
   { name: "soundfile", licence: "BSD-3-Clause", notBundled: true },
   { name: "numpy", licence: "BSD-3-Clause", notBundled: true },
   { name: "PyTorch", licence: "BSD-3-Clause", notBundled: true },
+
+  // ── The local page reader (scrapling/) ────────────────────────────────────
+  // A page that answers a plain fetch with a bot check or needs JavaScript is
+  // fetched by this sidecar on the person's machine, so the address does not go
+  // to the reader service on the internet. Same rule as the voice service: not
+  // bundled, installed from PyPI by whoever wants it.
+  { name: "Scrapling", licence: "BSD-3-Clause", notBundled: true, note: "The local page reader (scrapling/server.py). BSD-3-Clause, checked 2026-10-04 against the repository's LICENSE (repos/d4vinci/Scrapling). It fetches one page at a time and never follows links." },
+  { name: "curl_cffi", licence: "MIT", notBundled: true, note: "Scrapling's fast fetcher: a real browser's TLS/HTTP-2 fingerprint, no browser involved." },
+  { name: "patchright", licence: "Apache-2.0", notBundled: true, note: "Part of Scrapling's optional fetcher extra. No browser binaries are downloaded by installing it." },
+  { name: "browserforge", licence: "Apache-2.0", notBundled: true, note: "Fingerprint generation for Scrapling's fetchers." },
+  { name: "msgspec", licence: "BSD-3-Clause", notBundled: true },
+  { name: "protego", licence: "Apache-2.0", notBundled: true, note: "robots.txt parsing, pulled in by Scrapling." },
+  { name: "apify-fingerprint-datapoints", licence: "Apache-2.0", notBundled: true, note: "Fingerprint data for Scrapling's fetchers, from Apify." },
+  { name: "Camoufox", licence: "MPL-2.0", notBundled: true, note: "The stealth browser Scrapling drives, only if the person installs it (scrapling/install.sh STEALTH=1). MPL-2.0 is file-level copyleft over Mozilla's own code: we do not modify it, do not bundle it, and do not link it — the sidecar runs it as a separate program, like ffmpeg (GPL) is run. Its ~200 MB download is exactly why it is not in the installer." },
 ];
 
 function licenceOf(pkg) {

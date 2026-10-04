@@ -119,6 +119,20 @@ With the PC off the phone does the same itself and speaks through the native
 `EdgeTts` plugin (`mobile/android/.../EdgeTtsPlugin.java` — Microsoft's voices
 need headers a WebView can't send).
 
+**Local page reader** (optional, `scrapling/`): a page that answers Soundwave's
+own fetch with a bot check ("are you a robot?"), or that only exists after
+JavaScript runs, is fetched next by Scrapling (BSD-3-Clause) **on this PC** —
+`./install.sh` in `scrapling/`, run the service, and set
+`SCRAPLING_URL=http://127.0.0.1:8110`. The server keeps the single article
+extractor, so a page read this way becomes text by exactly the same code as a
+page read directly. Without it, hard pages fall back to the reader service
+(r.jina.ai), which does send the page's address off the machine — the local
+reader exists so that doesn't have to happen. It is never bundled with Soundwave
+(the installer ships no Python), it fetches one page at a time, follows no links,
+and refuses local and private addresses. The stealth browser for the hardest
+pages is a separate, explicit download (`STEALTH=1 ./install.sh`) and the service
+says so instead of claiming to be ready.
+
 **Watched channels** (desktop 1.5.4): tell it "watch @MrBeast, 2 shorts each" and
 that's it — the PC checks the channel every few minutes while Soundwave AI runs
 and, the moment something new is up, announces it in the chat and cuts the

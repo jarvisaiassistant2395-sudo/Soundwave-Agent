@@ -7,10 +7,13 @@
 //
 // A fetched page is parsed here, on this PC, with the reader-mode machinery
 // Firefox uses (Mozilla's Readability) and turned into markdown (Turndown): the
-// article, not the menus — and nothing about the page leaves the machine. The
-// reader service (r.jina.ai by default) is only ever a fallback for pages that
-// hand back nothing usable (a JavaScript-only shell, a wall): fetching and
-// parsing directly keeps the request between the person's PC and that site.
+// article, not the menus — and nothing about the page leaves the machine. A page
+// that hands back nothing usable (a wall that wants a real browser, a
+// JavaScript-only shell) is fetched next by the *local* page reader if the
+// person installed it (SCRAPLING_URL → the Scrapling sidecar in ../scrapling),
+// which also keeps the address on this machine. Only when that isn't there or
+// can't either does the reader service (r.jina.ai) get the URL — it is the last
+// resort, and the one path where a page's address leaves the PC.
 
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
@@ -42,9 +45,11 @@ export interface ReadPageResult {
   truncated: boolean;
   /**
    * "readability" = the article pulled out of the page here (markdown),
-   * "direct" = the page/text as fetched, "reader" = through the reader service.
+   * "direct" = the page/text as fetched, "scrapling" = fetched here by the local
+   * page-reader sidecar (a page that answered our own fetch with a wall or a
+   * JavaScript shell), "reader" = through the reader service on the internet.
    */
-  via: "readability" | "direct" | "reader";
+  via: "readability" | "direct" | "scrapling" | "reader";
 }
 
 /** Bigger than this and the page is not an article worth DOM-parsing (a dump, a feed). */
@@ -145,6 +150,40 @@ async function fetchText(url: string, accept: string, timeoutMs: number): Promis
   return { status: res.status, type, body };
 }
 
+/**
+ * The local page reader (the Scrapling sidecar in ../scrapling): a page that our
+ * own fetch couldn't read — a bot check that wants a real browser's TLS
+ * fingerprint, a page that only exists after scripts run — fetched here, on this
+ * machine. Nothing about the page leaves the PC on this path, which is why it
+ * gets the first try and the reader service is the last resort.
+ *
+ * The sidecar hands back HTML and nothing else: the article is extracted by the
+ * same `articleMarkdown` as a directly fetched page, so there is exactly one
+ * definition of "what this page says". Null when the sidecar isn't configured
+ * (SCRAPLING_URL unset — the default), isn't running, or came back empty; the
+ * caller then falls through to the reader service exactly as before.
+ */
+async function fetchThroughLocalReader(url: string): Promise<{ html: string; title: string } | null> {
+  if (!config.scraplingUrl) return null;
+  try {
+    const res = await fetch(`${config.scraplingUrl}/fetch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...BROWSER_HEADERS },
+      // The stealth browser takes seconds; 90 s is the sidecar's own budget plus
+      // room for loopback. A timeout here just means "fall through", never a hang.
+      body: JSON.stringify({ url, mode: "auto" }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { ok?: boolean; html?: string; title?: string };
+    if (!data.ok || typeof data.html !== "string" || !data.html.trim()) return null;
+    return { html: data.html.slice(0, MAX_ARTICLE_HTML), title: (data.title ?? "").trim() };
+  } catch {
+    // Not installed, not running, or timed out — all the same to the caller.
+    return null;
+  }
+}
+
 export const defaultEyes: Eyes = {
   async readVideo(url: string): Promise<ReadVideoResult> {
     const parsed = parseYouTubeUrl((url ?? "").trim());
@@ -195,9 +234,28 @@ export const defaultEyes: Eyes = {
       };
     }
 
-    // Nothing usable directly (JS-only page, paywall wall, blocked bot, PDF, an
-    // error): the free reader service renders and cleans it. Its URL is public,
-    // which is the one privacy note the guide makes about this path.
+    // Nothing usable directly (blocked bot, JS-only page, PDF, an error): this
+    // machine's own page reader gets the first try, so the address stays local.
+    const local = await fetchThroughLocalReader(url.toString());
+    if (local) {
+      const localArticle = articleMarkdown(local.html, url.toString());
+      const localText = localArticle?.text ?? htmlToText(local.html);
+      if (localText.length >= MIN_ARTICLE_CHARS) {
+        const { text, truncated } = capText(localText, READ_TEXT_MAX);
+        return {
+          ok: true,
+          url: url.toString(),
+          title: localArticle?.title || local.title || htmlTitle(local.html),
+          text,
+          truncated,
+          via: "scrapling",
+        };
+      }
+    }
+
+    // Still nothing (no local reader installed, or it couldn't either): the free
+    // reader service renders and cleans it. Its URL is public, which is the one
+    // privacy note the guide makes about this path.
     const readerUrl = `${config.jinaReaderUrl.replace(/\/+$/, "")}/${url.toString()}`;
     try {
       const read = await fetchText(readerUrl, "text/plain", 30_000);
@@ -211,7 +269,8 @@ export const defaultEyes: Eyes = {
       throw new Error(`the reader answered ${read.status}`);
     } catch (err) {
       const why = directError || (direct.status ? `the site answered ${direct.status}` : "the page had no readable text");
-      throw new Error(`I couldn't read ${url.hostname} (${why}; the reader service also failed: ${(err as Error).message}).`);
+      const localNote = config.scraplingUrl ? "the local page reader also failed" : "no local page reader is installed (see scrapling/README.md)";
+      throw new Error(`I couldn't read ${url.hostname} (${why}; ${localNote}, and the reader service failed: ${(err as Error).message}).`);
     }
   },
 
