@@ -55,6 +55,49 @@ async function pc(route, body, method = body === undefined ? "GET" : "POST") {
   return json;
 }
 
+/**
+ * Why a briefing step failed: what the PC says it has for today, and what the
+ * phone itself holds (its conversation, its outbox, whether it has a key), as
+ * one line for the annotation — the app's own sentence alone can't say whether
+ * the PC had nothing or the phone never saw what it had.
+ */
+async function briefingDiagnosis(page, day = null) {
+  const bits = [];
+  const status = await pc("/api/v1/morning/briefing");
+  bits.push(
+    `PC says: day ${status.day}, plan ${status.plan?.time ?? "?"} (auto ${status.plan?.auto}, ${status.plan?.topics?.length ?? 0} topic(s)), due ${status.due}, inWindow ${status.inWindow}, today's message ${status.message ? `"${String(status.message.text).slice(0, 50)}…"` : "NONE"}, heard ${status.heard ? status.heard.on : "no"}`,
+  );
+  const conv = await pc("/api/v1/companion/conversation");
+  const briefs = conv.messages.filter((m) => m.briefingDate);
+  bits.push(
+    `PC conversation: ${conv.messages.length} message(s), briefings ${briefs.map((m) => `${m.briefingDate}/${m.sender}${m.answeredBy ? `/${m.answeredBy}` : ""}`).join(", ") || "none"}`,
+  );
+  const phone = await page.evaluate((d) => {
+    const read = (k) => {
+      try {
+        return JSON.parse(localStorage.getItem(k) ?? "null");
+      } catch {
+        return null;
+      }
+    };
+    const c = read("soundwave.conversation");
+    const o = read("soundwave.outbox");
+    const mine = (c?.messages ?? []).filter((m) => m.briefingDate);
+    return {
+      day: d,
+      messages: (c?.messages ?? []).length,
+      briefings: mine.map((m) => `${m.briefingDate}/${m.sender}${m.answeredBy ? `/${m.answeredBy}` : ""}`),
+      heard: read("soundwave.heardBriefings") ?? [],
+      outbox: `${o?.messages?.length ?? 0} message(s), ${o?.memoryOps?.length ?? 0} memory op(s)`,
+      hasKey: Boolean(read("soundwave.kit")),
+    };
+  }, day);
+  bits.push(
+    `phone holds: ${phone.messages} message(s), briefings ${phone.briefings.join(", ") || "none"}, heard ${JSON.stringify(phone.heard)}, outbox ${phone.outbox}, own key ${phone.hasKey} (the PC's day when the stage started: ${phone.day})`,
+  );
+  return bits.join(" | ");
+}
+
 let webviewPid = null;
 /** JavaScript errors the app's page reported (shown when a step fails). */
 const pageErrors = [];
@@ -634,6 +677,7 @@ try {
   if (earlyPhase === "speaking") fail("the briefing started before the alarm's delay was over");
   let alarmSpoke = false;
   let alarmProblem = null;
+  let lastScreen = "";
   for (let i = 0; i < 90 && !alarmSpoke && !alarmProblem; i++) {
     const st = await page
       .evaluate(() => ({
@@ -643,10 +687,19 @@ try {
       .catch(() => ({ phase: null, text: "" }));
     alarmSpoke = st.phase === "speaking";
     alarmProblem = /The morning briefing didn't work this time: ([^\n]+)/.exec(st.text)?.[1] ?? null;
+    lastScreen = st.text.replace(/\s+/g, " ").slice(-300);
     if (!alarmSpoke && !alarmProblem) await sleep(500);
   }
-  if (alarmProblem) fail(`the briefing after the alarm failed: ${alarmProblem}`);
-  else if (!alarmSpoke) fail("the briefing never started talking after the alarm was turned off");
+  if (alarmProblem) {
+    // Say what the PC knew at that moment: with the app's own sentence alone a
+    // red run here can't be told apart from a bad test (that is exactly what
+    // happened once, and cost a whole run to work out).
+    const why = await briefingDiagnosis(page, briefingNow?.day ?? null).catch((e) => `(the diagnosis failed: ${e.message})`);
+    fail(`the briefing after the alarm failed: ${alarmProblem} — ${why}`);
+  } else if (!alarmSpoke) {
+    const why = await briefingDiagnosis(page, briefingNow?.day ?? null).catch((e) => `(the diagnosis failed: ${e.message})`);
+    fail(`the briefing never started talking after the alarm was turned off — ${why} | app screen: "${lastScreen}"`);
+  }
   else ok(`turned off → the briefing started talking ${Math.round((Date.now() - turnedOffAt) / 1000)} s later (the alarm said 5 s; then today's briefing is fetched and the voice starts)`);
   // A briefing that "speaks" into a phone that can't make a sound is the bug
   // this checks for: the app must notice and say so, not stay quiet for a minute.

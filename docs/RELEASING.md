@@ -203,6 +203,21 @@ Gemini's alarm branch and the phone E2E (sets one through the chat, checks
 Android's own alarm list, rings a 20-second alarm, turns it off on its screen
 and waits for the briefing to start talking).
 
+1.3.2 (phone-only): the briefing after an alarm is never left unspoken. Turning
+an alarm off is the user asking to be briefed, so when the PC hands over nothing
+— no topics or no key there yet, its 10-hour morning window long past, or today's
+briefing missing from the conversation it shares with the phone — the phone now
+researches and writes the briefing itself through the same path it uses with the
+PC off (`writeBriefingOnPhone` in `mobile/src/state/useCompanion.ts`) and speaks
+it, instead of showing "today's briefing never came through". The bar says
+"Researching on the phone" (it used to say "Your PC is off" even with the PC up),
+and when even that isn't possible the error names the real reason (no topics or
+no key on the PC, and no key of its own). The emulator E2E prints what the PC
+and the phone each held whenever this step fails (`briefingDiagnosis` in
+`mobile/e2e/android-e2e.mjs`) — the app's own sentence alone cannot say which
+side came up empty, and once cost a run to interpret. Still unverified on a real
+phone.
+
 1.3.1 (phone-only): the ring in Bluetooth earbuds and a briefing that could
 stay quiet. `AlarmAudio` now asks Android for the audio focus, sets the
 preferred output before *and* after `prepare()`, and then verifies the sound

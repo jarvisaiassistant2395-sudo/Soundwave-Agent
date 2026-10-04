@@ -847,7 +847,16 @@ try {
     w.hide();
   });
   const pttBefore = (await voiceTurns(main)).length;
-  const holder = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", holdShortcutScript(4000)], {
+  // Hold for a whole loop of the fake microphone, not 4 s: Chromium loops
+  // `e2e-mic.wav` from process start, so by this stage the recording can be at
+  // any point of it — a 4-second hold cut the sentence off right before "ask
+  // not what your country" (the check below) and reddened a run for the test's
+  // sake. The clip is ~11 s of speech + 4 s of silence, so one full loop
+  // always contains the words; the release still ends the recording, which is
+  // the thing being proved (and the push-to-talk capture ignores the silence —
+  // it stops when the keys are let go, not when the person pauses).
+  const pttHoldMs = 15_500; // one full loop of the fake microphone — see below
+  const holder = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", holdShortcutScript(pttHoldMs)], {
     windowsHide: true,
   });
   // Listen for the exit *before* the key checks: PowerShell can fail instantly
@@ -885,7 +894,7 @@ try {
   annotate(
     "notice",
     "Desktop E2E: push to talk",
-    `Ctrl+Shift+Space was held by Windows itself (keybd_event) for 4 s: the watcher saw the chord go down and up, the bar listened while held, and releasing sent the microphone's words ("${pttTurn.slice(0, 80)}").`,
+    `Ctrl+Shift+Space was held by Windows itself (keybd_event) for ${Math.round(pttHoldMs / 1000)} s — a full loop of the fake microphone, so the whole sentence is always in the recording: the watcher saw the chord go down and up, the bar listened while held, and releasing sent the microphone's words ("${pttTurn.slice(0, 80)}").`,
   );
   await app.evaluate(() => {
     const w = globalThis.__soundwaveShell.mainWindow();

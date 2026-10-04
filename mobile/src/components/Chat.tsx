@@ -53,7 +53,7 @@ function BriefingBar({ phase, onStop }: { phase: BriefingPhase; onStop: () => vo
         <p className="text-[14.5px] font-semibold text-amber-50">{preparing ? "Getting your morning briefing ready…" : "Your morning briefing"}</p>
         <p className="truncate text-[12.5px] text-amber-100/70">
           {preparing
-            ? `${phase.by === "phone" ? "Your PC is off — researching on the phone" : "Researching"}${phase.topics.length ? `: ${phase.topics.join(" · ")}` : ""}`
+            ? `${phase.by === "phone" ? "Researching on the phone" : "Researching"}${phase.topics.length ? `: ${phase.topics.join(" · ")}` : ""}`
             : "Tap Stop to stop it"}
         </p>
       </div>

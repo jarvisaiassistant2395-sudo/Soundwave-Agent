@@ -238,7 +238,7 @@ exactly as recorded, captions of what is said burned in. `lib/videoClips.ts` +
 Each clip is a normal export job — Watch, download or upload it from the chat.
 One video renders at a time, shorts included.
 
-**Alarms on the phone** (desktop 1.5.2 / phone 1.3.1): ask the agent for one
+**Alarms on the phone** (desktop 1.5.2 / phone 1.3.2): ask the agent for one
 ("set an alarm for 6:30", "wake me in 20 minutes") and it arms a real alarm on
 the paired Android phone — `set_phone_alarm` leaves a control message in the
 shared conversation, and the phone's native `Alarm` plugin puts it in Android's
@@ -247,7 +247,8 @@ re-armed after a reboot), so it rings with the PC off. Turning one off starts
 the morning briefing by itself after the seconds the user chose (phone app →
 Settings → **Alarm & the briefing**, 0–600, default 30; the agent can give a
 per-alarm delay too), which is also how the briefing starts when the phone is
-all the user has. Alarms live in the phone app (1.3.0+; the earbud routing above is 1.3.1) — the PC learns the
+all the user has. If the PC has nothing ready for today, the phone writes that
+briefing itself rather than staying silent with a reason. Alarms live in the phone app (1.3.0+; the earbud routing above is 1.3.1) — the PC learns the
 app's version when the phone connects, and if it's older it says to update
 instead of claiming an alarm it can't set. The ring plays in the connected
 Bluetooth earbuds/headset (Soundwave picks the output itself — Android often

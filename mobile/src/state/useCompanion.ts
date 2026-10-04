@@ -467,6 +467,48 @@ export function useCompanion(): Companion {
   }, []);
 
   /**
+   * Writes today's briefing here, with Gemini on the phone, and queues it for
+   * the PC — the same thing the phone does when the PC is off. Used after an
+   * alarm too: a person who turns an alarm off is asking to be briefed, no
+   * matter what the PC happens to have ready (no topics there yet, its morning
+   * window long past, its key gone). Returns null only when this phone has no
+   * key of its own to write with.
+   */
+  const writeBriefingOnPhone = useCallback(
+    async (plan: BriefingPlan | null, why: "pc-off" | "pc-nothing"): Promise<ChatMessage | null> => {
+      const kit = kitRef.current;
+      if (!kit) return null;
+      setBriefing({ kind: "preparing", by: "phone", topics: plan?.topics ?? [] });
+      const r = await offlineMorning({
+        kit,
+        memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps),
+        fetchText: phoneFetchText,
+      });
+      const at = Date.now();
+      const msg: ChatMessage = {
+        id: phoneMessageId(at),
+        sender: "assistant",
+        text: r.text,
+        time: timeLabel(at),
+        at,
+        tag: "SYS",
+        answeredBy: "phone",
+        briefingDate: r.briefingDate,
+        actionOutput: [
+          why === "pc-off" ? "Your PC is off: researched and written on the phone." : "Your PC had nothing ready for today, so it was researched and written on the phone.",
+          r.research,
+          r.weatherNote ? `Weather: ${r.weatherNote}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+      addLocal([msg]);
+      return msg;
+    },
+    [addLocal],
+  );
+
+  /**
    * Opened after the briefing time: speak today's briefing — the PC's (it
    * wrote it when it was due, or writes it now), or, with the PC off, one the
    * phone researches and writes itself. Once per day per phone (and not if
@@ -505,35 +547,21 @@ export function useCompanion(): Companion {
           if (!msg) {
             setBriefing({ kind: "preparing", by: "pc", topics: plan?.topics ?? [] });
             msg = (await c.briefingToday({ prepare: true })).message;
+            // The PC had nothing to hand over (no topics or no key there yet,
+            // or its morning window is long past). An alarm was just turned
+            // off — that person asked to be briefed, so write it here instead.
+            if (!msg) msg = await writeBriefingOnPhone(plan, "pc-nothing");
           }
         } else if (!msg && kitRef.current) {
-          setBriefing({ kind: "preparing", by: "phone", topics: plan?.topics ?? [] });
-          const r = await offlineMorning({
-            kit: kitRef.current,
-            memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps),
-            fetchText: phoneFetchText,
-          });
-          const at = Date.now();
-          msg = {
-            id: phoneMessageId(at),
-            sender: "assistant",
-            text: r.text,
-            time: timeLabel(at),
-            at,
-            tag: "SYS",
-            answeredBy: "phone",
-            briefingDate: r.briefingDate,
-            actionOutput: [`Your PC is off: researched and written on the phone.`, r.research, r.weatherNote ? `Weather: ${r.weatherNote}` : ""].filter(Boolean).join("\n"),
-          };
-          addLocal([msg]);
+          msg = await writeBriefingOnPhone(plan, "pc-off");
         }
         if (briefingStop.current) return;
         if (!msg) {
           // Nothing to read: say why instead of leaving the bar and going quiet.
           throw new Error(
             stateRef.current.kind === "online"
-              ? "the PC answered, but today's briefing never came through — try again in a moment"
-              : "the PC is off and this phone doesn't have a briefing plan yet (it comes from the PC) — open Soundwave on the PC once, then ask again",
+              ? "your PC has no briefing to read out yet (no topics in Settings → Morning Setup, or no Gemini key there) and this phone has no key of its own — try again in a moment"
+              : "the PC is off and this phone doesn't have a Gemini key of its own yet (it comes from the PC) — open Soundwave on the PC once, then ask again",
           );
         }
         markHeard(day, msg);
@@ -555,7 +583,7 @@ export function useCompanion(): Companion {
         if (volumeBefore >= 0) void restoreMediaVolume(volumeBefore);
       }
     },
-    [settled, addLocal, markHeard, synthesizer],
+    [settled, addLocal, markHeard, synthesizer, writeBriefingOnPhone],
   );
   const deliverBriefingRef = useRef<(opts?: { force?: boolean }) => Promise<void>>(async () => undefined);
   deliverBriefingRef.current = (opts) =>
