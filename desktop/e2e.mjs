@@ -1079,7 +1079,14 @@ try {
   ok("holding the shortcut made the key watcher report the chord down");
   const holderCode = await Promise.race([holderDone, sleep(30_000).then(() => "timed out")]);
   if (holderCode !== 0) await fail(`the key-holding helper exited with ${holderCode}: ${held.trim().slice(-300) || "nothing"}`);
-  const afterRelease = await shell();
+  // The OS key-up is sent just before the PowerShell helper exits; give the
+  // main process's key-state poller a moment to observe it instead of turning
+  // that scheduling race into a flaky E2E failure.
+  let afterRelease = await shell();
+  for (let i = 0; i < 20 && afterRelease.pushToTalkStatus.down; i++) {
+    await sleep(100);
+    afterRelease = await shell();
+  }
   if (afterRelease.pushToTalkStatus.down) await fail("the key watcher still thinks the keys are held after the release");
   try {
     await main.waitForFunction((n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n, pttBefore, {
