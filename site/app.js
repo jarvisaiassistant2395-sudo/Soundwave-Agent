@@ -554,6 +554,7 @@ document.addEventListener("keydown", (e) => {
 /* A "Sign in" link, only when a hosted app URL is configured. Plans are
    account plans, so this is where a paying customer goes to use one. */
 (function addSignInLink() {
+  if (!BRAND.webApp || !BRAND.webApp.trim()) return;
   const href = safeUrl(BRAND.webApp);
   if (!href) return;
 
@@ -629,10 +630,6 @@ if (footTagline) footTagline.textContent = BRAND.tagline;
 const copyright = $("#copyright");
 if (copyright) {
   copyright.textContent = `© ${new Date().getFullYear()} ${BRAND.copyright}. All rights reserved.`;
-}
-
-if (!document.querySelector('link[rel="canonical"]')) {
-  /* nothing to do — kept for clarity that canonical is set in the HTML */
 }
 
 /* Expose a tiny API for the legal pages and for your own scripts. */
