@@ -48,7 +48,9 @@ import { GeminiError, generateContent, isGemini3, visibleText } from "./brain/ge
 
 /** The caption look for clipped shorts: white, bold, stroked, middle of the frame. */
 const CLIP_SUBTITLE_STYLE: SubtitleStyleInput = {
-  fontFamily: "DejaVu Sans",
+  // No fontFamily on purpose: buildAss draws captions in the font Soundwave
+  // ships (lib/captionFont.ts) — asking for "DejaVu Sans" by name meant a font
+  // this machine may not have (it does not, on Windows).
   fontWeight: 800,
   fontSize: 56,
   color: "#FFFFFF",

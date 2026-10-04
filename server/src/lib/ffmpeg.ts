@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { config, resolveFfmpegPath } from "../config.js";
+import { captionFontDir, captionFontFamily, smallFontFamily } from "./captionFont.js";
 
 // ── FFmpeg export pipeline ──────────────────────────────────────────────────
 // Client-generated audio + background video + JSON subtitles are composited
@@ -131,7 +132,14 @@ export function buildAss(
   const outlineColor = hexToAss(style.strokeColor ?? "#000000", 100);
   const backColor = hexToAss("#000000", 60);
 
-    const fontFace = (style.fontFamily || "DejaVu Sans").replace(/,/g, "").trim() || "DejaVu Sans";
+    // The caption face: what the caller asked for, else the font we ship
+    // (assets/fonts, Inter) — never a font that only some machines have.
+    const fontFace = (style.fontFamily || captionFontFamily()).replace(/,/g, "").trim() || "DejaVu Sans";
+    // The style's own weight was being dropped on the floor: every caption was
+    // written with Bold=0, so a "800" style rendered as regular. The shipped
+    // ExtraBold family carries its weight in its name, so this flag only bites
+    // for fonts named the ordinary way — which is exactly when it should.
+    const bold = (style.fontWeight ?? 800) >= 600 ? 1 : 0;
     const header = [
     "[Script Info]",
     "ScriptType: v4.00+",
@@ -142,8 +150,8 @@ export function buildAss(
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Default,${fontFace},${fontSize},${primary},${primary},${outlineColor},${backColor},0,0,0,0,100,100,${spacing},0,1,${outline},${shadow},${alignmentFor(style.hAlign, style.vAlign)},${margin},${margin},${margin},1`,
-    `Style: Watermark,DejaVu Sans,${Math.max(16, Math.round(28 * scale))},${hexToAss("#FFFFFF", 55)},${hexToAss("#FFFFFF", 55)},${hexToAss("#000000", 0)},${hexToAss("#000000", 0)},0,0,0,0,100,100,0,0,1,1,0,9,20,20,20,1`,
+    `Style: Default,${fontFace},${fontSize},${primary},${primary},${outlineColor},${backColor},${bold},0,0,0,100,100,${spacing},0,1,${outline},${shadow},${alignmentFor(style.hAlign, style.vAlign)},${margin},${margin},${margin},1`,
+    `Style: Watermark,${smallFontFamily()},${Math.max(16, Math.round(28 * scale))},${hexToAss("#FFFFFF", 55)},${hexToAss("#FFFFFF", 55)},${hexToAss("#000000", 0)},${hexToAss("#000000", 0)},0,0,0,0,100,100,0,0,1,1,0,9,20,20,20,1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -291,8 +299,11 @@ export function runFfmpegExport(params: ExportParams): Promise<void> {
       "utf8",
     );
 
-    // Drive-colon-safe path quoting (Windows) for the subtitles filter.
-    const vf = `${scaleFilter},subtitles=${ffmpegFilterPath(assPath)}`;
+    // Drive-colon-safe path quoting (Windows) for the subtitles filter, plus the
+    // directory holding the font we ship: libass loads those files itself, so a
+    // machine with no Inter installed still draws captions in Inter.
+    const fontDir = captionFontDir();
+    const vf = `${scaleFilter},subtitles=${ffmpegFilterPath(assPath)}${fontDir ? `:fontsdir=${ffmpegFilterPath(fontDir)}` : ""}`;
 
     // How long the output runs: explicit duration (audio length or the
     // user's chosen end), else the subtitle timeline end, else 10s.

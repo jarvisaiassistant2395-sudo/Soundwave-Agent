@@ -415,6 +415,40 @@ mislabeling that flag ("own key" → "kit from the PC") and now prints the PC's
 brain state (key set / NO KEY, and whether it comes from the environment) — the
 one line that would have explained this failure a run earlier.
 
+1.6.5 ships the font captions are drawn in. Every caption asked for "DejaVu
+Sans" — a font Soundwave does not ship and Windows does not have — so libass
+substituted whatever each machine happened to own: the same short looked
+different on every PC, and the style's own weight (800) was written into the ASS
+as Bold=0, so captions rendered regular. Now `assets/fonts/` carries Inter
+(OFL-1.1, the same family the app's interface uses) and `server/src/lib/
+captionFont.ts` hands libass both the family name and a `fontsdir=` on the
+subtitles filter, so the font travels with the install and a machine that has
+never heard of Inter still draws our captions.
+
+Three things came out of doing it against a real ffmpeg rather than from memory,
+and all three are why the test renders a frame:
+
+- **The family name is the trap.** `Inter_800ExtraBold.ttf` declares its family
+  as **"Inter ExtraBold"**, not "Inter". Asking libass for `Inter` with Bold=1
+  picked the *Regular* cut when both were present, and picked *DejaVu* when only
+  ExtraBold was — measured, both cases. So the constants sit beside the files
+  they describe and `server/tests/caption_font.test.ts` reads libass' own
+  `fontselect:` line out of a render: `(Inter ExtraBold, 700, 0) -> Inter-
+  ExtraBold`. The test fails if the constant or the file ever drifts apart.
+- **`fontsdir` works on this build** (ffmpeg 7.0.2, libass + fontconfig), and
+  the font is loaded from the directory — no system install needed.
+- **A missing font is not a crash.** With no fontdir the same ASS renders in
+  DejaVu Sans Bold, which is what every build before this one did.
+
+The watermark line uses the Regular cut. The "tiktok" preset's "Montserrat" —
+also a font we don't ship — became our own. `desktop/assemble.mjs` and the
+Windows build stage `assets/fonts` into `bin/fonts` and `server-env.cjs` points
+`SOUNDWAVE_FONT_DIR` at it; the licence audit treats the font as a bundled
+program and **refuses the build** if `bin/fonts` holds the font but not its
+`OFL.txt` (verified by removing the file and watching it refuse). The Android
+app already drew its interface in Inter, so a short now looks like the product
+that made it.
+
 1.6.4 gives the agent a second way to read a hard page: Scrapling on this PC.
 
 `read_web_page` already fetched the page and pulled the article out locally

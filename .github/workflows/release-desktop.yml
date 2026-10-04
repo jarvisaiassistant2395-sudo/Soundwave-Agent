@@ -86,7 +86,16 @@ jobs:
             exit 0
           }
           $all = @(Get-Content backend-tests.log)
-          $named = @($all | Select-String -Pattern 'FAIL|×|AssertionError|Error:|expected|Test Files|Tests ' | Select-Object -First 30)
+          # The failure markers come first, and they are searched for before
+          # anything else matches: the catch-all pattern this step used to have
+          # matched prose too ("…the end-to-end tests are skipped"), so the
+          # 30-line window a reader sees filled up with passing tests' noise
+          # while the actual failure sat further down the log. Built from char
+          # codes so the marks survive any encoding: × and ❯ are vitest's, →
+          # is its "why" line.
+          $marks = [string][char]0x00D7 + "|" + [string][char]0x276F + "|" + [string][char]0x2192 + "|FAIL|AssertionError|Error:"
+          $named = @($all | Select-String -CaseSensitive -Pattern $marks | Select-Object -First 20)
+          if ($named.Count -eq 0) { $named = @($all | Select-String -CaseSensitive -Pattern 'Test Files|Tests ' | Select-Object -First 10) }
           if ($named.Count -eq 0) { $named = @($all | Select-Object -Last 30) }
           foreach ($line in $named) {
             $text = $line.ToString().Trim() -replace '%', '%25'
@@ -153,6 +162,17 @@ jobs:
       # Voice input: whisper.cpp's official Windows build (it picks the best
       # CPU code path at runtime) + the English base model, both MIT licensed.
       # Speech is recognized on the customer's PC — nothing is uploaded.
+      # The caption font (assets/fonts, Inter, OFL-1.1) travels with the app in
+      # bin/fonts, where libass loads it from and where the licence audit
+      # expects its OFL text. Copied here, before the audit, so a bundle that
+      # dropped the font or its licence fails the build instead of shipping.
+      - name: Stage the caption font
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop/bin/fonts | Out-Null
+          Copy-Item assets/fonts/* desktop/bin/fonts/ -Force
+          Get-ChildItem desktop/bin/fonts | Select-Object Name, Length
+
       - name: Fetch the speech engine (whisper.cpp + English model)
         shell: pwsh
         run: |

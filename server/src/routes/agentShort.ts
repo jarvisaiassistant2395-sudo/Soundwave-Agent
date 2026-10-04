@@ -347,7 +347,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
     await reportProgress(44, "Generating synchronized word-by-word subtitles...");
     const cues = cuesFromTimings(ttsResult.wordTimings, ttsResult.duration);
     const tiktokStyle: SubtitleStyleInput = {
-      fontFamily: "DejaVu Sans",
+      // The shipped font, chosen in buildAss (lib/captionFont.ts).
       fontWeight: 800,
       fontSize: 56,
       color: "#FFFFFF",
@@ -783,7 +783,9 @@ router.get("/defaults", (_req, res) => {
     },
     subtitles: {
       preset: "tiktok",
-      fontFamily: "Montserrat",
+      // Was "Montserrat" — a font we don't ship, so libass substituted whatever
+      // the machine had. The preset now uses the font Soundwave ships.
+      fontFamily: "Inter ExtraBold",
       fontWeight: 800,
       fontSize: 56,
       color: "#FFFFFF",

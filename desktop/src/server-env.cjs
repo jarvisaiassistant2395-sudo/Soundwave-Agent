@@ -176,6 +176,11 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
   const isWin = process.platform === "win32";
   const ffmpegBin = path.join(binDir, isWin ? "ffmpeg.exe" : "ffmpeg");
   if (fs.existsSync(ffmpegBin)) env.FFMPEG_PATH = ffmpegBin;
+  // Captions are drawn in the font we ship, loaded by libass from this folder
+  // (assets/fonts → bin/fonts at build time). Without it the server falls back
+  // to a font the machine may not have — the bug this ships the fix for.
+  const fontDir = path.join(binDir, "fonts");
+  if (fs.existsSync(path.join(fontDir, "Inter-ExtraBold.ttf"))) env.SOUNDWAVE_FONT_DIR = fontDir;
   const ytdlp = prepareYtDlp({ binDir, userDataDir });
   if (ytdlp) {
     env.YTDLP_PATH = ytdlp.path;

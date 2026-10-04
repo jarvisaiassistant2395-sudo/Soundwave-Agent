@@ -52,6 +52,10 @@ describe("the ship-licence audit", () => {
     // to leave the machine for the reader service on the internet.
     expect(notices).toMatch(/Scrapling — BSD-3-Clause/);
     expect(notices).toMatch(/Camoufox — MPL-2\.0/);
+    // The caption font: bundled (unlike the two services above), so its licence
+    // text has to travel with it — the audit refuses a bundle whose bin/fonts
+    // holds the font but not the OFL text.
+    expect(notices).toMatch(/Inter \(caption font — assets\/fonts\) — OFL-1\.1/);
     // The one licence we could NOT verify: misaki's G2P fallback model. It must
     // appear by name with the gap stated, and must stay off the "we can ship
     // this" list until someone confirms its terms.

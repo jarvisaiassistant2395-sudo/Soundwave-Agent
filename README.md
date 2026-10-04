@@ -133,6 +133,15 @@ and refuses local and private addresses. The stealth browser for the hardest
 pages is a separate, explicit download (`STEALTH=1 ./install.sh`) and the service
 says so instead of claiming to be ready.
 
+**Captions have a font** (desktop 1.6.5): shorts are rendered with the font
+Soundwave ships — Inter (OFL-1.1, `assets/fonts/`), the same family the app's
+interface uses — instead of asking ffmpeg for "DejaVu Sans" and letting each
+machine substitute what it had. libass loads it from `bin/fonts` via `fontsdir`,
+so a PC with no Inter installed still renders our captions, and the style's 800
+weight is written into the ASS rather than dropped. The licence travels with it
+and the audit refuses a bundle that drops it. Proof, not a promise: a test
+renders a frame and reads libass' `fontselect:` line back out.
+
 **Watched channels** (desktop 1.5.4): tell it "watch @MrBeast, 2 shorts each" and
 that's it — the PC checks the channel every few minutes while Soundwave AI runs
 and, the moment something new is up, announces it in the chat and cuts the

@@ -70,7 +70,11 @@ async function briefingDiagnosis(page, day = null) {
   // Whether the PC has a brain key at all is the first thing to know when a
   // briefing can't be written: without one, neither side can write it.
   const brain = await pc("/api/v1/brain").catch(() => null);
-  bits.push(`PC brain: ${brain?.configured ? `key set (${brain.keyHint}${brain.source === "env" ? ", from the environment" : ""})` : "NO KEY"}`);
+  bits.push(
+    brain?.configured
+      ? `PC brain: key set (${brain.keyHint ?? "hint hidden"}, ${brain.model ?? "?"}${brain.source === "env" ? ", from the environment" : ""})`
+      : `PC brain: NO KEY (an env var is ${brain?.envKey ? "set" : "not set"})`,
+  );
   const conv = await pc("/api/v1/companion/conversation");
   const briefs = conv.messages.filter((m) => m.briefingDate);
   bits.push(
@@ -93,6 +97,14 @@ async function briefingDiagnosis(page, day = null) {
       briefings: mine.map((m) => `${m.briefingDate}/${m.sender}${m.answeredBy ? `/${m.answeredBy}` : ""}`),
       heard: read("soundwave.heardBriefings") ?? [],
       outbox: `${o?.messages?.length ?? 0} message(s), ${o?.memoryOps?.length ?? 0} memory op(s)`,
+      // Both are the difference between "the phone decided not to brief" and
+      // "the phone never had what it takes to": the plan it holds, and whether
+      // it is set to talk when opened.
+      talkOnOpen: read("soundwave.settings")?.talkOnOpen ?? null,
+      plan: (() => {
+        const b = read("soundwave.memory")?.briefing;
+        return b ? `${b.time} auto=${b.auto} topics=${b.topics?.length ?? 0}` : "none";
+      })(),
       // Named for what it is: the kit the PC shares (it carries the Gemini key
       // the phone researches with). "false" here means the phone had nothing to
       // write a briefing with, whatever the PC could or couldn't do.
@@ -100,7 +112,7 @@ async function briefingDiagnosis(page, day = null) {
     };
   }, day);
   bits.push(
-    `phone holds: ${phone.messages} message(s), briefings ${phone.briefings.join(", ") || "none"}, heard ${JSON.stringify(phone.heard)}, outbox ${phone.outbox}, kit from the PC ${phone.hasKit} (the PC's day when the stage started: ${phone.day})`,
+    `phone holds: ${phone.messages} message(s), briefings ${phone.briefings.join(", ") || "none"}, heard ${JSON.stringify(phone.heard)}, outbox ${phone.outbox}, kit from the PC ${phone.hasKit}, talk on open ${phone.talkOnOpen}, plan ${phone.plan} (the PC's day when the stage started: ${phone.day})`,
   );
   return bits.join(" | ");
 }
@@ -521,7 +533,15 @@ try {
   adb("shell", `monkey -p ${PKG} -c android.intent.category.LAUNCHER 1`);
   page = await attach(device, { notPid: pidBeforeMorning });
   await page.waitForSelector('[data-testid="chat"]', { timeout: 90_000 });
-  await page.waitForSelector('[data-testid="briefing-bar"], [data-testid="briefing-label"]', { timeout: 60_000 });
+  try {
+    await page.waitForSelector('[data-testid="briefing-bar"], [data-testid="briefing-label"]', { timeout: 60_000 });
+  } catch (err) {
+    // A 60-second wait that ends in "Timeout" names nothing: say what the PC
+    // had, what the phone held, and what the phone was showing at that moment.
+    const why = await briefingDiagnosis(page).catch((e) => `(the diagnosis failed: ${e.message})`);
+    annotate("error", "Phone app E2E", `the briefing never started — ${why}; what the phone showed: ${JSON.stringify(await offlineState(page)).slice(0, 500)}`);
+    throw err;
+  }
   ok("opened after the briefing time with the PC off: the briefing started by itself");
   let phase = null;
   let problem = null;

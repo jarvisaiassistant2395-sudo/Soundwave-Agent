@@ -94,6 +94,20 @@ if (fs.existsSync(notices)) {
   process.exitCode = 1;
 }
 
+// The caption font (assets/fonts, Inter, OFL-1.1) rides in bin/fonts beside the
+// binaries: libass loads it from there, and its licence text travels with it.
+const fontsSrc = path.join(repoRoot, "assets", "fonts");
+const fontsDst = path.join(desktopDir, "bin", "fonts");
+if (fs.existsSync(fontsSrc)) {
+  console.log("[assemble] caption font …");
+  fs.mkdirSync(fontsDst, { recursive: true });
+  for (const file of fs.readdirSync(fontsSrc)) {
+    fs.copyFileSync(path.join(fontsSrc, file), path.join(fontsDst, file));
+  }
+} else {
+  console.warn("[assemble] ⚠ assets/fonts is missing — captions will fall back to a system font");
+}
+
 console.log("[assemble] bundled-program licences …");
 try {
   const written = writeBinaryLicenses(path.join(desktopDir, "bin"));

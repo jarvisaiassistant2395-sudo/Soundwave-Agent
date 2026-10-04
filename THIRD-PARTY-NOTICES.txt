@@ -13,6 +13,8 @@ Programs bundled next to the app (not libraries — they are run as separate pro
 ------------------------------------------------------------
 • FFmpeg (Windows static build, gyan.dev 'release essentials') — GPL-3.0-or-later
     Mere aggregation: does not affect our licence, but GPLv3 requires its licence text and a written source offer to travel with it — desktop/bin/FFMPEG-LICENSE.txt + FFMPEG-SOURCE-OFFER.txt, written by scripts/write-binary-licenses.mjs on every build.
+• Inter (caption font — assets/fonts) — OFL-1.1
+    The font captions and the watermark are drawn in, so a short renders the same on a PC that has Inter installed and one that has never heard of it. Unmodified upstream Inter (rsms/inter via @expo-google-fonts/inter); see assets/fonts/README.md for the checksums and the family-name trap.
 • whisper.cpp + ggml — MIT
     The local speech engine (voice input, the wake word). Its own licence text ships inside desktop/bin/whisper/.
 • yt-dlp — Unlicense
