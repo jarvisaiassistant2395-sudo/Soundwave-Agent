@@ -1,5 +1,5 @@
-// Manages the optional Kokoro narrator for the packaged Windows desktop app.
-// The first run provisions a per-user Python environment without a console;
+// Manages the on-device narration and voice-cloning stack for the packaged Windows desktop app.
+// First use provisions a per-user Python environment without a console;
 // later runs start the local service in the background. Models and packages
 // live under Electron's user-data folder, never inside the installer tree.
 "use strict";
@@ -10,10 +10,11 @@ const https = require("node:https");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const SETUP_REVISION = 1;
-// Invalidates an older resident service which preloaded only one voice pack,
-// without forcing a reinstall of the already-verified Python package environment.
-const RUNTIME_REVISION = 2;
+const SETUP_REVISION = 2;
+// The managed stack now includes CPU MOSS-TTS-Nano cloning as well as Kokoro.
+// A runtime revision forces a restart so older Kokoro-only services are not
+// mistaken for a complete offline-ready install.
+const RUNTIME_REVISION = 3;
 const PYTHON_VERSION = "3.13.16";
 const PYTHON_INSTALLER_URL = `https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-amd64.exe`;
 // Published by python.org for the x64 Windows installer.
@@ -24,7 +25,109 @@ const REQUEST_TIMEOUT_MS = 3_000;
 const SERVICE_START_TIMEOUT_MS = 15 * 60_000;
 const COMMAND_TIMEOUT_MS = 30 * 60_000;
 const MIN_PYTHON_SETUP_FREE_BYTES = 300 * 1024 * 1024;
-const MIN_PACKAGE_SETUP_FREE_BYTES = 1536 * 1024 * 1024;
+// Wheels, the Kokoro model cache, and the 727 MiB MOSS model need room to
+// coexist during setup. This is a conservative free-space floor, not the exact
+// download total (the Python and spaCy wheels vary by platform/version).
+const MIN_PACKAGE_SETUP_FREE_BYTES = 3 * 1024 * 1024 * 1024;
+const MIN_MOSS_SETUP_FREE_BYTES = 1024 * 1024 * 1024;
+const TORCH_VERSION = "2.7.0";
+const MOSS_SOURCE_REVISION = "8b7bcc9341b3b4ef3a3a58ba1338a7d85ff133eb";
+const MOSS_SOURCE_ARCHIVE_URL = `https://github.com/OpenMOSS/MOSS-TTS-Nano/archive/${MOSS_SOURCE_REVISION}.zip`;
+const MOSS_TTS_REPO_REVISION = "f52645cb467506d8e18e746ddd59482685b74e58";
+const MOSS_CODEC_REPO_REVISION = "ceff0d0749bfb3fa2d61149794ec6feef0d1e1ae";
+const MOSS_TTS_REPO_ID = "OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX";
+const MOSS_CODEC_REPO_ID = "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX";
+const MOSS_SOURCE_MAX_BYTES = 20 * 1024 * 1024;
+const MOSS_MODEL_FILES = [
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "browser_poc_manifest.json", size: 503354, gitSha1: "8a04b980c3b9ea2f56747650ea255efe421ada38" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_decode_step.onnx", size: 291483, sha256: "698cbc2fc1c2feca16e5895614ed52bbb32ded10f236c076f477b2e69abf32d8" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_global_shared.data", size: 440813568, sha256: "bce8312c3df6a44545302cae229b61054fe0672e0b252ba59cba47adeed831dc" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_local_cached_step.onnx", size: 53685, sha256: "aa9035fefc1c138a951a8bcfc0374fb03a25f1ece67f7f7f53bce349b84a1dd5" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_local_decoder.onnx", size: 49231, sha256: "51aa754301b38550a5f9adda0ad93bd3dc95819afb511e6dcabf4a90b345a454" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_local_fixed_sampled_frame.onnx", size: 471262, sha256: "40cdb00efc171c450cf91468e01429caa41b0252222cd308e978f58fe354afa8" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_local_shared.data", size: 229678080, sha256: "bae7782032c0fb12490ab42afe009f87ae6c75a0f0596fc7b5c08e4d5ee93916" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "moss_tts_prefill.onnx", size: 283305, sha256: "d56126dcd0574c2f15d98fc6b35eda68d0386b5bd9c5e38e28548d6f2ea8f3db" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "tokenizer.model", size: 470897, sha256: "c353ee1479b536bf414c1b247f5542b6607fb8ae91320e5af1781fee200fddff" },
+  { repo: MOSS_TTS_REPO_ID, revision: MOSS_TTS_REPO_REVISION, model: "MOSS-TTS-Nano-100M-ONNX", path: "tts_browser_onnx_meta.json", size: 4487, gitSha1: "883597607ce139b2c4871468396af2c088ed2fe0" },
+  { repo: MOSS_CODEC_REPO_ID, revision: MOSS_CODEC_REPO_REVISION, model: "MOSS-Audio-Tokenizer-Nano-ONNX", path: "codec_browser_onnx_meta.json", size: 17036, gitSha1: "886953a56489516b847b7c1c953bde063eb78faa" },
+  { repo: MOSS_CODEC_REPO_ID, revision: MOSS_CODEC_REPO_REVISION, model: "MOSS-Audio-Tokenizer-Nano-ONNX", path: "moss_audio_tokenizer_decode_full.onnx", size: 681902, sha256: "0fbbafe3fd4afa2a019af5c5ced204af6e2d1db044fa40f021525d2aee95b4ac" },
+  { repo: MOSS_CODEC_REPO_ID, revision: MOSS_CODEC_REPO_REVISION, model: "MOSS-Audio-Tokenizer-Nano-ONNX", path: "moss_audio_tokenizer_decode_shared.data", size: 44198912, sha256: "e69d52e0f4e84ca27850557ee54face46632d3a5a16c89bd246c7c408466dcad" },
+  { repo: MOSS_CODEC_REPO_ID, revision: MOSS_CODEC_REPO_REVISION, model: "MOSS-Audio-Tokenizer-Nano-ONNX", path: "moss_audio_tokenizer_decode_step.onnx", size: 351400, sha256: "9527c86a29e1837edec1f74db57d5eeaadb3a715af3382703566460afed25855" },
+  { repo: MOSS_CODEC_REPO_ID, revision: MOSS_CODEC_REPO_REVISION, model: "MOSS-Audio-Tokenizer-Nano-ONNX", path: "moss_audio_tokenizer_encode.data", size: 44507136, sha256: "aa751265b2bab2887eac224484546b194875aa7494b607115439b3dc6b228a2c" },
+  { repo: MOSS_CODEC_REPO_ID, revision: MOSS_CODEC_REPO_REVISION, model: "MOSS-Audio-Tokenizer-Nano-ONNX", path: "moss_audio_tokenizer_encode.onnx", size: 815775, sha256: "eadea4a645abdcf98714c7aead122ee2ce7da6e080f9f80b977cd1ca8e19473a" },
+];
+const MOSS_MODEL_DOWNLOAD_BYTES = MOSS_MODEL_FILES.reduce((total, item) => total + item.size, 0);
+const MOSS_SOURCE_FILES = [
+  { path: "onnx_tts_runtime.py", size: 29099, gitSha1: "c6b1d70cbcaa52cf51de138612ac2d0c6bec3435" },
+  { path: "ort_cpu_runtime.py", size: 40665, gitSha1: "0b9e5d2c95b0e20d7044123b2e4515f1a76f96a6" },
+  { path: "text_normalization_pipeline.py", size: 11909, gitSha1: "f755d7fc47e296f46ffcfd0dc53075e70af6d812" },
+  { path: "tts_robust_normalizer_single_script.py", size: 17272, gitSha1: "014b3575332cd9522b8beee11056f9e3718e0e0d" },
+  { path: "moss_tts_nano/__init__.py", size: 49, gitSha1: "a05eb9abb93a3c0a4e3f1ef478fe80d1793cee90" },
+  { path: "moss_tts_nano/defaults.py", size: 350, gitSha1: "aaae6252c213ba1b6c1a5a6f604bc6c33472722f" },
+  { path: "LICENSE", size: 11374, gitSha1: "f95ac2d6ec3449e33a18b54792e733a1701d6482" },
+];
+const MOSS_EXTRACTOR = String.raw`import pathlib, shutil, sys, zipfile
+archive_path = pathlib.Path(sys.argv[1])
+target = pathlib.Path(sys.argv[2]).resolve()
+allowed = {
+  "LICENSE",
+  "onnx_tts_runtime.py",
+  "ort_cpu_runtime.py",
+  "text_normalization_pipeline.py",
+  "tts_robust_normalizer_single_script.py",
+  "moss_tts_nano/__init__.py",
+  "moss_tts_nano/defaults.py",
+}
+target.mkdir(parents=True, exist_ok=True)
+with zipfile.ZipFile(archive_path) as archive:
+  for info in archive.infolist():
+    parts = pathlib.PurePosixPath(info.filename).parts
+    if len(parts) < 2 or parts[0].startswith("/") or ".." in parts:
+      continue
+    relative = pathlib.PurePosixPath(*parts[1:])
+    if relative.as_posix() not in allowed:
+      continue
+    destination = (target / pathlib.Path(*relative.parts)).resolve()
+    if target not in destination.parents:
+      raise ValueError("unsafe path in MOSS source archive")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with archive.open(info) as source, destination.open("wb") as output:
+      shutil.copyfileobj(source, output)
+`;
+
+function defaultCpuThreads() {
+  return Math.max(1, Math.min(4, (require("node:os").cpus()?.length ?? 2) - 1));
+}
+
+function formatMiB(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function pinnedFileValid(filePath, expected) {
+  let fd;
+  try {
+    const stats = fs.statSync(filePath);
+    if (!stats.isFile() || stats.size !== expected.size) return false;
+    const sha256 = expected.sha256 ? crypto.createHash("sha256") : null;
+    const gitSha1 = expected.gitSha1 ? crypto.createHash("sha1").update(`blob ${expected.size}\0`) : null;
+    fd = fs.openSync(filePath, "r");
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let bytesRead = 0;
+    while ((bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      const chunk = buffer.subarray(0, bytesRead);
+      sha256?.update(chunk);
+      gitSha1?.update(chunk);
+    }
+    const actualSha256 = sha256?.digest("hex");
+    const actualGitSha1 = gitSha1?.digest("hex");
+    return (!expected.sha256 || actualSha256 === expected.sha256) && (!expected.gitSha1 || actualGitSha1 === expected.gitSha1);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 
 function shouldManageLocalVoice({ enabled, platform, arch, env = {} }) {
   if (!enabled || platform !== "win32" || arch !== "x64") return false;
@@ -64,11 +167,11 @@ function assertFreeSpace(location, requiredBytes, purpose) {
     if (!Number.isFinite(freeBytes) || freeBytes >= requiredBytes) return;
     const requiredGb = (requiredBytes / (1024 ** 3)).toFixed(1);
     const freeGb = (freeBytes / (1024 ** 3)).toFixed(1);
-    const error = new Error(`Kokoro needs about ${requiredGb} GB of free disk space for ${purpose}; ${freeGb} GB is available. Free some space and choose Retry.`);
-    error.code = "KOKORO_INSUFFICIENT_DISK_SPACE";
+    const error = new Error(`Soundwave's local voice setup needs about ${requiredGb} GB of free disk space for ${purpose}; ${freeGb} GB is available. Free some space and choose Retry.`);
+    error.code = "LOCAL_VOICE_INSUFFICIENT_DISK_SPACE";
     throw error;
   } catch (error) {
-    if (error?.code === "KOKORO_INSUFFICIENT_DISK_SPACE") throw error;
+    if (error?.code === "LOCAL_VOICE_INSUFFICIENT_DISK_SPACE") throw error;
     // Some Windows volumes/filesystems do not implement statfs. Let the actual
     // write report ENOSPC rather than blocking setup on an unavailable probe.
   }
@@ -91,16 +194,16 @@ function cleanIncompleteDownloads(root) {
 function describeSetupFailure(error, logTail = "") {
   const summary = `${error?.code ?? ""} ${error?.message ?? error ?? ""}`;
   const evidence = `${summary}\n${logTail}`;
-  if (/KOKORO_INSUFFICIENT_DISK_SPACE|ENOSPC|no space left on device|disk quota exceeded|not enough (?:free )?disk space|WinError 112|insufficient disk space/i.test(evidence)) {
-    return /Kokoro needs about/i.test(summary)
+  if (/LOCAL_VOICE_INSUFFICIENT_DISK_SPACE|KOKORO_INSUFFICIENT_DISK_SPACE|ENOSPC|no space left on device|disk quota exceeded|not enough (?:free )?disk space|WinError 112|insufficient disk space/i.test(evidence)) {
+    return /Soundwave's local voice setup needs about/i.test(summary)
       ? String(error.message)
-      : "There isn't enough free disk space to finish Kokoro setup. Free up space and choose Retry; completed runtime, packages, and model files are kept.";
+      : "There isn't enough free disk space to finish local voice setup. Free up space and choose Retry; completed runtime, packages, and model files are kept.";
   }
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|network is unreachable|no internet|offline mode|outgoing traffic.{0,40}disabled|(?:temporary )?failure in name resolution|nameresolutionerror|failed to establish a new connection|max retries exceeded|connectionerror|connectionreseterror|newconnectionerror|connecttimeout|readtimeout|sslcertverificationerror|proxyerror|httpsconnectionpool|could not fetch url|couldn't connect|unable to connect|no route to host|timed out|socket timeout|winerror 100(?:51|54|60|61)/i.test(evidence)) {
-    return "Kokoro needs an internet connection to download missing setup files. Connect to the internet, then choose Retry; completed runtime, packages, and model files are kept.";
+    return "Local voice setup needs an internet connection to download missing setup files. Connect to the internet, then choose Retry; completed runtime, packages, and model files are kept.";
   }
   const detail = String(error?.message ?? "").replace(/[\r\n]+/g, " ").slice(0, 180);
-  return `Kokoro setup couldn't finish${detail ? ` (${detail})` : ""}. Completed runtime, packages, and downloads are kept. Choose Retry to continue; if it fails again, check the Kokoro setup log in Soundwave's local app data.`;
+  return `Local voice setup couldn't finish${detail ? ` (${detail})` : ""}. Completed runtime, packages, and downloads are kept. Choose Retry to continue; if it fails again, check the local voice setup log in Soundwave's app data.`;
 }
 
 function delay(ms) {
@@ -128,7 +231,7 @@ function fetchJson(url, token, timeoutMs = REQUEST_TIMEOUT_MS, signal) {
     });
 }
 
-function downloadHttps(url, destination, { sha256, maxBytes, onProgress, signal } = {}) {
+function downloadHttps(url, destination, { sha256, gitSha1, expectedBytes, maxBytes, label = "download", onProgress, signal } = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let activeRequest = null;
@@ -158,7 +261,7 @@ function downloadHttps(url, destination, { sha256, maxBytes, onProgress, signal 
         }
       } else resolve(destination);
     };
-    const onAbort = () => finish(new Error("The Kokoro download was cancelled."));
+    const onAbort = () => finish(new Error(`The local voice ${label} was cancelled.`));
 
     const request = (currentUrl, redirects = 0) => {
       if (settled) return;
@@ -169,7 +272,7 @@ function downloadHttps(url, destination, { sha256, maxBytes, onProgress, signal 
         return finish(error);
       }
       if (parsed.protocol !== "https:") return finish(new Error("Downloads must use HTTPS."));
-      if (redirects > 5) return finish(new Error("Too many redirects while downloading the Python runtime."));
+      if (redirects > 5) return finish(new Error(`Too many redirects while downloading ${label}.`));
 
       const req = https.get(parsed, { headers: { "User-Agent": "SoundwaveAI-Desktop" }, timeout: 30_000 }, (res) => {
         if (settled) {
@@ -184,40 +287,49 @@ function downloadHttps(url, destination, { sha256, maxBytes, onProgress, signal 
         }
         if (res.statusCode !== 200) {
           res.resume();
-          return finish(new Error(`The Python download returned HTTP ${res.statusCode ?? "?"}.`));
+          return finish(new Error(`The ${label} download returned HTTP ${res.statusCode ?? "?"}.`));
         }
         const length = Number(res.headers["content-length"] ?? 0);
         if (length > maxBytes) {
           res.resume();
-          return finish(new Error("The Python runtime download was larger than expected."));
+          return finish(new Error(`The ${label} download was larger than expected.`));
         }
 
         const hash = crypto.createHash("sha256");
+        const gitHash = gitSha1 ? crypto.createHash("sha1").update(`blob ${expectedBytes}\0`) : null;
         let received = 0;
         const output = fs.createWriteStream(destination);
         activeOutput = output;
         res.on("data", (chunk) => {
           received += chunk.length;
           if (received > maxBytes) {
-            req.destroy(new Error("The Python runtime download was larger than expected."));
+            req.destroy(new Error(`The ${label} download was larger than expected.`));
             return;
           }
           hash.update(chunk);
+          gitHash?.update(chunk);
           if (typeof onProgress === "function") onProgress(received, length);
         });
         res.on("error", (error) => output.destroy(error));
         output.on("error", finish);
         output.on("finish", () => {
           const actual = hash.digest("hex");
+          const actualGitSha1 = gitHash?.digest("hex");
+          if (expectedBytes !== undefined && received !== expectedBytes) {
+            return finish(new Error(`The ${label} download had ${received} bytes; expected ${expectedBytes}.`));
+          }
           if (sha256 && actual.toLowerCase() !== sha256.toLowerCase()) {
-            return finish(new Error("The Python runtime checksum didn't match python.org."));
+            return finish(new Error(`The ${label} SHA-256 checksum didn't match the pinned manifest.`));
+          }
+          if (gitSha1 && actualGitSha1?.toLowerCase() !== gitSha1.toLowerCase()) {
+            return finish(new Error(`The ${label} Git blob checksum didn't match the pinned revision.`));
           }
           finish();
         });
         res.pipe(output);
       });
       activeRequest = req;
-      req.on("timeout", () => req.destroy(new Error("The Python download timed out.")));
+      req.on("timeout", () => req.destroy(new Error(`The ${label} download timed out.`)));
       req.on("error", finish);
     };
 
@@ -237,6 +349,7 @@ function createKokoroManager({
   userDataDir,
   getFreePort,
   spawnProcess = spawn,
+  prepareVoiceAssets: prepareVoiceAssetsOverride,
 }) {
   if (!shouldManageLocalVoice({ enabled, platform, arch, env })) return null;
   if (typeof getFreePort !== "function") throw new Error("The local voice manager needs a loopback port allocator.");
@@ -255,6 +368,10 @@ function createKokoroManager({
   const logFile = path.join(runtimeDir, "kokoro.log");
   const cacheDir = path.join(runtimeDir, "cache");
   const profilesDir = path.join(runtimeDir, "profiles");
+  const mossSourceDir = path.join(runtimeDir, "moss-source");
+  const mossSourceMarker = path.join(runtimeDir, "moss-source-ready.json");
+  const mossModelDir = path.join(runtimeDir, "models");
+  const cpuThreads = defaultCpuThreads();
 
   let activeProcess = null;
   let serviceProcess = null;
@@ -267,7 +384,7 @@ function createKokoroManager({
   let setupLogOffset = 0;
   let runtime = null;
   let reusedProcessId = null;
-  let state = { phase: "checking", message: "Soundwave is preparing the on-device Kokoro voice in the background." };
+  let state = { phase: "checking", message: "Soundwave is preparing the on-device narration and voice-cloning engines in the background." };
 
   function writeState(phase, message, progress, progressLabel) {
     if (cancelled && phase !== "cancelling" && phase !== "cancelled") return;
@@ -293,7 +410,7 @@ function createKokoroManager({
           /* preserve the in-memory state and report below */
         }
       }
-      console.warn("[soundwave-desktop] could not save Kokoro setup status:", error.message);
+      console.warn("[soundwave-desktop] could not save local voice setup status:", error.message);
     }
   }
 
@@ -319,7 +436,7 @@ function createKokoroManager({
 
   function runCommand(executable, args, { cwd, env: commandEnv, timeoutMs = COMMAND_TIMEOUT_MS, successCodes = [0] } = {}) {
     return new Promise((resolve, reject) => {
-      if (stopped || cancelled) return reject(new Error(stopped ? "Kokoro setup was cancelled because Soundwave is closing." : "Kokoro setup was cancelled."));
+      if (stopped || cancelled) return reject(new Error(stopped ? "Local voice setup was cancelled because Soundwave is closing." : "Local voice setup was cancelled."));
       const fd = openLogFd();
       let child;
       try {
@@ -343,7 +460,7 @@ function createKokoroManager({
         clearTimeout(timer);
         if (activeProcess === child) activeProcess = null;
         if (error) reject(error);
-        else if (!successCodes.includes(code)) reject(new Error(`${path.basename(executable)} exited with code ${code ?? "unknown"}. See the Kokoro log in Soundwave's user-data folder.`));
+        else if (!successCodes.includes(code)) reject(new Error(`${path.basename(executable)} exited with code ${code ?? "unknown"}. See the local voice setup log in Soundwave's user-data folder.`));
         else resolve(code);
       };
       const timer = setTimeout(() => {
@@ -352,12 +469,114 @@ function createKokoroManager({
         } catch {
           /* already exited */
         }
-        finish(new Error(`${path.basename(executable)} timed out during Kokoro setup.`));
+        finish(new Error(`${path.basename(executable)} timed out during local voice setup.`));
       }, timeoutMs);
       timer.unref?.();
       child.once("error", (error) => finish(error));
       child.once("exit", (code) => finish(null, code));
     });
+  }
+
+  function mossSourceVerified() {
+    return MOSS_SOURCE_FILES.every((item) => pinnedFileValid(path.join(mossSourceDir, ...item.path.split("/")), item));
+  }
+
+  async function ensureMossSource() {
+    if (mossSourceVerified()) {
+      if (readJson(mossSourceMarker)?.revision !== MOSS_SOURCE_REVISION) {
+        atomicWriteJson(mossSourceMarker, { revision: MOSS_SOURCE_REVISION, verifiedAt: new Date().toISOString() });
+      }
+      return;
+    }
+
+    assertFreeSpace(runtimeDir, MIN_MOSS_SETUP_FREE_BYTES, "the MOSS-TTS-Nano runtime and model assets");
+    writeState("loading-model", "Downloading the pinned MOSS-TTS-Nano CPU runtime.", 0, "MOSS runtime source");
+    const archive = path.join(cacheDir, `MOSS-TTS-Nano-${MOSS_SOURCE_REVISION}.zip`);
+    fs.rmSync(archive, { force: true });
+    await downloadHttps(MOSS_SOURCE_ARCHIVE_URL, archive, {
+      maxBytes: MOSS_SOURCE_MAX_BYTES,
+      label: "MOSS runtime source",
+      signal: setupAbortController.signal,
+      onProgress: (received, total) => {
+        const progress = total > 0 ? Math.round((received / total) * 100) : undefined;
+        writeState(
+          "loading-model",
+          "Downloading the pinned MOSS-TTS-Nano CPU runtime.",
+          progress,
+          progress === undefined ? "MOSS runtime source" : `MOSS runtime source (${progress}%)`,
+        );
+      },
+    });
+    if (stopped || cancelled) throw new Error("Local voice setup was cancelled.");
+    writeState("loading-model", "Verifying and extracting the pinned MOSS runtime source.", undefined, "MOSS runtime source");
+    fs.rmSync(mossSourceDir, { recursive: true, force: true });
+    await runCommand(pythonExe, ["-c", MOSS_EXTRACTOR, archive, mossSourceDir], {
+      cwd: runtimeDir,
+      env: managedPythonEnv(),
+      timeoutMs: 60_000,
+    });
+    fs.rmSync(archive, { force: true });
+    if (!mossSourceVerified()) throw new Error("The downloaded MOSS runtime source didn't match its pinned Git revision.");
+    atomicWriteJson(mossSourceMarker, { revision: MOSS_SOURCE_REVISION, verifiedAt: new Date().toISOString() });
+  }
+
+  async function ensureMossModelAssets() {
+    const allVerified = MOSS_MODEL_FILES.every((item) => pinnedFileValid(path.join(mossModelDir, item.model, item.path), item));
+    if (allVerified) return;
+
+    assertFreeSpace(runtimeDir, MIN_MOSS_SETUP_FREE_BYTES, "the 727 MiB MOSS-TTS-Nano ONNX model");
+    fs.mkdirSync(mossModelDir, { recursive: true });
+    let completedBytes = 0;
+    const reportProgress = (received, total, item) => {
+      const progress = Math.round((received / Math.max(1, total)) * 100);
+      writeState(
+        "loading-model",
+        `Downloading MOSS-TTS-Nano CPU clone assets (${formatMiB(received)} of ${formatMiB(total)}).`,
+        progress,
+        `MOSS model (${formatMiB(received)} / ${formatMiB(total)})`,
+      );
+    };
+
+    for (const item of MOSS_MODEL_FILES) {
+      if (stopped || cancelled) throw new Error("Local voice setup was cancelled.");
+      const destination = path.join(mossModelDir, item.model, item.path);
+      if (pinnedFileValid(destination, item)) {
+        completedBytes += item.size;
+        reportProgress(completedBytes, MOSS_MODEL_DOWNLOAD_BYTES, item);
+        continue;
+      }
+      fs.rmSync(destination, { force: true });
+      const encodedPath = item.path.split("/").map(encodeURIComponent).join("/");
+      const url = `https://huggingface.co/${item.repo}/resolve/${item.revision}/${encodedPath}`;
+      const assetBase = completedBytes;
+      await downloadHttps(url, destination, {
+        sha256: item.sha256,
+        gitSha1: item.gitSha1,
+        expectedBytes: item.size,
+        maxBytes: item.size,
+        label: "MOSS model asset",
+        signal: setupAbortController.signal,
+        onProgress: (received) => reportProgress(assetBase + received, MOSS_MODEL_DOWNLOAD_BYTES, item),
+      });
+      if (!pinnedFileValid(destination, item)) throw new Error(`MOSS model asset ${item.path} failed its pinned integrity check.`);
+      completedBytes += item.size;
+      reportProgress(completedBytes, MOSS_MODEL_DOWNLOAD_BYTES, item);
+    }
+  }
+
+  async function ensureVoiceAssets() {
+    if (typeof prepareVoiceAssetsOverride === "function") {
+      await prepareVoiceAssetsOverride({
+        signal: setupAbortController.signal,
+        reportProgress: (received, total, label = "MOSS model") => {
+          const progress = total > 0 ? Math.round((received / total) * 100) : undefined;
+          writeState("loading-model", `Preparing ${label}.`, progress, label);
+        },
+      });
+      return;
+    }
+    await ensureMossSource();
+    await ensureMossModelAssets();
   }
 
   function pythonInstallerVerified() {
@@ -382,29 +601,30 @@ function createKokoroManager({
 
   async function ensurePython() {
     if (await pythonInstallerValid()) return;
-    if (stopped || cancelled) throw new Error("Kokoro setup was cancelled.");
-    writeState("installing-python", "Installing the private Python runtime for Kokoro in the background.", undefined, "Python runtime");
+    if (stopped || cancelled) throw new Error("Local voice setup was cancelled.");
+    writeState("installing-python", "Installing the private Python runtime for local voice in the background.", undefined, "Python runtime");
     fs.rmSync(pythonHome, { recursive: true, force: true });
     fs.mkdirSync(runtimeDir, { recursive: true });
     if (!pythonInstallerVerified()) {
       assertFreeSpace(runtimeDir, MIN_PYTHON_SETUP_FREE_BYTES, "the Python runtime");
       fs.rmSync(pythonInstaller, { force: true });
-      writeState("installing-python", "Downloading the signed Python runtime for Kokoro.", 0, "Python runtime download");
+      writeState("installing-python", "Downloading the signed Python runtime for local voice.", 0, "Python runtime download");
       let lastProgress = -1;
       await downloadHttps(PYTHON_INSTALLER_URL, pythonInstaller, {
         sha256: PYTHON_INSTALLER_SHA256,
         maxBytes: MAX_PYTHON_INSTALLER_BYTES,
+        label: "Python runtime",
         signal: setupAbortController.signal,
         onProgress: (received, total) => {
           const progress = total > 0 ? Math.round((received / total) * 100) : undefined;
           if (progress !== undefined && progress !== lastProgress) {
             lastProgress = progress;
-            writeState("installing-python", "Downloading the signed Python runtime for Kokoro.", progress, "Python runtime download");
+            writeState("installing-python", "Downloading the signed Python runtime for local voice.", progress, "Python runtime download");
           }
         },
       });
     }
-    writeState("installing-python", "Installing the private Python runtime for Kokoro.", undefined, "Installing Python runtime");
+    writeState("installing-python", "Installing the private Python runtime for local voice.", undefined, "Installing Python runtime");
     await runCommand(
       pythonInstaller,
       [
@@ -436,7 +656,7 @@ function createKokoroManager({
         await runCommand(venvPython, ["-m", "pip", "check"], { cwd: resourcesDir, env: managedPythonEnv(), timeoutMs: 60_000 });
         await runCommand(
           venvPython,
-          ["-c", "import fastapi, huggingface_hub, misaki, numpy, spacy, torch, transformers, uvicorn; from kokoro.model import KModel; print('Kokoro runtime verified')"],
+          ["-c", "import fastapi, huggingface_hub, misaki, numpy, onnxruntime, sentencepiece, spacy, torch, torchaudio, transformers, uvicorn; from kokoro.model import KModel; assert torch.__version__.split('+')[0] == '2.7.0'; assert torchaudio.__version__.split('+')[0] == '2.7.0'; print('Kokoro + MOSS CPU runtime verified')"],
           { cwd: resourcesDir, env: managedPythonEnv(), timeoutMs: 60_000 },
         );
         return;
@@ -445,8 +665,8 @@ function createKokoroManager({
       }
     }
 
-    assertFreeSpace(runtimeDir, MIN_PACKAGE_SETUP_FREE_BYTES, "Kokoro's speech engine and Python packages");
-    writeState("installing-packages", "Preparing Kokoro's private Python package environment.", undefined, "Isolated Python environment");
+    assertFreeSpace(runtimeDir, MIN_PACKAGE_SETUP_FREE_BYTES, "Kokoro narration, MOSS cloning, and their Python packages");
+    writeState("installing-packages", "Preparing Soundwave's private on-device voice environment.", undefined, "Isolated Python environment");
     fs.mkdirSync(runtimeDir, { recursive: true });
     const pipEnv = managedPythonEnv({ PIP_CACHE_DIR: path.join(cacheDir, "pip"), PIP_DISABLE_PIP_VERSION_CHECK: "1" });
     if (!fs.existsSync(venvPython)) {
@@ -457,15 +677,20 @@ function createKokoroManager({
     let completedPackageSteps = 0;
     const runPackageStep = async (label, executable, args, options = {}) => {
       const progress = Math.round((completedPackageSteps / packageSteps) * 100);
-      writeState("installing-packages", `Installing ${label} for Kokoro.`, progress, `${label} (${completedPackageSteps + 1}/${packageSteps})`);
+      writeState("installing-packages", `Installing ${label} for the local voice service.`, progress, `${label} (${completedPackageSteps + 1}/${packageSteps})`);
       await runCommand(executable, args, options);
       completedPackageSteps++;
     };
     await runPackageStep("the package installer", venvPython, [...common, "--upgrade", "pip"], { cwd: resourcesDir, env: pipEnv });
     // CPU-only PyTorch: works on ordinary Windows PCs without CUDA or an
     // NVIDIA card and avoids pulling the multi-gigabyte CUDA runtime.
-    await runPackageStep("CPU PyTorch", venvPython, [...common, "torch", "--index-url", TORCH_CPU_INDEX], { cwd: resourcesDir, env: pipEnv });
-    await runPackageStep("Kokoro dependencies", venvPython, [...common, "-r", path.join(resourcesDir, "requirements-kokoro.txt")], { cwd: resourcesDir, env: pipEnv });
+    await runPackageStep(
+      "CPU PyTorch and Torchaudio",
+      venvPython,
+      [...common, `torch==${TORCH_VERSION}`, `torchaudio==${TORCH_VERSION}`, "--index-url", TORCH_CPU_INDEX],
+      { cwd: resourcesDir, env: pipEnv },
+    );
+    await runPackageStep("Local voice dependencies", venvPython, [...common, "-r", path.join(resourcesDir, "requirements-kokoro.txt")], { cwd: resourcesDir, env: pipEnv });
     // Installing the package without its optional [en] extra is deliberate:
     // that extra brings GPL phonemizer/espeak-ng, which Soundwave never uses.
     await runPackageStep("Kokoro's speech engine", venvPython, [...common, "--no-deps", "kokoro"], { cwd: resourcesDir, env: pipEnv });
@@ -475,12 +700,12 @@ function createKokoroManager({
       venvPython,
       [
         "-c",
-        "import sys, fastapi, huggingface_hub, misaki, numpy, spacy, torch, transformers, uvicorn; from kokoro.model import KModel; forbidden={'phonemizer','espeakng_loader','misaki.espeak'} & set(sys.modules); assert not forbidden, forbidden; print('Kokoro runtime verified')",
+        "import sys, fastapi, huggingface_hub, misaki, numpy, onnxruntime, sentencepiece, spacy, torch, torchaudio, transformers, uvicorn; from kokoro.model import KModel; forbidden={'phonemizer','espeakng_loader','misaki.espeak'} & set(sys.modules); assert not forbidden, forbidden; assert torch.__version__.split('+')[0] == '2.7.0'; assert torchaudio.__version__.split('+')[0] == '2.7.0'; print('Kokoro + MOSS CPU runtime verified')",
       ],
       { cwd: resourcesDir, env: pipEnv, timeoutMs: 2 * 60_000 },
     );
     atomicWriteJson(installMarker, { revision: SETUP_REVISION, python: PYTHON_VERSION, installedAt: new Date().toISOString() });
-    writeState("installing-packages", "Kokoro's offline speech engine and pronunciation data are ready.", 100, "Python packages");
+    writeState("installing-packages", "The on-device narration and cloning packages are ready.", 100, "Python packages");
   }
 
   function readLogSince(offset = 0) {
@@ -506,6 +731,12 @@ function createKokoroManager({
     const serviceEnv = managedPythonEnv({
       CHATTERBOX_OFF: "1",
       CHATTERBOX_MOCK: "0",
+      MOSS_OFF: "0",
+      MOSS_PRELOAD: "1",
+      MOSS_SOURCE_DIR: mossSourceDir,
+      MOSS_MODEL_DIR: mossModelDir,
+      MOSS_CPU_THREADS: String(cpuThreads),
+      LOCAL_TTS_CPU_THREADS: String(cpuThreads),
       KOKORO_OFF: "0",
       KOKORO_PRELOAD: "1",
       VOICECLONE_HOST: "127.0.0.1",
@@ -556,7 +787,7 @@ function createKokoroManager({
   async function waitForService(child) {
     const deadline = Date.now() + SERVICE_START_TIMEOUT_MS;
     while (!stopped && !cancelled && Date.now() < deadline) {
-      if (serviceExitError || child.exitCode !== null || child.signalCode !== null) throw serviceExitError ?? new Error("Kokoro exited before it became ready.");
+      if (serviceExitError || child.exitCode !== null || child.signalCode !== null) throw serviceExitError ?? new Error("The local voice service exited before it became ready.");
       const progress = readJson(setupProgressFile);
       if (progress?.phase === "loading-model" && typeof progress.message === "string") {
         writeState(
@@ -567,41 +798,49 @@ function createKokoroManager({
         );
       }
       const health = await fetchJson(`${runtime.url}/health`, runtime.token, 2_000, setupAbortController.signal);
-      if (cancelled) throw new Error("Kokoro setup was cancelled.");
-      if (serviceExitError || child.exitCode !== null || child.signalCode !== null) throw serviceExitError ?? new Error("Kokoro exited before it became ready.");
-      if (health?.ok === true && health?.engines?.kokoro?.enabled === true && health?.engines?.kokoro?.loaded === true) return;
+      if (cancelled) throw new Error("Local voice setup was cancelled.");
+      if (serviceExitError || child.exitCode !== null || child.signalCode !== null) throw serviceExitError ?? new Error("The local voice service exited before it became ready.");
+      if (
+        health?.ok === true &&
+        health?.engines?.kokoro?.enabled === true &&
+        health?.engines?.kokoro?.loaded === true &&
+        health?.engines?.moss?.enabled === true &&
+        health?.engines?.moss?.loaded === true
+      ) return;
       await delay(1_000);
     }
     if (stopped) throw new Error("Soundwave is closing.");
-    if (cancelled) throw new Error("Kokoro setup was cancelled.");
-    throw new Error("Kokoro did not finish loading before the startup timeout.");
+    if (cancelled) throw new Error("Local voice setup was cancelled.");
+    throw new Error("The local voice engines did not finish loading before the startup timeout.");
   }
 
   async function runSetupAttempt() {
     if (runtime?.alreadyRunning) {
-      writeState("ready", "On-device Kokoro is ready.");
+      writeState("ready", "On-device narration and voice cloning are ready.");
       return;
     }
     if (stopped || cancelled) return;
     setupStarted = true;
     try {
-      writeState("checking", "Soundwave is preparing the on-device Kokoro voice in the background.");
-      for (const file of ["server.py", "kokoro_engine.py", "requirements-kokoro.txt"]) {
-        if (!fs.existsSync(path.join(resourcesDir, file))) throw new Error(`The packaged Kokoro component is missing ${file}.`);
+      writeState("checking", "Soundwave is preparing its on-device narration and voice-cloning engines in the background.");
+      for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) {
+        if (!fs.existsSync(path.join(resourcesDir, file))) throw new Error(`The packaged local voice component is missing ${file}.`);
       }
       await ensureEnvironment();
       if (stopped || cancelled) return;
-      writeState("loading-model", "Downloading and warming the Kokoro voice model in the background. This happens only once.");
+      await ensureVoiceAssets();
+      if (stopped || cancelled) return;
+      writeState("loading-model", "Loading Kokoro narration and the CPU voice-cloning model.", undefined, "Loading local voice engines");
       const child = launchService();
       await waitForService(child);
       if (!stopped && !cancelled) {
         atomicWriteJson(assetsMarker, { revision: RUNTIME_REVISION, readyAt: new Date().toISOString() });
-        writeState("ready", "On-device Kokoro is ready.");
+        writeState("ready", "On-device narration and voice cloning are ready.");
       }
     } catch (error) {
       if (stopped) return;
       if (cancelled) {
-        writeState("cancelled", "Kokoro setup was cancelled. Soundwave voices are unaffected; choose Retry to continue later.");
+        writeState("cancelled", "Local voice setup was cancelled. Soundwave voices are unaffected; choose Retry to continue later.");
         try {
           if (!pythonInstallerVerified()) fs.rmSync(pythonInstaller, { force: true });
         } catch {
@@ -618,7 +857,7 @@ function createKokoroManager({
         fs.rmSync(runtimeFile, { force: true });
         return;
       }
-      console.error("[soundwave-desktop] Kokoro setup failed:", error.message);
+      console.error("[soundwave-desktop] local voice setup failed:", error.message);
       fs.rmSync(assetsMarker, { force: true });
       writeState("failed", describeSetupFailure(error, readLogSince(setupLogOffset)));
       if (serviceProcess) {
@@ -669,7 +908,7 @@ function createKokoroManager({
     cancelled = false;
     setupStarted = false;
     setupAbortController = new AbortController();
-    writeState("checking", "Repairing Kokoro setup. Verified runtime, packages, and downloads will be reused.");
+    writeState("checking", "Repairing local voice setup. Verified runtime, packages, and model assets will be reused.");
     void start();
     return true;
   }
@@ -686,7 +925,7 @@ function createKokoroManager({
     cancelled = true;
     writeState(
       setupStarted ? "cancelling" : "cancelled",
-      setupStarted ? "Cancelling Kokoro setup…" : "Kokoro setup was cancelled.",
+      setupStarted ? "Cancelling local voice setup…" : "Local voice setup was cancelled.",
     );
     setupAbortController.abort();
     for (const child of [activeProcess, serviceProcess]) {
@@ -774,7 +1013,7 @@ async function createManagedKokoro(options) {
       } catch {
         /* the running service remains usable; the next launch can verify online */
       }
-      manager.writeState("ready", "On-device Kokoro is ready.");
+      manager.writeState("ready", "On-device narration and voice cloning are ready.");
       return manager;
     }
   }
@@ -784,7 +1023,7 @@ async function createManagedKokoro(options) {
   runtime.url = `http://127.0.0.1:${port}`;
   atomicWriteJson(runtimeFile, runtime);
   manager.configure(runtime);
-  manager.writeState("checking", "Soundwave is preparing the on-device Kokoro voice in the background.");
+  manager.writeState("checking", "Soundwave is preparing the on-device narration and voice-cloning engines in the background.");
   return manager;
 }
 

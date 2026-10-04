@@ -45,6 +45,7 @@ describe.skipIf(!hasFfmpeg)("Multi-Engine Voice Cloning", () => {
       filename: "ref_sample.wav",
       mimeType: "audio/wav",
       refText: "Testing voice clone reference.",
+      consentConfirmedAt: new Date().toISOString(),
     });
 
     expect(profile.id).toBeDefined();

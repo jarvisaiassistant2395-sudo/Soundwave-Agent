@@ -1,8 +1,10 @@
-# Minimal packages for the desktop-managed, Kokoro-only service.
-# The desktop starts it with CHATTERBOX_OFF=1 and KOKORO_PRELOAD=1.
-# Keep Chatterbox and its model out of the user's first-run download.
-# Kokoro itself is installed separately with --no-deps: its [en] extra pulls
-# GPL phonemizer/espeak-ng, which Soundwave deliberately does not use.
+# Minimal packages for the desktop-managed local-voice service:
+# Kokoro narration + MOSS-TTS-Nano ONNX voice cloning. Chatterbox is not
+# downloaded by the packaged first-run setup. MOSS runtime source and ONNX
+# weights are fetched separately from pinned upstream revisions.
+# CPU PyTorch 2.7.0 and matching Torchaudio are installed first by the desktop
+# manager. Kokoro itself is installed separately with --no-deps: its [en] extra
+# pulls GPL phonemizer/espeak-ng, which Soundwave deliberately does not use.
 fastapi
 huggingface-hub
 misaki
@@ -10,5 +12,7 @@ numpy
 num2words
 python-multipart
 spacy
-transformers
+transformers==4.57.1
+onnxruntime>=1.20.0,<2
+sentencepiece>=0.1.99,<1
 uvicorn

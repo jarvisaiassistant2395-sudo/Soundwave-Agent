@@ -93,11 +93,6 @@
       "phrase": "Right now the user's PC is off or out of reach, so you are answering from the Soundwave phone app on your own."
     },
     {
-      "label": "what the agent knows the app can really do (promo brief)",
-      "file": "server/src/lib/brain/core/promo.ts",
-      "phrase": "Never invent users, testimonials, download numbers, ratings or growth."
-    },
-    {
       "label": "the short-script shape's own words",
       "file": "server/src/lib/brain/core/viral.ts",
       "phrase": "Every line is long. Add two short punch lines (under eight words) to break the rhythm"

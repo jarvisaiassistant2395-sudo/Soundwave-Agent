@@ -38,13 +38,14 @@ extraResources:
     filter:
       - "**/*"
   # Ship only Soundwave's voice-service source, not Python, wheels, or model
-  # weights. The packaged desktop provisions a CPU-only Kokoro environment in
-  # user data on first run, then supervises it invisibly in the background.
+  # weights. The packaged desktop provisions CPU-only Kokoro + MOSS runtime
+  # assets in user data on first run, then supervises the service invisibly.
   - from: ../voiceclone
     to: voiceclone
     filter:
       - server.py
       - kokoro_engine.py
+      - moss_engine.py
       - requirements-kokoro.txt
 
 win:

@@ -70,9 +70,11 @@ export interface SoundwaveDesktop {
   readonly isDesktop: true;
   getState(): Promise<DesktopState>;
   updateSettings(patch: Partial<DesktopSettings>): Promise<DesktopState>;
-  /** Stop the first-run Kokoro download/install without affecting Soundwave voices. */
+  /** Start the managed local narration/cloning setup on first use. */
+  startLocalVoiceSetup(): Promise<boolean>;
+  /** Stop the first-use local voice download/install without affecting cloud voices. */
   cancelKokoroSetup(): Promise<boolean>;
-  /** Retry or repair Kokoro setup in this session, reusing verified downloads. */
+  /** Retry or repair local voice setup in this session, reusing verified downloads. */
   retryKokoroSetup(): Promise<boolean>;
   /** The main window is visible and focused. */
   isAppFocused(): Promise<boolean>;

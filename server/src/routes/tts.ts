@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
@@ -18,10 +19,10 @@ import {
   deleteCloneProfile,
   listCloneProfiles,
   getProfileSamplePath,
-  probeVoiceClone,
+  getVoiceCloneStatus,
   sniffAudio,
   synthesizeClone,
-  voiceCloneConfigured,
+  validateCloneReference,
 } from "../lib/voiceclone.js";
 
 const router = Router();
@@ -138,7 +139,7 @@ router.post("/synthesize", requireAuth, usageLimiter, validate({ body: synthesiz
   }
 });
 
-// ── Voice cloning (Chatterbox sidecar) ──────────────────────────────────────
+// ── Voice cloning (managed MOSS / optional Chatterbox sidecar) ──────────────
 // Cloned voices are owned per-user by THIS API (reference clips stored under
 // <dataDir>/voice-clips/<userId>/); the sidecar itself stays stateless so it
 // can run on ephemeral free hosting. Everything degrades gracefully when
@@ -157,8 +158,7 @@ function assertClonePlan(user: { plan: Plan }): void {
 
 router.get("/clone/status", requireAuth, async (_req, res, next) => {
   try {
-    const configured = voiceCloneConfigured();
-    res.json({ configured, available: configured ? await probeVoiceClone() : false });
+    res.json(await getVoiceCloneStatus());
   } catch (e) {
     next(e);
   }
@@ -177,7 +177,16 @@ router.get("/clone/profiles/:id/sample", optionalAuth, async (req, res, next) =>
   try {
     const userId = req.user?.id || "local-user";
     const samplePath = await getProfileSamplePath(userId, req.params.id ?? "");
-    res.setHeader("Content-Type", samplePath.endsWith(".mp3") ? "audio/mpeg" : "audio/wav");
+    const contentType: Record<string, string> = {
+      ".flac": "audio/flac",
+      ".m4a": "audio/mp4",
+      ".mp3": "audio/mpeg",
+      ".ogg": "audio/ogg",
+      ".wav": "audio/wav",
+      ".webm": "audio/webm",
+    };
+    res.setHeader("Content-Type", contentType[path.extname(samplePath).toLowerCase()] ?? "application/octet-stream");
+    res.setHeader("Cache-Control", "private, no-store");
     fs.createReadStream(samplePath).pipe(res);
   } catch (e) {
     next(e);
@@ -189,26 +198,37 @@ const refUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 const createProfileSchema = z.object({
   name: z.string().min(1).max(80),
   refText: z.string().max(2000).optional(),
-  // "true" when the user confirmed they have rights to clone the voice.
   consent: z.string().optional(),
 });
 
 router.post("/clone/profiles", requireAuth, uploadLimiter, refUpload.single("file"), async (req, res, next) => {
   try {
-    assertConfigured();
-    assertClonePlan(req.user!);
-    if (!req.file) throw new ApiError(400, "NO_FILE", "Attach a reference audio clip (3–10s of clean speech).");
     const parsed = createProfileSchema.safeParse(req.body);
     if (!parsed.success) throw new ApiError(400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid profile data.");
+    if (parsed.data.consent !== "true") {
+      throw new ApiError(400, "CLONE_CONSENT_REQUIRED", "Confirm that you own this voice or have the speaker's explicit permission before creating a clone.");
+    }
+    assertConfigured();
+    assertClonePlan(req.user!);
+    const cloneStatus = await getVoiceCloneStatus();
+    if (!cloneStatus.available) {
+      throw new ApiError(503, "VOICECLONE_UNAVAILABLE", cloneStatus.reason ?? "The voice-cloning model is not ready on this PC.");
+    }
+    if (!req.file) throw new ApiError(400, "NO_FILE", "Attach at least 3 seconds of clean reference speech. MOSS accepts 3–10 seconds; Chatterbox accepts 3–60 seconds.");
     if (!sniffAudio(req.file.buffer)) {
       throw new ApiError(400, "INVALID_FILE", "The reference clip must be a WAV, MP3, FLAC, OGG, M4A, or WEBM audio file.");
     }
+    const filename = req.file.originalname || "reference.wav";
+    const mimeType = req.file.mimetype || "audio/wav";
+    const reference = await validateCloneReference({ audio: req.file.buffer, filename, mimeType });
     const profile = await createCloneProfile(req.user!.id, {
       name: parsed.data.name.trim(),
       audio: req.file.buffer,
-      filename: req.file.originalname || "reference.wav",
-      mimeType: req.file.mimetype || "audio/wav",
+      filename,
+      mimeType,
       refText: parsed.data.refText,
+      consentConfirmedAt: new Date().toISOString(),
+      engine: reference.engine,
     });
     res.status(201).json({ profile });
   } catch (e) {

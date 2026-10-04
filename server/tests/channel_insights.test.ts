@@ -39,7 +39,7 @@ const TWO_CHANNELS: FakeGoogle["accounts"] = [
   {
     refreshToken: "1//demos-refresh",
     id: "UCdemos",
-    title: "Soundwave Demos",
+    title: "Second Channel",
     subscribers: "77",
     views: "1500",
     videos: "6",
@@ -80,7 +80,7 @@ beforeEach(() => {
 const connectBoth = () => {
   fake.accounts = TWO_CHANNELS.map((a) => ({ ...a, uploads: a.uploads.map((u) => ({ ...u })) }));
   channels.registerChannel({ refreshToken: TWO_CHANNELS[0]!.refreshToken, channelTitle: "Orbit Facts" });
-  channels.registerChannel({ refreshToken: TWO_CHANNELS[1]!.refreshToken, channelTitle: "Soundwave Demos" });
+  channels.registerChannel({ refreshToken: TWO_CHANNELS[1]!.refreshToken, channelTitle: "Second Channel" });
 };
 
 const viewsTool = AGENT_TOOLS.find((t) => t.declaration.name === "youtube_views")!;
@@ -99,7 +99,7 @@ describe("reading the numbers", () => {
     connectBoth();
     const result = await channelInsights({ recent: 5 });
     expect(result.errors).toEqual([]);
-    expect(result.channels.map((c) => c.channelTitle)).toEqual(["Orbit Facts", "Soundwave Demos"]);
+    expect(result.channels.map((c) => c.channelTitle)).toEqual(["Orbit Facts", "Second Channel"]);
     const orbit = result.channels[0]!;
     expect(orbit.views).toBe(98_765);
     expect(orbit.subscribers).toBe(1234);
@@ -141,7 +141,7 @@ describe("reading the numbers", () => {
     const result = await channelInsights({});
     expect(result.channels.map((c) => c.channelTitle)).toEqual(["Orbit Facts"]);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatch(/Soundwave Demos/);
+    expect(result.errors[0]).toMatch(/Second Channel/);
     expect(result.errors[0]).toMatch(/reconnect/i);
   });
 
@@ -170,18 +170,18 @@ describe("the agent's youtube_views tool", () => {
     expect(out.ok).toBe(true);
     expect(out.report).toMatch(/Channel “Orbit Facts”: 98,765 total views/);
     expect(out.report).toMatch(/“Black holes in 60 seconds” — 4,321 views \(posted 2 days ago\)/);
-    expect(out.report).toMatch(/Soundwave Demos/);
+    expect(out.report).toMatch(/Second Channel/);
     expect(out.report).toMatch(/All connected channels together: 100,265 views/);
     expect(out.summary).toMatch(/2 channels has 100,265 views in total|has 100,265 views in total/);
-    expect(out.channels.map((c) => c.channelTitle)).toEqual(["Orbit Facts", "Soundwave Demos"]);
+    expect(out.channels.map((c) => c.channelTitle)).toEqual(["Orbit Facts", "Second Channel"]);
     expect(out.channels[0]!.latest[0]).toMatchObject({ title: "Black holes in 60 seconds", views: 4321 });
   });
 
   it("can report one channel only", async () => {
     connectBoth();
-    const out = (await viewsTool.run({ channel: "Soundwave Demos", videos: 1 }, toolCtx())) as { report: string; channels: unknown[] };
+    const out = (await viewsTool.run({ channel: "Second Channel", videos: 1 }, toolCtx())) as { report: string; channels: unknown[] };
     expect(out.channels).toHaveLength(1);
-    expect(out.report).toMatch(/Soundwave Demos/);
+    expect(out.report).toMatch(/Second Channel/);
     expect(out.report).not.toMatch(/Orbit Facts/);
   });
 

@@ -43,7 +43,7 @@ describe("the local page reader sidecar", () => {
     const notices = fs.readFileSync(path.join(repoRoot, "THIRD-PARTY-NOTICES.txt"), "utf8");
     const scraplingNotice = notices.split("• Scrapling — BSD-3-Clause")[1]?.split("\n• ")[0] ?? "";
     expect(scraplingNotice).toMatch(/NOT INCLUDED IN THE DESKTOP INSTALLER/);
-    expect(scraplingNotice).toMatch(/optional cloning and page-reader packages are installed separately/);
+    expect(scraplingNotice).toMatch(/optional Chatterbox and page-reader packages remain separate manual installs/);
   });
 
   it.skipIf(!python)("passes its own address, cap and refusal checks", () => {

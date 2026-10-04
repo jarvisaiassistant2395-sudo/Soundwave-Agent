@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Mic, Play, Square, Sparkles, Volume2 } from "lucide-react";
 import { Navbar } from "../components/layout/Navbar";
 import { KokoroSetupNotice } from "../components/KokoroSetupNotice";
+import { VoiceClonePanel } from "../components/VoiceClonePanel";
 import { Badge } from "../components/ui/Badge";
 import { IconButton } from "../components/ui/IconButton";
 import { DEFAULT_VOICES, displayNameFor, loadAgentVoice, saveAgentVoice, SAMPLE_SENTENCE } from "../lib/voices";
@@ -32,7 +33,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
     canRetrySetup,
     retryingSetup,
     retrySetup,
-  } = useLocalVoices();
+  } = useLocalVoices({ startOnFirstUse: true });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -120,6 +121,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
             retryingSetup={retryingSetup}
             retrySetup={retrySetup}
           />
+          <VoiceClonePanel />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-800 pb-4">
             <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
               {filtered.length} voices

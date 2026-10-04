@@ -118,6 +118,7 @@ export const config = {
   // YouTube: the Data API and Google's OAuth endpoints ("Connect YouTube
   // account" signs in through the browser). Tests use stand-ins.
   youtubeApiBase: str("YOUTUBE_API_BASE", "https://www.googleapis.com").replace(/\/+$/, ""),
+  gmailApiBase: str("GMAIL_API_BASE", "https://gmail.googleapis.com").replace(/\/+$/, ""),
   googleOAuthAuthUrl: str("GOOGLE_OAUTH_AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
   googleOAuthTokenUrl: str("GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
   // Local page reader (the Scrapling sidecar, ../scrapling): pages that answer a

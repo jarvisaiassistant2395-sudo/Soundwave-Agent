@@ -1,5 +1,5 @@
 // ── The on-this-PC voices, as the server reports them ───────────────────────
-// Kokoro-82M (Apache-2.0) narration voices, served by the optional local voice
+// Kokoro-82M (Apache-2.0) narration voices, served alongside MOSS cloning by the local voice
 // service. The list is never guessed here: it comes from the engine itself via
 // GET /api/v1/voices (which proxies the service), so an install without the
 // service simply shows nothing, with the server's own sentence saying why.
@@ -37,17 +37,17 @@ export const EMPTY_LOCAL_VOICES: LocalVoiceStatus = { available: false, engine: 
 
 export function localVoiceSetupLabel(setup?: LocalVoiceSetupStatus): string {
   if (!setup) return "";
-  if (setup.phase === "failed") return "Kokoro setup needs attention — choose Retry";
-  if (setup.phase === "cancelled") return "Kokoro setup was cancelled — choose Retry to continue";
-  if (setup.phase === "cancelling") return "Cancelling Kokoro setup…";
+  if (setup.phase === "failed") return "On-device voice setup needs attention — choose Retry";
+  if (setup.phase === "cancelled") return "On-device voice setup was cancelled — choose Retry to continue";
+  if (setup.phase === "cancelling") return "Cancelling on-device voice setup…";
   if (typeof setup.progress === "number") {
     const stage = setup.progressLabel ? ` · ${setup.progressLabel}` : "";
-    return `Kokoro setup — ${Math.round(setup.progress)}%${stage}`;
+    return `On-device voice setup — ${Math.round(setup.progress)}%${stage}`;
   }
-  if (setup.phase === "installing-python") return "Installing Kokoro's Python runtime…";
-  if (setup.phase === "installing-packages") return "Installing Kokoro's speech engine…";
-  if (setup.phase === "loading-model") return setup.message || "Downloading and preparing Kokoro…";
-  return "Kokoro is preparing in the background…";
+  if (setup.phase === "installing-python") return "Installing the local voice Python runtime…";
+  if (setup.phase === "installing-packages") return "Installing local voice packages and models…";
+  if (setup.phase === "loading-model") return setup.message || "Preparing on-device narration and voice cloning…";
+  return "On-device narration and voice cloning are preparing in the background…";
 }
 
 let cached: LocalVoiceStatus | null = null;
@@ -99,7 +99,7 @@ export async function fetchLocalVoices(options: { fresh?: boolean } = {}): Promi
 }
 
 /** React hook: the local voices, or an empty list while unknown/unavailable. */
-export function useLocalVoices(): {
+export function useLocalVoices(options: { startOnFirstUse?: boolean } = {}): {
   status: LocalVoiceStatus;
   loading: boolean;
   canCancelSetup: boolean;
@@ -113,6 +113,7 @@ export function useLocalVoices(): {
   const [loading, setLoading] = useState(cached === null);
   const [cancellingSetup, setCancellingSetup] = useState(false);
   const [retryingSetup, setRetryingSetup] = useState(false);
+  const startOnFirstUse = options.startOnFirstUse === true;
   useEffect(() => {
     let alive = true;
     let timer: number | undefined;
@@ -126,11 +127,19 @@ export function useLocalVoices(): {
       }
     };
     void refresh(false);
+    if (startOnFirstUse) {
+      const desktop = getDesktop();
+      if (desktop) {
+        void desktop.startLocalVoiceSetup().then((accepted) => {
+          if (alive && accepted) void refresh(true);
+        }).catch(() => undefined);
+      }
+    }
     return () => {
       alive = false;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, []);
+  }, [startOnFirstUse]);
 
   const phase = status.setup?.phase;
   const canCancelSetup = Boolean(

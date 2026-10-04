@@ -7,11 +7,11 @@ import { config, resolveFfmpegPath } from "../config.js";
 import { ApiError } from "../middleware/error.js";
 import { synthesizeEdgeTTS } from "./edgeTts.js";
 
-// ── Multi-Engine Voice Cloning Architecture ────────────────────────────────
-// Supports the Chatterbox sidecar (MIT weights — see voiceclone/README.md), the
-// ElevenLabs API, and zero-setup Acoustic Neural Cloning.
-// Cloned voices are owned per-user, stored under <dataDir>/voice-clips/<userId>/,
-// and work seamlessly across TTS Studio, Voice Library, and 1-Click Viral Shorts.
+// ── Managed local voice-cloning profiles ───────────────────────────────────
+// MOSS is the managed engine; Chatterbox remains an optional separate sidecar
+// (see voiceclone/README.md). Profiles are stored per-user under
+// <dataDir>/voice-clips/<userId>/. Legacy non-clone profiles retain their
+// historical compatibility path, but actual clone profiles fail closed.
 
 export interface CloneProfile {
   id: string;
@@ -19,7 +19,7 @@ export interface CloneProfile {
   createdAt: string;
   hasRefText: boolean;
   sampleUrl?: string;
-  engine?: "acoustic" | "chatterbox" | "elevenlabs";
+  engine?: "acoustic" | "chatterbox" | "moss" | "mock" | "elevenlabs";
 }
 
 interface ProfileMeta extends CloneProfile {
@@ -28,6 +28,8 @@ interface ProfileMeta extends CloneProfile {
   baseVoice?: string;
   pitchShift?: number;
   externalVoiceId?: string;
+  /** Timestamp recorded only after the API's explicit speaker-rights confirmation. */
+  consentConfirmedAt?: string;
 }
 
 export function voiceCloneConfigured(): boolean {
@@ -52,9 +54,9 @@ class SidecarError extends Error {
 
 /**
  * The cloning engine understood the request and refused it (HTTP 400) — a
- * refusal, not an outage. Outages fall through to the fallback voice; a refusal
- * must reach the caller with its own sentence, because answering in a different
- * voice would be a lie about what was made.
+ * refusal, not an outage. It must reach the caller with the engine's own
+ * sentence. Actual clone profiles also fail closed on outages so they can never
+ * be silently answered by a different voice.
  */
 class CloneRefused extends Error {}
 
@@ -95,19 +97,89 @@ export function assertConfigured(): void {
     throw new ApiError(
       503,
       "VOICECLONE_NOT_CONFIGURED",
-      "Voice cloning isn't enabled on this server. Set VOICECLONE_URL to a running Chatterbox sidecar (see voiceclone/README.md).",
+      "Voice cloning isn't enabled on this server. Set VOICECLONE_URL to the running local voice service (see voiceclone/README.md).",
     );
   }
 }
 
-export async function probeVoiceClone(): Promise<boolean> {
-  if (!voiceCloneConfigured()) return false;
+export interface VoiceCloneStatus {
+  configured: boolean;
+  available: boolean;
+  engine?: "moss" | "chatterbox" | "mock" | null;
+  engines?: Record<string, unknown>;
+  referenceLimitsSeconds?: Record<string, { min: number; max: number }>;
+  reason?: string;
+}
+
+export async function getVoiceCloneStatus(): Promise<VoiceCloneStatus> {
+  if (!voiceCloneConfigured()) {
+    return { configured: false, available: false };
+  }
   try {
     const res = await sidecarFetch("/health", {}, 3_000);
-    return res.ok;
-  } catch {
-    return false;
+    if (!res.ok) {
+      return { configured: true, available: false, reason: `The local voice service answered ${res.status}.` };
+    }
+    const body = (await res.json()) as {
+      clone_engine?: VoiceCloneStatus["engine"];
+      clone_ready?: boolean;
+      engines?: Record<string, unknown>;
+      reference_limits_seconds?: Record<string, { min: number; max: number }>;
+    };
+    const available = body.clone_ready === true;
+    return {
+      configured: true,
+      available,
+      engine: body.clone_engine ?? null,
+      ...(body.engines ? { engines: body.engines } : {}),
+      ...(body.reference_limits_seconds ? { referenceLimitsSeconds: body.reference_limits_seconds } : {}),
+      ...(!available ? { reason: "The service is running, but no voice-cloning model is ready." } : {}),
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      available: false,
+      reason: (err as Error)?.message ?? "The local voice service could not be reached.",
+    };
   }
+}
+
+export async function probeVoiceClone(): Promise<boolean> {
+  return (await getVoiceCloneStatus()).available;
+}
+
+export async function validateCloneReference(input: {
+  audio: Buffer;
+  filename: string;
+  mimeType: string;
+}): Promise<{ durationSeconds: number; engine: "moss" | "chatterbox" | "mock" }> {
+  if (!voiceCloneConfigured()) {
+    throw new ApiError(503, "VOICECLONE_NOT_CONFIGURED", "Voice cloning isn't configured on this server.");
+  }
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(input.audio)], { type: input.mimeType }), input.filename);
+  let res: Response;
+  try {
+    res = await sidecarFetch("/clone/validate-reference", { method: "POST", body: form }, config.voiceCloneTimeoutMs);
+  } catch (err) {
+    throw toApiError(err);
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    detail?: string;
+    valid?: boolean;
+    durationSeconds?: number;
+    engine?: "moss" | "chatterbox" | "mock";
+  };
+  if (res.status === 400) {
+    throw new ApiError(400, "INVALID_REFERENCE", body.detail ?? "The reference audio does not meet this model's requirements.");
+  }
+  if (res.status === 503) {
+    throw new ApiError(503, "VOICECLONE_UNAVAILABLE", body.detail ?? "The voice-cloning model is not ready on this PC.");
+  }
+  if (!res.ok || body.valid !== true || !Number.isFinite(body.durationSeconds) || !body.engine) {
+    throw new ApiError(502, "VOICECLONE_ERROR", body.detail ?? `The local voice service answered ${res.status} while checking the reference clip.`);
+  }
+  return { durationSeconds: body.durationSeconds!, engine: body.engine };
 }
 
 // ── Per-user profile storage (files on local disk) ──────────────────────────
@@ -155,34 +227,23 @@ export async function createCloneProfile(userId: string, input: {
   filename: string;
   mimeType: string;
   refText?: string;
+  consentConfirmedAt: string;
+  engine?: CloneProfile["engine"];
 }): Promise<CloneProfile> {
+  if (!input.consentConfirmedAt || !Number.isFinite(Date.parse(input.consentConfirmedAt))) {
+    throw new ApiError(400, "CLONE_CONSENT_REQUIRED", "Explicit voice-cloning permission confirmation is required.");
+  }
   const id = crypto.randomUUID();
   const ext = extFor(input.filename);
   await fsp.mkdir(userDir(userId), { recursive: true });
   const rawClipPath = path.join(userDir(userId), `${id}${ext}`);
   await fsp.writeFile(rawClipPath, input.audio);
 
-  // Acoustic register heuristic: detect male vs female tone from name/characteristics
+  // Retained for historical acoustic-profile compatibility only; real clone profiles use their selected local engine.
   const isMale = /male|guy|deep|man|boy|father|ryan/i.test(input.name);
   const baseVoice = isMale ? "en-US-GuyNeural" : "en-US-JennyNeural";
   const pitchShift = 0;
-  const engine = config.voiceCloneUrl ? "chatterbox" : config.elevenLabsApiKey ? "elevenlabs" : "acoustic";
-
-  // Pre-generate a 3-second sample greeting so it can be previewed immediately in Voice Library
-  const samplePath = path.join(userDir(userId), `${id}.sample.mp3`);
-  try {
-    const greeting = await synthesizeEdgeTTS({
-      text: `Hello! This is ${input.name.trim()}, cloned with Soundwave AI.`,
-      voice: baseVoice,
-      pitch: pitchShift,
-    });
-    await fsp.writeFile(samplePath, Buffer.from(greeting.audioBase64, "base64"));
-  } catch {
-    // Fallback: copy uploaded clip as sample if edge tts is unreachable
-    try {
-      await fsp.copyFile(rawClipPath, samplePath);
-    } catch {}
-  }
+  const engine = input.engine ?? (config.voiceCloneUrl ? "chatterbox" : config.elevenLabsApiKey ? "elevenlabs" : "acoustic");
 
   const meta: ProfileMeta = {
     id,
@@ -191,6 +252,7 @@ export async function createCloneProfile(userId: string, input: {
     hasRefText: Boolean(input.refText?.trim()),
     refText: input.refText?.trim() || undefined,
     ext,
+    consentConfirmedAt: input.consentConfirmedAt,
     baseVoice,
     pitchShift,
     engine,
@@ -212,11 +274,12 @@ export async function createCloneProfile(userId: string, input: {
 
 export async function getProfileSamplePath(userId: string, profileId: string): Promise<string> {
   const meta = await loadProfile(userId, profileId);
-  const samplePath = path.join(userDir(userId), `${meta.id}.sample.mp3`);
-  if (fs.existsSync(samplePath)) return samplePath;
+  // Always serve the original consented reference recording. Older versions
+  // also saved an Edge TTS greeting as `.sample.mp3`; that was not the cloned
+  // voice, so never present it as a clone preview.
   const rawPath = path.join(userDir(userId), `${meta.id}${meta.ext}`);
   if (fs.existsSync(rawPath)) return rawPath;
-  throw new ApiError(404, "NOT_FOUND", "Voice sample file not found.");
+  throw new ApiError(404, "NOT_FOUND", "Voice reference recording not found.");
 }
 
 async function loadProfile(userId: string, profileId: string): Promise<ProfileMeta> {
@@ -257,9 +320,21 @@ export async function synthesizeClone(userId: string, input: {
 }): Promise<CloneSynthResult> {
   const meta = await loadProfile(userId, input.profileId);
   const clipPath = path.join(userDir(userId), `${meta.id}${meta.ext}`);
+  const usesCloneModel = meta.engine === "moss" || meta.engine === "chatterbox" || meta.engine === "mock";
 
-  // 1. Chatterbox sidecar (if running & reachable)
-  if (config.voiceCloneUrl && (await probeVoiceClone())) {
+  if (usesCloneModel) {
+    const status = await getVoiceCloneStatus();
+    if (!status.available) {
+      throw new ApiError(503, "VOICECLONE_UNAVAILABLE", status.reason ?? "The selected cloning model is not ready.");
+    }
+    if (status.engine && meta.engine && status.engine !== meta.engine) {
+      throw new ApiError(409, "VOICECLONE_ENGINE_CHANGED", "The active cloning model changed after this profile was created. Recreate the profile with the active model before using it.");
+    }
+  }
+
+  // 1. Local cloning sidecar. For an actual cloned profile, any outage or
+  // generation error must be surfaced; never substitute Edge TTS or a sine wave.
+  if (config.voiceCloneUrl && (usesCloneModel || (await probeVoiceClone()))) {
     try {
       const clip = await fsp.readFile(clipPath);
       const fd = new FormData();
@@ -284,26 +359,42 @@ export async function synthesizeClone(userId: string, input: {
         }
         throw new CloneRefused(detail || "The voice-cloning engine refused this request.");
       }
-      if (res.ok) {
-        const wav = Buffer.from(await res.arrayBuffer());
-        const headerDuration = parseFloat(res.headers.get("x-audio-duration") ?? "0");
-        const mp3 = await wavToMp3(wav);
-        const duration = Number.isFinite(headerDuration) && headerDuration > 0 ? headerDuration : 0;
-        return {
-          audioBase64: mp3.toString("base64"),
-          mimeType: "audio/mpeg",
-          duration,
-          wordTimings: estimateWordTimings(input.text, duration),
-        };
+      if (!res.ok) {
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        let detail = "";
+        try {
+          const parsed = JSON.parse(body) as { detail?: string };
+          detail = typeof parsed?.detail === "string" ? parsed.detail : "";
+        } catch {
+          detail = body;
+        }
+        throw new ApiError(res.status >= 500 ? 503 : 502, "VOICECLONE_GENERATION_FAILED", detail || `Local cloning engine returned HTTP ${res.status}.`);
       }
+      const wav = Buffer.from(await res.arrayBuffer());
+      const headerDuration = parseFloat(res.headers.get("x-audio-duration") ?? "0");
+      const mp3 = await wavToMp3(wav);
+      const duration = Number.isFinite(headerDuration) && headerDuration > 0 ? headerDuration : 0;
+      return {
+        audioBase64: mp3.toString("base64"),
+        mimeType: "audio/mpeg",
+        duration,
+        wordTimings: estimateWordTimings(input.text, duration),
+      };
     } catch (err) {
       if (err instanceof CloneRefused) throw err;
-      // Anything else (sidecar down, unreachable, timed out, 5xx): fall through
-      // to the fallback engine, exactly as before.
+      if (usesCloneModel) {
+        if (err instanceof ApiError) throw err;
+        throw toApiError(err);
+      }
+      // Legacy non-clone profiles may still use the compatibility fallback.
     }
   }
 
-  // 2. High-Fidelity Acoustic Neural Synthesis (with graceful offline fallback)
+  if (usesCloneModel) {
+    throw new ApiError(503, "VOICECLONE_UNAVAILABLE", "The local cloning engine is not configured.");
+  }
+
+  // 2. Legacy acoustic profiles only — cloned profiles fail closed rather than changing voices.
   const baseVoice = meta.baseVoice || "en-US-JennyNeural";
   const pitch = meta.pitchShift || 0;
   try {

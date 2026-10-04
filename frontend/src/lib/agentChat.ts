@@ -34,6 +34,8 @@ export interface ChatMessage {
   sender: "user" | "assistant" | "system";
   text: string;
   actionOutput?: string;
+  /** Gmail draft ids created by the agent; every draft is initially unsent. */
+  emailDraftIds?: string[];
   time: string;
   tag?: "SYS" | "RPA" | "VOICE" | "USER" | "AUDIO";
   videoUrl?: string;
@@ -150,6 +152,7 @@ export interface ChatReply {
   jobId?: string;
   topic?: string;
   actionOutput?: string;
+  emailDraftIds?: string[];
   videoUrl?: string;
   downloadUrl?: string;
   tag?: ChatMessage["tag"];
@@ -204,6 +207,7 @@ export function replyToMessage(data: ChatReply, query: string): ChatMessage {
     sender: "assistant",
     text: data.reply || "Command executed.",
     actionOutput: data.actionOutput,
+    emailDraftIds: data.emailDraftIds?.slice(0, 6),
     videoUrl: videoLink,
     downloadUrl: videoLink,
     time: chatTime(),

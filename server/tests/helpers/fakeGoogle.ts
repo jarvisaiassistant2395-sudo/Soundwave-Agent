@@ -48,8 +48,8 @@ export interface FakeGoogle {
   }>;
   /** Refresh tokens the token endpoint refuses (a channel that needs reconnecting). */
   badRefreshTokens: string[];
-  /** Every video upload: which token started it, the title, and the bytes sent. */
-  uploads: Array<{ initAuth?: string; title?: string; bytes: number }>;
+  /** Every video upload: which token started it, metadata, and the bytes sent. */
+  uploads: Array<{ initAuth?: string; title?: string; description?: string; bytes: number }>;
   generateCalls(): Seen[];
   reset(): void;
   close(): Promise<void>;
@@ -165,8 +165,8 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     // Resumable upload, the way YouTube does it: an init call that hands back a
     // session URL, then the file PUT to that URL.
     if (seen.method === "POST" && p === "/upload/youtube/v3/videos") {
-      const meta = (seen.body ?? {}) as { snippet?: { title?: string } };
-      fake.uploads.push({ initAuth: seen.headers.authorization, title: meta.snippet?.title, bytes: 0 });
+      const meta = (seen.body ?? {}) as { snippet?: { title?: string; description?: string } };
+      fake.uploads.push({ initAuth: seen.headers.authorization, title: meta.snippet?.title, description: meta.snippet?.description, bytes: 0 });
       return { body: {}, headers: { location: `${fake.url}/upload-session/${fake.uploads.length}` } };
     }
     if (seen.method === "PUT" && p.startsWith("/upload-session/")) {

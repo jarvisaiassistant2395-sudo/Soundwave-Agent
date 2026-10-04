@@ -6,6 +6,7 @@ import fs from "node:fs";
 import { config } from "./config.js";
 import { generalLimiter, securityHeaders } from "./lib/security.js";
 import { connectPage, finishYouTubeConnect, isYouTubeCallback } from "./lib/youtubeOAuth.js";
+import { finishGmailConnect, gmailConnectPage, isGmailCallback } from "./lib/gmail.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 import authRoutes from "./routes/auth.js";
 import voiceRoutes from "./routes/voices.js";
@@ -22,6 +23,7 @@ import jarvisShortRoutes from "./routes/jarvisShort.js";
 import creatorRoutes from "./routes/creator.js";
 import ghostRoutes from "./routes/ghost.js";
 import youtubeRoutes from "./routes/youtube.js";
+import emailRoutes from "./routes/email.js";
 import { clipsRoutes } from "./routes/clips.js";
 import { watchRoutes } from "./routes/watch.js";
 import companionRoutes from "./routes/companion.js";
@@ -49,10 +51,20 @@ export function createApp() {
 
   app.use(securityHeaders);
 
-  // "Connect YouTube account": Google comes back to http://127.0.0.1:<port>/?code=…&state=…
+  // Desktop Google sign-ins come back to http://127.0.0.1:<port>/?code=…&state=… .
   app.get("/", (req, res, next) => {
-    if (!isYouTubeCallback(req.query as Record<string, unknown>)) return next();
-    finishYouTubeConnect(req.query as Record<string, unknown>)
+    const query = req.query as Record<string, unknown>;
+    if (isGmailCallback(query)) {
+      finishGmailConnect(query)
+        .then((result) => {
+          res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'");
+          res.status(result.ok ? 200 : 400).type("html").send(gmailConnectPage(result));
+        })
+        .catch(next);
+      return;
+    }
+    if (!isYouTubeCallback(query)) return next();
+    finishYouTubeConnect(query)
       .then((result) => {
         res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'");
         res.status(result.ok ? 200 : 400).type("html").send(connectPage(result));
@@ -85,6 +97,7 @@ export function createApp() {
   app.use("/api/v1/creator", creatorRoutes);
   app.use("/api/v1/ghost", ghostRoutes);
   app.use("/api/v1/youtube", youtubeRoutes);
+  app.use("/api/v1/email", emailRoutes);
   // Cutting Shorts out of a long video, started from the Command Center or the
   // agent's make_shorts_from_video tool — the same job either way.
   app.use("/api/v1/clips", clipsRoutes);

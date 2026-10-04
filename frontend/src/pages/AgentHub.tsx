@@ -23,6 +23,7 @@ import {
   Youtube, 
   ExternalLink, 
   Loader2,
+  Mail,
   Smartphone,
   Brain,
   Link2,
@@ -36,6 +37,7 @@ import {
   Check,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
+import { EmailDraftCard } from "../components/agent/EmailDraftCard";
 import { IconButton, IconLink } from "../components/ui/IconButton";
 import { Button } from "../components/ui/Button";
 import { toast } from "../store/toast";
@@ -164,8 +166,6 @@ export interface YtChannelView {
   lastVideoUrl: string | null;
   plan: {
     what: string;
-    /** short: a normal short about `what`. demo: the agent films its own window. */
-    kind: "short" | "demo";
     auto: boolean;
     everyDays: number;
     time: string;
@@ -182,7 +182,6 @@ export interface YtPlanStatus {
     channelId: string;
     channelName: string;
     what: string;
-    kind: "short" | "demo";
     everyDays: number;
     time: string;
     due: boolean;
@@ -278,7 +277,7 @@ export function AgentHub() {
 
   // Modals & Tools
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"general" | "memory" | "youtube" | "orb">("general");
+  const [settingsTab, setSettingsTab] = useState<"general" | "memory" | "youtube" | "email" | "orb">("general");
   const [generatorModalOpen, setGeneratorModalOpen] = useState(false);
   const [macrosModalOpen, setMacrosModalOpen] = useState(false);
 
@@ -291,7 +290,7 @@ export function AgentHub() {
   const [selectedVoice, setSelectedVoice] = useState<string>(() => loadAgentVoice());
   // The on-this-PC voices (Kokoro) appear in the same pickers, after the
   // Soundwave ones, only while the local voice service is running.
-  const { status: localVoiceStatus } = useLocalVoices();
+  const { status: localVoiceStatus } = useLocalVoices({ startOnFirstUse: selectedVoice.startsWith("kokoro:") });
   const voiceChoices = useMemo(
     () => [...AGENT_VOICES, ...localVoiceStatus.voices],
     [localVoiceStatus],
@@ -362,11 +361,9 @@ export function AgentHub() {
   const [isSavingYt, setIsSavingYt] = useState(false);
   const [isUploadingToYt, setIsUploadingToYt] = useState(false);
   const [uploadedYoutubeUrl, setUploadedYoutubeUrl] = useState<string | null>(null);
-  // Several channels, each with its own instruction about what to publish there
-  // (the agent's own marketing) — the server keeps the sign-ins.
+  // Several connected YouTube channels and their regular Shorts schedules.
   const [ytChannels, setYtChannels] = useState<YtChannelView[]>([]);
   const [ytPlanStatus, setYtPlanStatus] = useState<YtPlanStatus | null>(null);
-  const [isRecordingDemo, setIsRecordingDemo] = useState(false);
 
   // Ghost Operator Macros State
   const [macrosList, setMacrosList] = useState<MacroWorkflow[]>([]);
@@ -379,6 +376,8 @@ export function AgentHub() {
   const [isRunningMorning, setIsRunningMorning] = useState(false);
   const [briefingNote, setBriefingNote] = useState<string | null>(null);
   const [isConnectingYt, setIsConnectingYt] = useState(false);
+  const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; email: string | null; needsReconnect: boolean }>({ connected: false, email: null, needsReconnect: false });
+  const [isConnectingGmail, setIsConnectingGmail] = useState(false);
   // "Speak replies aloud" — stored, so the desktop voice bar follows it too.
   const [voiceFeedback, setVoiceFeedbackState] = useState(() => loadVoicePrefs().speakReplies);
   const setVoiceFeedback = (on: boolean) => {
@@ -451,6 +450,13 @@ export function AgentHub() {
     } catch {}
   };
 
+  const fetchGmailStatus = async () => {
+    try {
+      const res = await fetch("/api/v1/email/status");
+      if (res.ok) setGmailStatus(await res.json());
+    } catch {}
+  };
+
   /** The channels and their publishing plans (never the sign-ins — the server keeps those). */
   const fetchChannels = async () => {
     try {
@@ -509,30 +515,6 @@ export function AgentHub() {
     }
   };
 
-  /** \"Record a demo now\": the agent films its own window and posts the demo. */
-  const recordDemo = async (channelId?: string) => {
-    setIsRecordingDemo(true);
-    try {
-      const res = await fetch("/api/v1/youtube/demo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(channelId ? { channelId } : {}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message || "I couldn't start recording.");
-      toast.success("Filming my own window", "Keep Soundwave open on screen — the demo appears in the chat and on the channel.");
-      if (data.jobId) void trackShortJob(data.jobId, "a demo of Soundwave");
-    } catch (e) {
-      toast.error("Can't film this window", (e as Error).message);
-    } finally {
-      setIsRecordingDemo(false);
-    }
-  };
-
-  /** The channel the Command Center card talks about (the default one). */
-  const marketingChannel = ytChannels.find((c) => c.default) ?? ytChannels[0] ?? null;
-  const marketingPlan = marketingChannel ? (ytPlanStatus?.active.find((a) => a.channelId === marketingChannel.id) ?? null) : null;
-
   // Save chat to localStorage (shared with the desktop voice bar)
   useEffect(() => {
     if (skipPersistRef.current) {
@@ -566,6 +548,7 @@ export function AgentHub() {
     // Initial Orbital background status, YouTube status & what's viral right now
     fetchOrbitalStatus();
     fetchYtStatus();
+    fetchGmailStatus();
     fetchChannels();
     fetchTrendStatus();
   }, []);
@@ -1146,6 +1129,47 @@ export function AgentHub() {
       toast.error("YouTube", (e as Error).message);
     } finally {
       setIsConnectingYt(false);
+    }
+  };
+
+  // Gmail access is separate from YouTube: the user grants mailbox scopes in
+  // Google's browser consent screen. The agent can save drafts, never send them.
+  const handleConnectGmail = async () => {
+    try {
+      setIsConnectingGmail(true);
+      const res = await fetch("/api/v1/email/connect", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "Couldn't start Gmail sign-in.");
+      window.open(data.url, "_blank", "noopener,noreferrer");
+      toast.info("Finish in your browser", "Review Google's Gmail permissions, then return here.");
+      const until = Date.now() + 5 * 60_000;
+      while (Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const status = await fetch("/api/v1/email/status").then((r) => r.json()).catch(() => null);
+        if (status?.connected) {
+          setGmailStatus(status);
+          toast.success("Gmail connected", status.email || "Your inbox is ready.");
+          return;
+        }
+      }
+      await fetchGmailStatus();
+    } catch (err) {
+      toast.error("Gmail", (err as Error).message);
+    } finally {
+      setIsConnectingGmail(false);
+    }
+  };
+
+  const handleDisconnectGmail = async () => {
+    if (!window.confirm(`Disconnect ${gmailStatus.email || "Gmail"} from Soundwave? Existing drafts in Gmail will remain.`)) return;
+    try {
+      const res = await fetch("/api/v1/email/disconnect", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "Couldn't disconnect Gmail.");
+      setGmailStatus({ connected: false, email: null, needsReconnect: false });
+      toast.success("Gmail disconnected", "Soundwave can no longer read or draft email.");
+    } catch (err) {
+      toast.error("Gmail", (err as Error).message);
     }
   };
 
@@ -1793,31 +1817,6 @@ export function AgentHub() {
               <span className="text-[11px] font-bold uppercase text-white">{ytPrivacy}</span>
             </div>
 
-            {/* The agent's own marketing: which channel, what goes there, next one when. */}
-            {ytChannels.length > 0 && (
-              <div className="space-y-1 rounded border border-[#14233D] bg-[#070D18] px-2 py-1.5" data-testid="yt-marketing">
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-gray-400">Marketing</span>
-                  <span className="truncate font-bold text-gray-200">{marketingChannel?.name ?? ""}</span>
-                </div>
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-gray-400">Next</span>
-                  <span className="truncate text-cyan-300" title={marketingPlan?.what}>
-                    {marketingPlan ? (marketingPlan.due ? "due now" : `in ${marketingPlan.everyDays}d`) : "not set"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => marketingChannel && void recordDemo(marketingChannel.id)}
-                  disabled={isRecordingDemo}
-                  className="flex w-full items-center justify-center gap-1.5 rounded border border-red-500/40 bg-red-600/20 py-1 text-[10px] font-bold text-red-200 transition-all hover:bg-red-600/30 cursor-pointer disabled:opacity-50"
-                  title="Record a demo of my own window working — the app has to be on screen"
-                >
-                  {isRecordingDemo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Film className="h-3 w-3" />}
-                </button>
-              </div>
-            )}
-
             <div className="pt-1 flex gap-1.5">
               {completedVideoUrl && !uploadedYoutubeUrl && (
                 <button
@@ -2130,6 +2129,7 @@ export function AgentHub() {
                 }`}
               >
                 <div className="whitespace-pre-line text-xs">{msg.text}</div>
+                {msg.emailDraftIds?.map((draftId) => <EmailDraftCard key={draftId} draftId={draftId} />)}
 
                 {/* Inline Video Player & Download Button */}
                 {Boolean(msg.videoUrl || msg.downloadUrl) && (
@@ -2708,6 +2708,19 @@ export function AgentHub() {
               </button>
               <button
                 type="button"
+                onClick={() => setSettingsTab("email")}
+                data-testid="email-tab"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  settingsTab === "email"
+                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                    : "text-gray-400 hover:text-white bg-[#0A1224] border border-[#14233D]"
+                }`}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Email
+              </button>
+              <button
+                type="button"
                 onClick={() => setSettingsTab("orb")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "orb"
@@ -2929,6 +2942,44 @@ export function AgentHub() {
                   >
                     <Trash />
                   </IconButton>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: Gmail — read and draft, with an explicit send confirmation */}
+            {settingsTab === "email" && (
+              <div className="space-y-3.5 animate-fadeIn">
+                <div className="rounded-lg border border-cyan-500/30 bg-[#070D18] p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-white">
+                      <Mail className="h-4 w-4 text-cyan-300" />
+                      <span className="font-bold">Gmail access</span>
+                    </div>
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${gmailStatus.connected ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-300" : gmailStatus.needsReconnect ? "border border-amber-500/30 bg-amber-500/20 text-amber-200" : "bg-gray-800 text-gray-400"}`}>
+                      {gmailStatus.connected ? "CONNECTED" : gmailStatus.needsReconnect ? "RECONNECT" : "NOT LINKED"}
+                    </span>
+                  </div>
+                  {gmailStatus.connected ? (
+                    <p className="text-[11px] text-gray-300">Connected as <b className="text-white">{gmailStatus.email}</b>.</p>
+                  ) : (
+                    <p className="text-[11px] text-gray-400">Connect the Gmail account you want Soundwave to read. It uses the Google OAuth client configured in YouTube settings.</p>
+                  )}
+                  <div className="rounded-md border border-[#172A4A] bg-[#0A1224] p-2.5 text-[10px] leading-relaxed text-gray-300">
+                    Soundwave can read inbox messages and save replies as <b className="text-cyan-200">unsent Gmail drafts</b>. Google's compose permission includes API-level send access, but the agent has no send tool in chat. Soundwave sends only after you review the exact recipient and message in a draft card and confirm with <b className="text-white">Send this email</b>. When you ask Soundwave to read or draft a message, that message content is sent to the Gemini provider configured in Settings → Brain. Email contents are treated as untrusted instructions.
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!gmailStatus.connected ? (
+                      <Button size="sm" onClick={() => void handleConnectGmail()} loading={isConnectingGmail}>
+                        {isConnectingGmail ? "Waiting for Google…" : gmailStatus.needsReconnect ? "Reconnect Gmail" : "Connect Gmail"}
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => void handleDisconnectGmail()}>Disconnect Gmail</Button>
+                    )}
+                    <button type="button" onClick={() => void fetchGmailStatus()} className="rounded-lg border border-[#172A4A] px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
+                  </div>
+                  <p className="text-[9px] leading-relaxed text-gray-500">
+                    Google may require the Gmail API to be enabled in that OAuth project. If sign-in is blocked, enable it in <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline">Google Cloud</a> and add this account as a test user. Disconnecting removes Soundwave's saved sign-in; drafts already in Gmail stay there.
+                  </p>
                 </div>
               </div>
             )}
@@ -3159,7 +3210,7 @@ export function AgentHub() {
                   </div>
                 </div>
 
-                {/* Channels: who posts where, and the agent's own marketing plan */}
+                {/* Channels: where regular Shorts are published */}
                 <div className="p-3 rounded-lg border border-[#14233D] bg-[#070D18] space-y-2" data-testid="yt-channels">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
@@ -3189,8 +3240,6 @@ export function AgentHub() {
                           onSave={patchChannel}
                           onDefault={setDefaultChannel}
                           onRemove={removeChannel}
-                          onRecordDemo={recordDemo}
-                          recording={isRecordingDemo}
                         />
                       ))}
                     </div>
@@ -3200,18 +3249,7 @@ export function AgentHub() {
                     <p className="text-[9px] text-gray-500">⏱ {ytPlanStatus.blocked}</p>
                   )}
 
-                  {ytChannels.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => void recordDemo(ytChannels.find((c) => c.default)?.id ?? ytChannels[0]!.id)}
-                      disabled={isRecordingDemo}
-                      data-testid="yt-record-demo"
-                      className="flex w-full items-center justify-center gap-1.5 rounded bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-200 font-bold py-1.5 text-[11px] transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      {isRecordingDemo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Film className="h-3 w-3" />}
-                      {isRecordingDemo ? "Filming…" : "Demo"}
-                    </button>
-                  )}
+
                 </div>
               </div>
             )}
@@ -3394,44 +3432,36 @@ export function AgentHub() {
 
 /** Which brain the agent thinks with — a click opens Settings → Brain. */
 /**
- * One channel in Settings → YouTube & Shorts: its name, whether it's the
- * default, and the instruction the agent follows for it — what to publish
- * there, in which form, how often, and whether it runs by itself. Demos are
- * the agent recording its own window working; shorts are normal shorts.
+ * One channel in Settings → YouTube & Shorts: its name, default status, and
+ * schedule for regular Shorts about the user's chosen topic.
  */
 function ChannelRow({
   channel,
   onSave,
   onDefault,
   onRemove,
-  onRecordDemo,
-  recording,
 }: {
   channel: YtChannelView;
   onSave: (id: string, patch: Record<string, unknown>, ok?: string) => void;
   onDefault: (id: string, name: string) => void;
   onRemove: (id: string, name: string) => void;
-  onRecordDemo: (channelId: string) => void;
-  recording: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [what, setWhat] = useState(channel.plan.what);
-  const [kind, setKind] = useState<"short" | "demo">(channel.plan.kind);
   const [everyDays, setEveryDays] = useState(channel.plan.everyDays);
   const [time, setTime] = useState(channel.plan.time);
   const [auto, setAuto] = useState(channel.plan.auto);
 
   useEffect(() => {
     setWhat(channel.plan.what);
-    setKind(channel.plan.kind);
     setEveryDays(channel.plan.everyDays);
     setTime(channel.plan.time);
     setAuto(channel.plan.auto);
-  }, [channel.plan.what, channel.plan.kind, channel.plan.everyDays, channel.plan.time, channel.plan.auto]);
+  }, [channel.plan.what, channel.plan.everyDays, channel.plan.time, channel.plan.auto]);
 
   const running = channel.plan.auto && channel.plan.what.trim().length > 0;
   const summary = running
-    ? `${channel.plan.kind === "demo" ? "Demo" : "Short"} · ${channel.plan.what} · every ${channel.plan.everyDays}d${channel.plan.time ? ` from ${channel.plan.time}` : ""}${channel.plan.due ? " · due now" : ""}`
+    ? `Short · ${channel.plan.what} · every ${channel.plan.everyDays}d${channel.plan.time ? ` from ${channel.plan.time}` : ""}${channel.plan.due ? " · due now" : ""}`
     : channel.plan.what.trim()
       ? `On hold — ${channel.plan.what} · turn Autopilot on below to post it by itself`
       : "Off — open this channel and say what to publish here (one sentence is enough), then turn Autopilot on";
@@ -3474,22 +3504,11 @@ function ChannelRow({
               value={what}
               onChange={(e) => setWhat(e.target.value)}
               maxLength={400}
-              placeholder='e.g. "demos of Soundwave making a short in one press" or "space facts"'
+              placeholder='e.g. "space facts" or "history stories"'
               className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-cyan-500 focus:outline-none"
             />
           </label>
           <div className="flex items-center gap-1.5">
-            <label className="flex-1 text-[9px] text-gray-400">
-              Kind
-              <select
-                value={kind}
-                onChange={(e) => setKind(e.target.value as "short" | "demo")}
-                className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
-              >
-                <option value="short">Short</option>
-                <option value="demo">Demo</option>
-              </select>
-            </label>
             <label className="w-16 text-[9px] text-gray-400">
               Every
               <input
@@ -3511,13 +3530,10 @@ function ChannelRow({
               />
             </label>
           </div>
-          {kind === "demo" && (
-            <p className="text-[9px] text-cyan-300/80">The app has to be on screen.</p>
-          )}
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <button
               type="button"
-              onClick={() => onSave(channel.id, { plan: { what, kind, everyDays, time, auto } }, `Saved for “${channel.name}”`)}
+              onClick={() => onSave(channel.id, { plan: { what, everyDays, time, auto } }, `Saved for “${channel.name}”`)}
               className="rounded bg-cyan-500 hover:bg-cyan-400 px-2 py-1 text-[10px] font-bold text-[#070B14] transition-all cursor-pointer"
             >
               Save
@@ -3527,21 +3543,13 @@ function ChannelRow({
               onClick={() => {
                 const next = !auto;
                 setAuto(next);
-                onSave(channel.id, { plan: { what, kind, everyDays, time, auto: next } }, next ? `Autopilot on for “${channel.name}”` : `Autopilot off for “${channel.name}”`);
+                onSave(channel.id, { plan: { what, everyDays, time, auto: next } }, next ? `Autopilot on for “${channel.name}”` : `Autopilot off for “${channel.name}”`);
               }}
               className={`rounded border px-2 py-1 text-[10px] font-bold transition-all cursor-pointer ${
                 auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-[#172A4A] bg-[#070D18] text-gray-300 hover:border-cyan-500/50"
               }`}
             >
               {auto ? "Autopilot" : "Manual"}
-            </button>
-            <button
-              type="button"
-              onClick={() => onRecordDemo(channel.id)}
-              disabled={recording}
-              className="rounded border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 px-2 py-1 text-[10px] font-bold text-red-200 transition-all cursor-pointer disabled:opacity-50"
-            >
-              {recording ? "Filming…" : "Demo"}
             </button>
             {!channel.default && (
               <button

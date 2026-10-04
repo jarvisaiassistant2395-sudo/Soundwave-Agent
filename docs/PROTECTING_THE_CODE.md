@@ -1,8 +1,8 @@
 # Protecting the shipped code
 
 Soundwave's value is not only the app — it is what the app knows: the agent's
-instruction, the shape a Short has to have, the guide, the promo rules, the
-plans. That text and logic has to run on the customer's machine, so it has to be
+instruction, the shape a Short has to have, the guide, and the channel plans.
+That text and logic has to run on the customer's machine, so it has to be
 *there*. The goal of this pass is that it can't be *read* there without real
 work.
 
@@ -60,8 +60,8 @@ Two things matter just as much as the obfuscation:
 
 Phrases that must exist in the source and must *not* exist in anything shipped
 are listed under `markers` in `code-protection.json` (the agent's instruction, the
-phone-alone instruction, the promo honesty rules, the script shape's own words,
-the guide's alarms text).
+phone-alone instruction, the script shape's own words, and the guide's alarms
+text).
 
 - `desktop/assemble.mjs` and `mobile/scripts/protect-dist.mjs` fail the build if
   a marker is still readable after protection.

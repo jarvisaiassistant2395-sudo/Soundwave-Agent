@@ -34,6 +34,8 @@ export interface ChatMessage {
   sender: "user" | "assistant" | "system";
   text: string;
   actionOutput?: string;
+  /** Gmail drafts created by the agent, always unsent until explicitly approved in the UI. */
+  emailDraftIds?: string[];
   time: string;
   tag?: "SYS" | "RPA" | "VOICE" | "USER" | "AUDIO";
   videoUrl?: string;
@@ -108,6 +110,7 @@ export const chatMessageSchema = z
     sender: z.enum(["user", "assistant", "system"]),
     text: z.string().max(20_000),
     actionOutput: z.string().max(20_000).optional(),
+    emailDraftIds: z.array(z.string().min(1).max(500)).max(6).optional(),
     time: z.string().max(40).default(""),
     tag: z.enum(["SYS", "RPA", "VOICE", "USER", "AUDIO"]).optional(),
     videoUrl: z.string().max(2000).optional(),
@@ -156,6 +159,7 @@ export interface ChatReply {
   jobId?: string;
   topic?: string;
   actionOutput?: string;
+  emailDraftIds?: string[];
   videoUrl?: string;
   downloadUrl?: string;
   tag?: ChatMessage["tag"];
@@ -176,6 +180,7 @@ export function replyToMessage(data: ChatReply, query: string, now = Date.now())
     sender: "assistant",
     text: data.reply || "Command executed.",
     ...(data.actionOutput ? { actionOutput: data.actionOutput } : {}),
+    ...(Array.isArray(data.emailDraftIds) && data.emailDraftIds.every((id) => typeof id === "string") ? { emailDraftIds: data.emailDraftIds.slice(0, 6) as string[] } : {}),
     ...(videoLink ? { videoUrl: videoLink, downloadUrl: videoLink } : {}),
     time: chatTime(new Date(now)),
     at: now,

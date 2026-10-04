@@ -1,10 +1,9 @@
-// ── Several YouTube channels, each with its own job ─────────────────────────
-// One Soundwave can post to more than one channel: a main channel, a facts
-// channel, a channel for demos of the app itself. Every channel keeps its own
+// ── Several YouTube channels, each with its own publishing plan ─────────────
+// One Soundwave can post to more than one channel. Every channel keeps its own
 // Google sign-in (its own refresh token — the OAuth client is shared, which is
-// how Google works), its own privacy default, and its own PLAN: what to
-// publish there and how often. The publish planner (lib/publishPlan.ts) reads
-// these plans and makes the videos by itself.
+// how Google works), its own privacy default, and its own plan for user content.
+// The publish planner (lib/publishPlan.ts) reads these plans and can make a
+// regular Short on schedule while the app is running.
 //
 // The single connection the app had before is not lost: on the first read it
 // becomes the "default" channel, refresh token and all.
@@ -20,11 +19,9 @@ export const MIN_EVERY_DAYS = 1;
 export const MAX_EVERY_DAYS = 30;
 
 export interface ChannelPlan {
-  /** What to publish on this channel — the agent's instructions ("demos of the app", "space facts"). */
+  /** What user content to publish on this channel. */
   what: string;
-  /** short: a normal short about `what`. demo: the agent records itself using the app. */
-  kind: "short" | "demo";
-  /** Make and post one by itself every `everyDays` days, while the app is running. */
+  /** Make and post one Short every `everyDays` days while the app is running. */
   auto: boolean;
   everyDays: number;
   /** HH:MM local — empty means "as soon as it's due and the app is on". */
@@ -56,7 +53,26 @@ interface ChannelStore {
   defaultId: string | null;
 }
 
-const EMPTY_PLAN: ChannelPlan = { what: "", kind: "short", auto: false, everyDays: 3, time: "", lastRunAt: null, runs: 0, lastError: null };
+const EMPTY_PLAN: ChannelPlan = { what: "", auto: false, everyDays: 3, time: "", lastRunAt: null, runs: 0, lastError: null };
+
+type StoredChannelPlan = Partial<ChannelPlan> & { kind?: string };
+
+const normal = (p?: StoredChannelPlan | null): ChannelPlan => {
+  const retiredDemo = p?.kind === "demo";
+  return {
+    // Retire old self-promotion plans instead of silently turning them into
+    // scheduled regular Shorts after an app update.
+    what: retiredDemo ? "" : (p?.what ?? EMPTY_PLAN.what).trim().slice(0, 400),
+    auto: !retiredDemo && p?.auto === true,
+    everyDays: retiredDemo
+      ? EMPTY_PLAN.everyDays
+      : Math.min(MAX_EVERY_DAYS, Math.max(MIN_EVERY_DAYS, Math.round(p?.everyDays ?? EMPTY_PLAN.everyDays) || EMPTY_PLAN.everyDays)),
+    time: retiredDemo ? "" : /^\d{2}:\d{2}$/.test(p?.time ?? "") ? p!.time! : "",
+    lastRunAt: !retiredDemo && typeof p?.lastRunAt === "number" && Number.isFinite(p.lastRunAt) ? p.lastRunAt : null,
+    runs: retiredDemo ? 0 : Math.max(0, Math.round(p?.runs ?? 0)),
+    lastError: !retiredDemo && typeof p?.lastError === "string" ? p.lastError.slice(0, 300) : null,
+  };
+};
 
 export const newChannelId = (): string => `ch_${randomBytes(4).toString("hex")}`;
 
@@ -67,8 +83,16 @@ function fileFor(): string {
 function readStore(): ChannelStore {
   try {
     const raw = JSON.parse(fs.readFileSync(fileFor(), "utf8")) as Partial<ChannelStore>;
-    const channels = (Array.isArray(raw.channels) ? raw.channels : []).filter((c): c is ChannelRecord => Boolean(c?.id && typeof c.refreshToken === "string"));
-    return { channels, defaultId: typeof raw.defaultId === "string" ? raw.defaultId : (channels[0]?.id ?? null) };
+    const rows = (Array.isArray(raw.channels) ? raw.channels : []).filter((c): c is ChannelRecord => Boolean(c?.id && typeof c.refreshToken === "string"));
+    let migratedLegacyDemo = false;
+    const channels = rows.map((channel) => {
+      const storedPlan = channel.plan as StoredChannelPlan | undefined;
+      if (storedPlan?.kind === "demo") migratedLegacyDemo = true;
+      return { ...channel, plan: normal(storedPlan) };
+    });
+    const store = { channels, defaultId: typeof raw.defaultId === "string" ? raw.defaultId : (channels[0]?.id ?? null) };
+    if (migratedLegacyDemo) writeStore(store);
+    return store;
   } catch {
     return { channels: [], defaultId: null };
   }
@@ -85,19 +109,6 @@ function writeStore(store: ChannelStore): void {
     console.warn(`[youtube] could not save the channel list: ${(err as Error).message}`);
   }
 }
-
-const normal = (p?: Partial<ChannelPlan> | null): ChannelPlan => ({
-  ...EMPTY_PLAN,
-  ...(p ?? {}),
-  what: (p?.what ?? EMPTY_PLAN.what).trim().slice(0, 400),
-  kind: p?.kind === "demo" ? "demo" : "short",
-  auto: p?.auto === true,
-  everyDays: Math.min(MAX_EVERY_DAYS, Math.max(MIN_EVERY_DAYS, Math.round(p?.everyDays ?? EMPTY_PLAN.everyDays) || EMPTY_PLAN.everyDays)),
-  time: /^\d{2}:\d{2}$/.test(p?.time ?? "") ? p!.time! : "",
-  lastRunAt: typeof p?.lastRunAt === "number" && Number.isFinite(p.lastRunAt) ? p.lastRunAt : null,
-  runs: Math.max(0, Math.round(p?.runs ?? 0)),
-  lastError: typeof p?.lastError === "string" ? p.lastError.slice(0, 300) : null,
-});
 
 /** The connection the app had before channels existed, as a channel record. */
 function legacyRecord(): ChannelRecord | null {
@@ -149,7 +160,7 @@ export function channelFor(idOrName?: string | null): ChannelRecord | null {
     channels.find((c) => c.id === wanted) ??
     channels.find((c) => (c.channelId ?? "").toLowerCase() === wanted) ??
     channels.find((c) => c.name.toLowerCase() === wanted) ??
-    // A loose name still finds the one channel: "the demo channel" → "Soundwave demos".
+    // A loose name still finds a channel when the user gives only part of its name.
     channels.find((c) => c.name.toLowerCase().includes(wanted)) ??
     null
   );

@@ -40,7 +40,25 @@ function preFfmpeg(): string | null {
 }
 const hasFfmpeg = preFfmpeg() !== null;
 const REFUSAL = "Cloned voices don't support a speed change — set the speed on the narration voice instead.";
-const WAV_HEADER = Buffer.from("RIFF....WAVEfmt ", "binary");
+function makeWav(): Buffer {
+  const sampleRate = 24_000;
+  const sampleCount = 2_400;
+  const dataBytes = sampleCount * 2;
+  const wav = Buffer.alloc(44 + dataBytes);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataBytes, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16); // PCM format chunk size
+  wav.writeUInt16LE(1, 20); // linear PCM
+  wav.writeUInt16LE(1, 22); // mono
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28); // byte rate
+  wav.writeUInt16LE(2, 32); // block alignment
+  wav.writeUInt16LE(16, 34); // bits per sample
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataBytes, 40);
+  return wav;
+}
 
 describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
   let server: http.Server;
@@ -49,6 +67,7 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
   let mode: "refuse" | "ok" | "down" = "refuse";
   let synthesizeClone: typeof import("../src/lib/voiceclone.js").synthesizeClone;
   let createCloneProfile: typeof import("../src/lib/voiceclone.js").createCloneProfile;
+  let validateCloneReference: typeof import("../src/lib/voiceclone.js").validateCloneReference;
 
   beforeAll(async () => {
     server = http.createServer((req, res) => {
@@ -59,7 +78,28 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
         cloneCalls.push({ path: req.url ?? "", body });
         if (req.url === "/health") {
           res.writeHead(mode === "down" ? 503 : 200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: mode !== "down", model_loaded: true, device: "cpu", mock: false }));
+          res.end(JSON.stringify({
+            ok: mode !== "down",
+            clone_ready: mode !== "down",
+            clone_engine: mode === "down" ? null : "chatterbox",
+            model_loaded: mode !== "down",
+            device: "cpu",
+            mock: false,
+            reference_limits_seconds: { chatterbox: { min: 3, max: 60 }, moss: { min: 3, max: 10 } },
+          }));
+          return;
+        }
+        if (req.url === "/clone/validate-reference") {
+          if (mode === "down") {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ detail: "clone model is unavailable" }));
+          } else if (mode === "refuse") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ detail: "The reference clip is too short — use at least 3 seconds." }));
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ valid: true, durationSeconds: 3, engine: "chatterbox" }));
+          }
           return;
         }
         if (mode === "refuse") {
@@ -73,7 +113,7 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
           return;
         }
         res.writeHead(200, { "Content-Type": "audio/wav", "X-Audio-Duration": "1.000" });
-        res.end(WAV_HEADER);
+        res.end(makeWav());
       });
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -90,11 +130,26 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
     const mod = await import("../src/lib/voiceclone.js");
     synthesizeClone = mod.synthesizeClone;
     createCloneProfile = mod.createCloneProfile;
+    validateCloneReference = mod.validateCloneReference;
   });
 
   afterAll(async () => {
     delete process.env.VOICECLONE_URL;
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it("asks the active sidecar to validate duration before saving a clone profile", async () => {
+    mode = "ok";
+    cloneCalls = [];
+    const validated = await validateCloneReference({
+      audio: Buffer.from("RIFF" + "x".repeat(1_100)),
+      filename: "reference.wav",
+      mimeType: "audio/wav",
+    });
+    expect(validated).toEqual({ durationSeconds: 3, engine: "chatterbox" });
+    const call = cloneCalls.find((entry) => entry.path === "/clone/validate-reference");
+    expect(call).toBeTruthy();
+    expect(call?.body).toContain("reference.wav");
   });
 
   it("passes a refusal back with the engine's own sentence (no silent voice swap)", async () => {
@@ -106,6 +161,7 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
       audio: fs.readFileSync(clip),
       filename: "ref.wav",
       mimeType: "audio/wav",
+      consentConfirmedAt: new Date().toISOString(),
     });
 
     mode = "refuse";
@@ -118,6 +174,23 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
     fs.unlinkSync(clip);
   });
 
+  it("fails cloned profiles closed when the local model goes offline (no Edge or sine substitution)", async () => {
+    mode = "ok";
+    const profile = await createCloneProfile("sidecar-offline-user", {
+      name: "Offline check",
+      audio: Buffer.from("RIFF" + "x".repeat(1_100)),
+      filename: "ref.wav",
+      mimeType: "audio/wav",
+      consentConfirmedAt: new Date().toISOString(),
+    });
+
+    mode = "down";
+    cloneCalls = [];
+    await expect(synthesizeClone("sidecar-offline-user", { text: "Keep this voice.", profileId: profile.id }))
+      .rejects.toMatchObject({ status: 503, code: "VOICECLONE_UNAVAILABLE" });
+    expect(cloneCalls.some((c) => c.path === "/clone/ephemeral")).toBe(false);
+  });
+
   it("returns the engine's audio when it answers, and the request carries the reference clip", async () => {
     const { resolveFfmpegPath } = await import("../src/config.js");
     const clip = path.join(os.tmpdir(), `sw-ref-ok-${process.pid}.wav`);
@@ -127,6 +200,7 @@ describe.skipIf(!hasFfmpeg)("the cloning sidecar's answers", () => {
       audio: fs.readFileSync(clip),
       filename: "ref.wav",
       mimeType: "audio/wav",
+      consentConfirmedAt: new Date().toISOString(),
     });
 
     mode = "ok";

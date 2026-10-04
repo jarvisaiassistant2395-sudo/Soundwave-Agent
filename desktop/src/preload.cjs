@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
   getState: () => ipcRenderer.invoke("soundwave:get-state"),
   updateSettings: (patch) => ipcRenderer.invoke("soundwave:update-settings", patch),
   isAppFocused: () => ipcRenderer.invoke("soundwave:is-app-focused"),
+  startLocalVoiceSetup: () => ipcRenderer.invoke("soundwave:start-local-voice-setup"),
   cancelKokoroSetup: () => ipcRenderer.invoke("soundwave:cancel-kokoro-setup"),
   retryKokoroSetup: () => ipcRenderer.invoke("soundwave:retry-kokoro-setup"),
   onVoiceCommand: (callback) => {

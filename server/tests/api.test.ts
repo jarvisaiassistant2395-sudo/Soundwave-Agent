@@ -123,6 +123,16 @@ describe("voice cloning (sidecar not configured in tests)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("blocks clone-profile creation unless explicit voice rights are confirmed", async () => {
+    const res = await request(app)
+      .post("/api/v1/tts/clone/profiles")
+      .set("Cookie", cookie)
+      .set("X-CSRF-Token", csrfFromCookies(cookie))
+      .field("name", "Unconsented voice");
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("CLONE_CONSENT_REQUIRED");
+  });
+
   it("returns a friendly 503 from /tts/clone when not configured", async () => {
     const res = await request(app)
       .post("/api/v1/tts/clone")

@@ -6,7 +6,8 @@
 //   1. Does anything we ship carry a licence we cannot ship? Copyleft that would
 //      infect our closed source (GPL/AGPL/SSPL/BUSL), or a non-commercial
 //      licence (CC-BY-NC, CPML) — the trap OmniVoice's *weights* turned out to
-//      be, and the reason cloned voices now run on MIT-licensed Chatterbox.
+//      be. Managed cloning now uses Apache-2.0 MOSS-TTS-Nano; optional Chatterbox
+//      installs are checked separately and do not enter the packaged desktop.
 //   2. What exactly are we shipping, so THIRD-PARTY-NOTICES.txt is generated
 //      from the tree instead of being written by hand and going stale.
 //
@@ -123,16 +124,19 @@ const BINARIES = [
 /**
  * The local voice service's Python dependencies. Not an npm tree, so they are
  * listed by hand. The installer conveys no Python runtime, wheels or model
- * weights; packaged Windows first-run downloads the small Kokoro-only subset
- * to per-user app data, while cloning/page-reader dependencies remain optional
- * manual installs. All entries use the narrow `notBundled` exception below.
+ * weights; packaged Windows downloads the managed Kokoro + MOSS stack to
+ * per-user app data on first use. Optional Chatterbox/page-reader dependencies
+ * remain separate manual installs. All entries use the narrow `notBundled`
+ * exception below.
  */
 const NOT_BUNDLED =
-  "NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.";
+  "NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration + MOSS cloning runtime and dependencies into per-user app data on first local-voice use; optional Chatterbox and page-reader packages remain separate manual installs. The Python process runs as a separate local service.";
 const PYTHON = [
-  { name: "CPython 3.13.16 Windows x64 runtime", licence: "PSF-2.0", notBundled: true, note: "Downloaded from python.org on first packaged Windows launch; the installer SHA-256 is pinned in desktop/src/kokoro-manager.cjs." },
-  { name: "pip", licence: "MIT", notBundled: true, note: "Used only inside the managed per-user Kokoro virtual environment." },
-  { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", notBundled: true, note: "Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights)." },
+  { name: "CPython 3.13.16 Windows x64 runtime", licence: "PSF-2.0", notBundled: true, note: "Downloaded from python.org on first local-voice use in packaged Windows; the installer SHA-256 is pinned in desktop/src/kokoro-manager.cjs." },
+  { name: "pip", licence: "MIT", notBundled: true, note: "Used only inside the managed per-user Kokoro + MOSS virtual environment." },
+  { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", notBundled: true, note: "Optional manual/server installs only; upstream code and Nano weights are MIT. Its pinned Torch/Transformers versions conflict with the managed MOSS environment, so it is not in the packaged Windows install." },
+  { name: "OpenMOSS MOSS-TTS-Nano runtime source", licence: "Apache-2.0", notBundled: true, note: "Only the required source files and upstream LICENSE are downloaded from commit 8b7bcc9341b3b4ef3a3a58ba1338a7d85ff133eb; the exact file hashes are checked by desktop/src/kokoro-manager.cjs." },
+  { name: "OpenMOSS MOSS-TTS-Nano ONNX weights and audio-tokenizer weights", licence: "Apache-2.0", notBundled: true, note: "Two public Hugging Face repositories; 16 revision-pinned files total 763,191,513 bytes, with size and SHA-256/Git blob checks before the desktop reports setup ready." },
   { name: "kokoro (Kokoro-82M)", licence: "Apache-2.0", notBundled: true, note: "On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them." },
   { name: "misaki", licence: "Apache-2.0", notBundled: true, note: "Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is." },
   // Deliberately NOT given `notBundled`: its licence is unverified, so it stays
@@ -148,7 +152,10 @@ const PYTHON = [
   { name: "python-multipart", licence: "Apache-2.0", notBundled: true },
   { name: "soundfile", licence: "BSD-3-Clause", notBundled: true },
   { name: "numpy", licence: "BSD-3-Clause", notBundled: true },
-  { name: "PyTorch", licence: "BSD-3-Clause", notBundled: true },
+  { name: "ONNX Runtime", licence: "MIT", notBundled: true, note: "CPU-only execution provider for the MOSS ONNX graphs." },
+  { name: "PyTorch", licence: "BSD-3-Clause", notBundled: true, note: "CPU-only Torch 2.7.0 is shared by Kokoro and the upstream MOSS reference-audio loader." },
+  { name: "torchaudio", licence: "BSD-3-Clause", notBundled: true, note: "Pinned to the matching CPU PyTorch 2.7.0 pair for loading/resampling MOSS reference clips." },
+  { name: "sentencepiece", licence: "Apache-2.0", notBundled: true, note: "Tokenizer dependency used by the MOSS runtime." },
 
   // ── The local page reader (scrapling/) ────────────────────────────────────
   // A page that answers a plain fetch with a bot check or needs JavaScript is
@@ -261,7 +268,7 @@ const sections = [
     entries: collectAppDeps(path.join(repoRoot, "mobile"), false).map((p) => ({ ...p, note: "" })),
   },
   {
-    title: "Local Python services and Kokoro runtime (not installer-bundled)",
+    title: "Local Python services and Kokoro + MOSS runtime (not installer-bundled)",
     entries: PYTHON.map((p) => ({ name: p.name, version: "", licence: p.licence, note: p.note ?? "", notBundled: p.notBundled === true })),
   },
 ];

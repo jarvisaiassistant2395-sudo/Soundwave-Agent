@@ -46,7 +46,10 @@ describe("the ship-licence audit", () => {
     // next to the component — an exemption without its reasoning is how these
     // things rot.
     expect(notices).toMatch(/num2words — LGPL-2\.1/);
-    expect(notices).toMatch(/NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies/);
+    expect(notices).toMatch(/NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration \+ MOSS cloning runtime and dependencies/);
+    expect(notices).toMatch(/OpenMOSS MOSS-TTS-Nano ONNX weights and audio-tokenizer weights — Apache-2\.0/);
+    expect(notices).toMatch(/ONNX Runtime — MIT/);
+    expect(notices).toMatch(/torchaudio — BSD-3-Clause/);
     expect(notices).toMatch(/CPython 3\.13\.16 Windows x64 runtime — PSF-2\.0/);
     // The local page reader (scrapling/) is a second user-installed service, and
     // the reason it exists is in the paper: a walled page's address must not have

@@ -1,34 +1,57 @@
-# Local voice service (Chatterbox + Kokoro)
+# Local voice service (Kokoro + MOSS; optional Chatterbox)
 
-A small FastAPI service with two jobs, both of them running on **your own
-machine** — nothing metered, nothing sent to a paid provider:
+A small FastAPI service with on-device narration and voice cloning. The models
+run locally; reference audio is not sent to a hosted synthesis provider.
 
 | Engine | What it does | Licence (code **and** weights) |
 | --- | --- | --- |
-| [Chatterbox](https://github.com/resemble-ai/chatterbox) | Clones a voice from a 5-s reference clip | **MIT** |
 | [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) | Narration for videos in 28 voices, on CPU | **Apache-2.0** |
+| [MOSS-TTS-Nano-100M-ONNX](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX) | CPU voice cloning from a 3–10 s reference | **Apache-2.0** |
+| [Chatterbox](https://github.com/resemble-ai/chatterbox) | Optional cloning engine for manual/server installs | **MIT** |
 
-Both licences allow commercial use, which matters: Soundwave sells access, and
-the model this replaced (OmniVoice) has Apache-2.0 code but **CC-BY-NC weights**
-— the maintainers state on the model card that the pre-trained model "can't be
-used commercially". Anything paid that used it was a licence violation waiting
-to be noticed, so it is gone. Do not swap in XTTS v2 (Coqui CPML), F5-TTS
-(CC-BY-NC-4.0), Higgs Audio or Piper's current GPL-3.0 fork for the same reason.
+### Candidate comparison (provisional; no Soundwave PC benchmark yet)
+
+| Candidate | License and distribution | Realistic model/runtime cost | Low-/medium-end fit |
+| --- | --- | --- | --- |
+| **MOSS-TTS-Nano ONNX** | Apache-2.0 source and weights; public, revision-pinned [Hugging Face assets](https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX). | 16 pinned ONNX files total **763,191,513 bytes (727.8 MiB)**. Its [pinned source](https://github.com/OpenMOSS/MOSS-TTS-Nano/tree/8b7bcc9341b3b4ef3a3a58ba1338a7d85ff133eb) imports CPU PyTorch/Torchaudio for reference-audio loading alongside ONNX Runtime; Kokoro already needs the same CPU PyTorch environment. | [Official docs](https://github.com/OpenMOSS/MOSS-TTS-Nano) describe CPU inference; an [independent test](https://sleepingrobots.com/dreams/moss-tts-strix-halo/) reports RTF 0.23 on a Ryzen AI Max+ 395 at 8 threads, not on a low-end PC. Its 20 listed languages do **not** include Serbian. Current desktop candidate, pending real device tests. |
+| **Chatterbox Nano** | [MIT](https://github.com/resemble-ai/chatterbox) code and [weights](https://huggingface.co/ResembleAI/chatterbox-nano), but the [official loader dependencies](https://github.com/resemble-ai/chatterbox/blob/master/pyproject.toml) conflict with the managed pins (Torch 2.6.0 / Transformers 5.2.0 vs MOSS's Torch 2.7.0 / Transformers 4.57.1). | Hugging Face reports about **2.997 GB** stored for the Nano repo. The upstream snapshot downloads both `s3gen.safetensors` (**1.056 GB**) and `s3gen_meanflow.safetensors` (**1.065 GB**), while inspected inference code uses meanflow; filtering the unused checkpoint could save ~1.06 GB. An isolated environment would add duplicate Python/model storage. | [Official claim](https://huggingface.co/ResembleAI/chatterbox-nano) is 3× real-time on an 8-core CPU; English only. Vendor [reference-audio guidance](https://www.resemble.ai/learn/models/chatterbox-nano) recommends at least 10 seconds, so quality at the required 3-second minimum needs testing. No representative 4-core/low-memory benchmark was found. |
+| **NeuTTS Nano Q4 GGUF** | [NeuTTS Open License 1.0](https://github.com/neuphonic/neutts/blob/main/LICENSE): commercial use by an entity at or above **$5M annual revenue** is not granted without another license. Its [Hugging Face model files](https://huggingface.co/neuphonic/neutts-nano-q4-gguf) require accepting gated access conditions. | Q4 backbone is **194,600,640 bytes**, but the [official default NeuCodec checkpoint](https://huggingface.co/neuphonic/neucodec) is **2,519,855,456 bytes**. The [stock package](https://github.com/neuphonic/neutts/blob/main/pyproject.toml) requests Torch/Torchaudio ≥2.8 and Transformers 5.1, conflicting with the managed MOSS pins (2.7.0 / 4.57.1); GGUF also needs `llama-cpp-python` and system eSpeak-NG. | Officially positioned for real-time laptop CPUs, with English, German, French, and Spanish variants; no Serbian. Gating, license threshold, codec download, and dependency changes make it a poor automatic first-run fit. |
+
+MOSS is therefore the **provisional** managed-desktop choice for the best fit
+between an Apache-2.0 model, public non-gated downloads, modest pinned assets,
+and a CPU ONNX path—not a completed quality or speed decision. The official
+MOSS documentation and the independent Strix Halo benchmark are reference
+points only; one [anecdotal 4-core N100 user report](https://www.reddit.com/r/LocalLLaMA/comments/1sjdfp6/mossttsnano_a_01b_opensource_multilingual_tts/)
+also cautions that “CPU-capable” does not guarantee real-time speed on every
+low-end machine. Soundwave's managed setup caps CPU threads and serializes
+inference, but realistic low-/medium-end PC testing is still required.
+
+Commercial rights matter because Soundwave sells access: the managed MOSS
+source/weights are Apache-2.0 and optional Chatterbox code/weights are MIT.
+NeuTTS has the separate revenue threshold and gated-access caveats in the table.
+The model this service replaced (OmniVoice) has Apache-2.0 code but **CC-BY-NC
+weights** — its maintainers say the pre-trained model "can't be used
+commercially". It is not part of the managed product. Do not reintroduce other
+candidates (including XTTS, F5-TTS, Higgs Audio, or Piper) without auditing the
+exact code, weight, training-data, dependency, and distribution terms first.
 
 The Node API proxies to this service (`POST /api/v1/tts/clone`,
 `/clone/profiles`, `/api/v1/tts/synthesize`, `/api/v1/voices`); the browser
 never calls it directly.
 
-**Packaged Windows desktop:** Soundwave provisions this service automatically
-in a Kokoro-only mode on first launch. It downloads a checksum-pinned Python
-runtime and CPU-only dependencies into the app's per-user data folder, fetches
-the narration model once, and runs the service as a hidden background process.
-No Python install, terminal, or separate manual start is needed. Voice Library
-and Settings show first-run progress and let you cancel setup; Soundwave's
-Microsoft voices remain available, and Kokoro can retry the next time the app
-starts. Chatterbox cloning is intentionally excluded from this automatic
-install. The full Chatterbox + Kokoro service below remains available for
-development and standalone/server installs.
+**Packaged Windows desktop:** Soundwave provisions Kokoro narration and MOSS
+CPU cloning automatically on first use. Setup downloads a checksum-pinned
+Python runtime, CPU-only dependencies, pinned MOSS source, and the ONNX assets
+into the app's per-user data folder, then starts the service invisibly. The
+model files alone are about 728 MiB. The manager enforces a 3 GB free-space
+floor before installing the package/model stack; the exact Windows download and
+final storage totals have not yet been measured (Python and spaCy wheels and the
+Kokoro assets vary by platform/revision). Progress, cancellation, retry, and
+same-session recovery are handled by Soundwave; after setup, the models are cached
+locally for offline use. Chatterbox remains available only in manual/server
+installs. MOSS lists 20 languages but not Serbian, and low-/medium-end speed
+has not yet been benchmarked; do not treat the current selection as a validated
+performance decision.
 
 It holds the models in memory and is **stateless**: each generation request
 carries the reference clip with it (`POST /clone/ephemeral`), so cloned voices
@@ -44,13 +67,13 @@ When `VOICECLONE_URL` points at anything other than localhost, set
 
 ## 1. Install & run (manual/development setup)
 
-> This manual guide is for the full service, including Chatterbox cloning, or
-> for a standalone Node server. The packaged Windows desktop installs and starts
-> its Kokoro-only narrator itself in the background (see above). This guide
-> targets Windows with an **AMD GPU** (e.g. RX 6650 XT). PyTorch
-> does not ship AMD support on Windows, so the models run on your **CPU** —
-> perfectly workable (Chatterbox RTF ≈ 0.3–1×; Kokoro is far lighter and
-> narrates about as fast as it plays). NVIDIA GPU or Linux? See
+> This manual guide is for development or standalone/server installs. It can
+> enable Chatterbox; MOSS and Kokoro are separately configurable. The packaged
+> Windows desktop manages Kokoro narration and MOSS cloning itself (see above).
+> This guide targets Windows with an **AMD GPU** (e.g. RX 6650 XT). PyTorch
+> does not ship AMD support on Windows, so inference runs on your **CPU**.
+> Reported Chatterbox speeds are hardware-specific and do not establish MOSS
+> performance on low-/medium-end PCs. NVIDIA GPU or Linux? See
 > [Other hardware](#3-other-hardware).
 
 ```powershell
@@ -116,18 +139,22 @@ VOICECLONE_TIMEOUT_MS=600000
 ```
 
 Restart the Node API (`npm run dev`). Cloning is available through the API
-(`POST /api/v1/tts/clone/profiles` with a 3–10 s clean reference clip —
-WAV/MP3/FLAC/OGG — then `POST /api/v1/tts/clone`). `LOCAL_VOICE_URL` defaults
-to `VOICECLONE_URL`, so the same service can supply Kokoro narration. Set
-`LOCAL_VOICE_URL` separately if narration and cloning should use different
-services. Unset the URLs to turn those features off.
+(`POST /api/v1/tts/clone/profiles` with a clean WAV/MP3/FLAC/OGG/M4A/WEBM
+reference. Chatterbox accepts 3–60 s; MOSS accepts 3–10 s. Before storing a
+profile, the API asks the sidecar to decode and validate the actual duration;
+creation is blocked unless the user confirms voice ownership or explicit
+speaker permission. `LOCAL_VOICE_URL` defaults to `VOICECLONE_URL`, so the same
+service can supply Kokoro narration. Set `LOCAL_VOICE_URL` separately if
+narration and cloning should use different services. Unset the URLs to turn
+those features off.
 
 For the packaged Windows desktop app, leave these unset: Soundwave chooses a
-loopback port and starts its managed Kokoro-only service. It stores the private
-Python environment, setup log, Hugging Face cache and model under the app's
-user-data folder, and stops the service when Soundwave exits. The first setup
-needs internet access; after that, synthesis runs on this PC. To disable the
-automatic setup for a diagnostic run, set
+loopback port and starts its managed Kokoro + MOSS service on first use of a
+local-voice feature. It stores the private Python environment, setup log,
+Hugging Face cache and model under the app's user-data folder, and stops the
+service when Soundwave exits. The first setup needs internet access; progress,
+cancellation and same-session retry are available. After setup, synthesis runs
+on this PC offline. To disable the automatic setup for a diagnostic run, set
 `SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP=1` before launching Soundwave.
 
 ## 3. Narration on this PC (Kokoro)
@@ -246,7 +273,7 @@ clear "offline" error otherwise. Zero cost either way.
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `CHATTERBOX_DEVICE` | `cpu` | `cpu`, `cuda:0`, `mps`, `xpu` — used by both engines |
-| `CHATTERBOX_OFF` | — | `1` = Kokoro-only mode; do not load or expose Chatterbox cloning |
+| `CHATTERBOX_OFF` | — | `1` = do not load or expose the optional Chatterbox engine |
 | `CHATTERBOX_NANO` | — | `1` = the smaller Turbo/Nano model, built for CPU |
 | `CHATTERBOX_EXAGGERATION` | `0.5` | emotion dial, 0 = flat, 1 = excited |
 | `CHATTERBOX_CFG_WEIGHT` | `0.5` | how strongly the reference clip is followed |
@@ -257,6 +284,9 @@ clear "offline" error otherwise. Zero cost either way.
 | `VOICECLONE_TOKEN` | — (no auth) | REQUIRED on any non-localhost deployment; must match the Node API |
 | `VOICECLONE_HOST` / `VOICECLONE_PORT` | `127.0.0.1` / `8100` | bind address (main.py path; the Dockerfile uses `$PORT`) |
 | `VOICECLONE_PROFILES_DIR` | `./profiles` | standalone `/profiles` CRUD storage (not used by the Node API) |
+| `MOSS_OFF` | `1` | `0` = enable pinned MOSS-TTS-Nano ONNX cloning |
+| `MOSS_PRELOAD` | `1` | `1` = initialize MOSS before the API becomes ready |
+| `MOSS_CPU_THREADS` | auto, max 4 | Limit PyTorch and ONNX Runtime CPU threads |
 | `CHATTERBOX_MOCK` | — | `1` = no model, sine-wave output (dev/tests, no downloads) |
 
 Node API side (`.env`): `VOICECLONE_URL`, `LOCAL_VOICE_URL`, `VOICECLONE_TOKEN`,
@@ -265,8 +295,10 @@ to reserve cloning for paying users if the GPU costs you money).
 
 ## 7. Notes & tips
 
-- **Reference clip:** 3–10 s of clean, single-speaker speech, same language as
-  your target text. Longer clips slow inference and can hurt quality.
+- **Reference clip:** at least 3 seconds of clean, single-speaker speech.
+  Chatterbox accepts up to 60 seconds; MOSS is limited to 10 seconds. Use a
+  language supported by the selected model (Serbian is not in MOSS's listed
+  language set). Longer clips can slow inference and hurt quality.
 - **Per request cost:** because the service is stateless, each generation
   conditions on the reference clip — a few seconds of audio, small next to the
   synthesis itself.

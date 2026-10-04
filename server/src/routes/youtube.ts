@@ -9,9 +9,8 @@ import { config } from "../config.js";
 import { ConnectError, startYouTubeConnect, YOUTUBE_SCOPES } from "../lib/youtubeOAuth.js";
 import { notFromApp } from "../middleware/localApp.js";
 import { channelFor, channelViews, removeChannel, setDefaultChannel, updateChannel } from "../lib/youtubeChannels.js";
-import { planRequest, planStatus, startDemo } from "../lib/publishPlan.js";
+import { planRequest, planStatus } from "../lib/publishPlan.js";
 import { startShortJob } from "./agentShort.js";
-import { captureAvailable } from "../lib/selfRecord.js";
 
 const router = Router();
 
@@ -69,11 +68,14 @@ const channelPatchSchema = z.object({
   plan: z
     .object({
       what: z.string().max(400).optional(),
-      kind: z.enum(["short", "demo"]).optional(),
+      // Accept the old regular-Short value for compatibility, but reject the
+      // retired self-recorded demo plan.
+      kind: z.enum(["short"]).optional(),
       auto: z.boolean().optional(),
       everyDays: z.number().int().min(1).max(30).optional(),
       time: z.string().max(5).optional(),
     })
+    .transform(({ kind: _kind, ...plan }) => plan)
     .optional(),
 });
 
@@ -106,29 +108,7 @@ router.post("/channels/:id/publish-plan", optionalAuth, async (req, res, next) =
     if (!channel) return res.status(404).json({ error: { code: "NO_CHANNEL", message: "That channel isn't connected any more." } });
     const request = planRequest(channel);
     const { jobId } = await startShortJob({ ...request, userId: req.user?.id ?? "agent-local" });
-    res.json({ ok: true, jobId, aspect: request.aspect, selfRecord: request.selfRecord });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/v1/youtube/demo — record a demo of the app now, and post it there.
-const demoSchema = z.object({
-  channelId: z.string().max(80).optional(),
-  what: z.string().max(400).optional(),
-});
-router.post("/demo", optionalAuth, validate({ body: demoSchema }), async (req, res, next) => {
-  try {
-    if (!captureAvailable()) {
-      return res.status(409).json({
-        error: {
-          code: "NO_WINDOW",
-          message: "I can only record myself inside the Soundwave desktop app — this server has no window to film. Press Generate for a normal short instead.",
-        },
-      });
-    }
-    const started = await startDemo({ ...(req.body as z.infer<typeof demoSchema>), userId: req.user?.id ?? "agent-local" });
-    res.json({ ok: true, ...started, message: "Recording my own window while I work — the demo will appear here and on the channel I post it to." });
+    res.json({ ok: true, jobId });
   } catch (err) {
     next(err);
   }

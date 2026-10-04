@@ -113,7 +113,7 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
     tag: ctx.effects.tag ?? "VOICE",
     brain: { provider: "gemini", model: result.model, ...(result.switched ? { fallbackFrom: brain.model } : {}) },
   };
-  const { short, video, log } = ctx.effects;
+  const { short, video, log, emailDraftIds } = ctx.effects;
   if (short) {
     Object.assign(reply, {
       action: "soundwave_shorts",
@@ -128,6 +128,7 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
     Object.assign(reply, { action: "soundwave_shorts", videoUrl: video.url, downloadUrl: video.url, ...(short ? {} : { topic: video.topic }) });
   }
   if (log.length) reply.actionOutput = log.join("\n");
+  if (emailDraftIds?.length) reply.emailDraftIds = emailDraftIds.slice(0, 6);
   if (ctx.effects.briefingDate) reply.briefingDate = ctx.effects.briefingDate;
   return reply;
 }

@@ -74,7 +74,9 @@ test("setup blockers distinguish network and disk-space failures", () => {
   const originalStatfs = fs.statfsSync;
   try {
     fs.statfsSync = () => ({ bavail: 1, bsize: 1 });
-    assert.throws(() => assertFreeSpace(os.tmpdir(), 1024, "test assets"), /Kokoro needs about/);
+    assert.throws(() => assertFreeSpace(os.tmpdir(), 1024, "test assets"), /local voice setup needs about/);
+    const diskError = Object.assign(new Error("not enough free disk space"), { code: "LOCAL_VOICE_INSUFFICIENT_DISK_SPACE" });
+    assert.match(describeSetupFailure(diskError), /local voice setup needs about|free disk space/);
   } finally {
     fs.statfsSync = originalStatfs;
   }
@@ -158,7 +160,7 @@ test("cancelling model setup terminates the sidecar and preserves a cancelled st
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -168,6 +170,7 @@ test("cancelling model setup terminates the sidecar and preserves a cancelled st
       resourcesDir,
       userDataDir: path.join(dir, "user-data"),
       getFreePort,
+      prepareVoiceAssets: async () => {},
       spawnProcess: (_executable, args) => {
         const child = new EventEmitter();
         child.pid = 54321;
@@ -220,7 +223,7 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(pythonExe), { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(pythonExe, "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -236,7 +239,7 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
         if (serviceAttempts === 3 && thirdHealthRequests++ === 0) return { ok: false, status: 503 };
         return {
           ok: true,
-          json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true } } }),
+          json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }),
         };
       }
       return { ok: false, status: 503 };
@@ -247,6 +250,7 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
       resourcesDir,
       userDataDir: path.join(dir, "user-data"),
       getFreePort: async () => 48129,
+      prepareVoiceAssets: async () => {},
       spawnProcess: (_executable, args, options) => {
         const child = new EventEmitter();
         child.pid = 54330 + serviceAttempts;
@@ -306,6 +310,7 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
       resourcesDir,
       userDataDir: path.join(dir, "user-data"),
       getFreePort: async () => 48130,
+      prepareVoiceAssets: async () => {},
       spawnProcess: (_executable, args, options) => {
         const child = new EventEmitter();
         child.pid = 54340 + serviceAttempts;

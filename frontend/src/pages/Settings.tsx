@@ -319,7 +319,7 @@ function PreferencesTab() {
     canRetrySetup,
     retryingSetup,
     retrySetup,
-  } = useLocalVoices();
+  } = useLocalVoices({ startOnFirstUse: agentVoice.startsWith("kokoro:") });
   const [orbMode, setOrbMode] = useState(() => localStorage.getItem("soundwave_orb_mode") ?? "auto");
 
   const savePrefs = () => {

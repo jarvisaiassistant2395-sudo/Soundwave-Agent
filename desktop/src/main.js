@@ -663,6 +663,11 @@ function notify({ title, body, route }) {
 function registerIpc() {
   ipcMain.handle("soundwave:get-state", (event) => (trusted(event) ? publicState() : null));
   ipcMain.handle("soundwave:update-settings", (event, patch) => (trusted(event) ? updateSettings(patch) : null));
+  ipcMain.handle("soundwave:start-local-voice-setup", (event) => {
+    if (!trusted(event) || !kokoroManager) return false;
+    void kokoroManager.start();
+    return true;
+  });
   ipcMain.handle("soundwave:cancel-kokoro-setup", (event) => (trusted(event) ? Boolean(kokoroManager?.cancelSetup()) : false));
   ipcMain.handle("soundwave:retry-kokoro-setup", (event) => (trusted(event) ? (kokoroManager?.retrySetup() ?? false) : false));
   ipcMain.handle("soundwave:is-app-focused", (event) => {
@@ -766,9 +771,9 @@ async function main() {
 
   const { appUrl, port: appPort } = await applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp: true });
 
-  // The packaged Windows app owns the Kokoro-only sidecar. Its one-time CPU
-  // runtime/model setup runs in the background; an explicitly configured
-  // service (dev, server or power-user install) is never replaced. Keep its
+  // The packaged Windows app owns a hidden CPU-only voice sidecar: Kokoro
+  // narration plus MOSS-TTS-Nano cloning. Setup starts on first local-voice
+  // use and runs invisibly; an explicitly configured service is never replaced. Keep its
   // port distinct from the app API's already-allocated loopback port.
   try {
     kokoroManager = await createManagedKokoro({
@@ -783,18 +788,20 @@ async function main() {
           const candidate = await getFreePort();
           if (candidate !== appPort) return candidate;
         }
-        throw new Error("Could not allocate a separate loopback port for Kokoro.");
+        throw new Error("Could not allocate a separate loopback port for the local voice service.");
       },
     });
     if (kokoroManager) {
       process.env.LOCAL_VOICE_URL = kokoroManager.url;
       process.env.LOCAL_VOICE_TOKEN = kokoroManager.token;
       process.env.LOCAL_VOICE_STATUS_FILE = kokoroManager.statusFile;
+      process.env.VOICECLONE_URL = kokoroManager.url;
+      process.env.VOICECLONE_TOKEN = kokoroManager.token;
     }
   } catch (err) {
-    // A local narrator is optional; a setup-manager hiccup must not stop the
-    // desktop app or its regular Microsoft neural voices.
-    console.warn("[soundwave-desktop] could not prepare managed Kokoro:", err.message);
+    // On-device narration/cloning are optional; a setup-manager hiccup must
+    // not stop the desktop app or its regular Microsoft neural voices.
+    console.warn("[soundwave-desktop] could not prepare the local voice service:", err.message);
     kokoroManager = null;
   }
 
@@ -823,23 +830,6 @@ async function main() {
       if (!n) return false;
       notify(n);
       return true;
-    },
-    /**
-     * Recording itself (server/src/lib/selfRecord.ts): PNG frames of the app's
-     * own window, taken while the agent works on a video about itself. A
-     * minimised window captures nothing usable, so bring it back on screen —
-     * without stealing focus from whatever the person is typing in.
-     */
-    captureWindow: async () => {
-      const win = mainWindow;
-      if (!win || win.isDestroyed()) return null;
-      if (win.isMinimized()) win.restore();
-      if (!win.isVisible()) {
-        if (typeof win.showInactive === "function") win.showInactive();
-        else win.show();
-      }
-      const image = await win.webContents.capturePage();
-      return image.toPNG();
     },
     showWindow: () => {
       const win = mainWindow;
@@ -887,7 +877,6 @@ async function main() {
   // Import the bundled server (ESM) — this starts listening on loopback.
   await import(pathToFileURL(path.join(appRoot, "server", "dist", "index.js")).href);
   serverStarted = true;
-  if (kokoroManager) void kokoroManager.start();
 
   createTray();
   applyHotkey();

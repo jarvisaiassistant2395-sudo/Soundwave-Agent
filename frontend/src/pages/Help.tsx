@@ -1,4 +1,4 @@
-import { Clapperboard, Mic, MessageCircleQuestion, Bot, Cpu, ShieldCheck, AudioLines, Smartphone, Brain, Sunrise, Youtube } from "lucide-react";
+import { Clapperboard, Mic, MessageCircleQuestion, Bot, Cpu, ShieldCheck, AudioLines, Smartphone, Brain, Sunrise, Youtube, Mail } from "lucide-react";
 import { Link } from "react-router-dom";
 
 /** Soundwave AI — Complete Documentation & Architecture Guide */
@@ -38,9 +38,9 @@ export function Help() {
             <li><strong className="text-white">Add your own Gemini API key once:</strong> <Link to="/settings/brain" className="text-cyan-300 hover:text-cyan-200">Settings → Brain</Link>. It's free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:text-cyan-200">Google AI Studio</a> — sign in, click "Create API key", paste it, press "Save &amp; test".</li>
             <li><strong className="text-white">Then just talk to it:</strong> ask questions, brainstorm hooks and titles, or say "make a short about black holes for kids" — Gemini writes the short's script for that topic. "Show me my last video", "open YouTube", "open Spotify" and "how busy is my PC?" work too.</li>
             <li><strong className="text-white">Hands and eyes (Windows desktop):</strong> <em>"what does this error say?"</em> — it photographs the screen you're on and reads it; <em>"what does C:\Users\me\notes.txt say?"</em> — it reads that file or lists that folder (read-only, only the path you gave); <em>"turn it down to 30%"</em>, <em>"mute"</em> — the PC's real volume, read back after every change; <em>"remind me in 10 minutes"</em>, <em>"at 17:30"</em>, <em>"what's waiting?"</em> — timers and reminders that ring in the chat while Soundwave runs. Long video → Shorts has a card too, on the Command Center: paste a link or a file and press the scissors.</li>
-            <li><strong className="text-white">Honest about its limits:</strong> it only says it did something when it really did. It can't send emails or messages, sign into accounts, change PC settings other than the volume, or click inside another app — it tells you instead of pretending.</li>
+            <li><strong className="text-white">Honest about its limits:</strong> it only says it did something when it really did. Email can be sent only from a draft review after you confirm the exact recipient and body; the agent has no send tool in chat. It cannot click inside other apps or change PC settings other than the volume.</li>
             <li><strong className="text-white">Free limits:</strong> Google's free tier allows a limited number of requests per day for each model. If they run out, the agent switches to a lighter Gemini model; you can also pick another model in Settings → Brain. Web search (live news, weather, prices) needs a key with billing turned on.</li>
-            <li><strong className="text-white">Privacy:</strong> your messages and the recent conversation go to Google's Gemini API with your key (on the free tier Google may use them to improve its products). The key stays on this PC. Without a key the agent still makes shorts, with built-in scripts.</li>
+            <li><strong className="text-white">Privacy:</strong> your messages and recent conversation go to Google's Gemini API with your key (on the free tier Google may use them to improve its products). If you ask Soundwave to read or draft an email, that message content is also sent to the configured Gemini provider. The key and Gmail sign-in stay on this PC.</li>
           </ul>
         </Section>
 
@@ -66,6 +66,16 @@ export function Help() {
             (type <em>Desktop app</em>) in Google Cloud — three clicks, the app links straight to the pages. YouTube keeps uploads from brand-new projects private
             until the project passes YouTube's API audit. Ask the agent for the details, or press <em>Ask Soundwave to walk me through it</em> in the same tab.
           </p>
+        </Section>
+
+        {/* Gmail */}
+        <Section icon={<Mail className="h-4 w-4" />} title="Read and Draft Gmail Replies">
+          <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
+            <li>In the Command Center, open the gear → <em>Email</em> → <strong className="text-white">Connect Gmail</strong>. Google shows exactly which mailbox permissions are requested. Gmail API access may require enabling Gmail API and adding your account as a test user in the OAuth project configured under YouTube settings.</li>
+            <li>Ask Soundwave to find or read a message, or explicitly ask it to draft a reply. Replies are saved to Gmail Drafts and stay unsent.</li>
+            <li>To send from Soundwave, open the draft card, review the exact recipient, subject and full body, then select <strong className="text-white">Send this email</strong>. Drafts with attachments must be reviewed and sent directly in Gmail. The agent cannot send from chat or act on instructions found inside email content.</li>
+            <li>When you ask the agent to read or draft an email, the relevant message content is sent to the Gemini provider configured in Settings → Brain. Disconnect Gmail at any time in the Email tab; drafts already in Gmail remain there.</li>
+          </ul>
         </Section>
 
         {/* How the agent renders */}
@@ -105,9 +115,10 @@ export function Help() {
         <Section icon={<Mic className="h-4 w-4" />} title="The Agent's Voice">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
             <li><strong className="text-white">Choose one voice for replies and shorts:</strong> pick it in the Command Center, Voice Library or Settings. Andrew, Brian, Emma and Ava are the newer Soundwave voices; Guy, Christopher, Ryan, Jenny, Ana and Sonia remain available.</li>
-            <li><strong className="text-white">On-device Kokoro voices:</strong> packaged Windows desktop caches the speech model, pronunciation assets and all 28 voices automatically on first run, then starts it invisibly with Soundwave. Setup needs internet and free disk space; progress and cancellation are shown, and you can retry or repair a failed setup in the same session. Later narration stays on this PC.</li>
+            <li><strong className="text-white">On-device narration and cloning:</strong> packaged Windows desktop downloads the Kokoro narration assets and the 728 MiB MOSS CPU cloning model automatically on first use, then starts them invisibly with Soundwave. Initial setup needs internet and at least 3 GB free before the package/model install (exact total downloads have not yet been measured on Windows); progress, cancellation, retry and repair are available in the same session. Once ready, narration and cloning run locally and can work offline. MOSS does not list Serbian among its supported languages.</li>
+            <li><strong className="text-white">Clone only with permission:</strong> before creating a voice, confirm that you own it or have the speaker's explicit permission. MOSS accepts 3–10 seconds of reference speech; optional Chatterbox sidecars accept 3–60 seconds.</li>
             <li><strong className="text-white">Starts talking right away:</strong> Soundwave-voice replies are streamed while they're synthesized, so there's no wait for the whole answer.</li>
-            <li><strong className="text-white">Clear fallback behavior:</strong> Microsoft voices need the internet; Kokoro runs on this PC after setup. If the selected engine is unavailable, the app explains why instead of silently changing the voice.</li>
+            <li><strong className="text-white">Clear fallback behavior:</strong> Microsoft voices need the internet; Kokoro narration and MOSS cloning run on this PC after setup. If the selected engine is unavailable, the app explains why instead of silently changing the voice.</li>
           </ul>
         </Section>
 

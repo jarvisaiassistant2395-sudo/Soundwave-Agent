@@ -39,7 +39,7 @@ export function KokoroSetupNotice({
             className="border-emerald-800 text-emerald-100 hover:border-emerald-500 hover:bg-emerald-950/50 hover:text-white"
             loading={cancellingSetup}
             onClick={() => void cancelSetup()}
-            aria-label="Cancel Kokoro setup"
+            aria-label="Cancel on-device voice setup"
           >
             {cancellingSetup ? "Cancelling…" : "Cancel setup"}
           </Button>
@@ -52,7 +52,7 @@ export function KokoroSetupNotice({
             className="border-emerald-700 bg-emerald-950/40 text-emerald-100 hover:border-emerald-400 hover:bg-emerald-950/70 hover:text-white"
             loading={retryingSetup}
             onClick={() => void retrySetup()}
-            aria-label="Retry Kokoro setup"
+            aria-label="Retry on-device voice setup"
           >
             {retryingSetup ? "Repairing…" : "Retry setup"}
           </Button>
@@ -64,7 +64,7 @@ export function KokoroSetupNotice({
           <div
             className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-950/80"
             role="progressbar"
-            aria-label="Kokoro setup progress"
+            aria-label="On-device voice setup progress"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={progress}
@@ -84,7 +84,7 @@ export function KokoroSetupNotice({
       )}
 
       {(setup.phase === "failed" || setup.phase === "cancelled") && (
-        <p className="mt-1 text-xs text-emerald-100/70">Soundwave voices are unaffected. Verified runtime, packages, and downloads are kept for the next retry.</p>
+        <p className="mt-1 text-xs text-emerald-100/70">Microsoft voices are unaffected. Verified runtime, packages, and model downloads are kept for the next retry.</p>
       )}
     </div>
   );

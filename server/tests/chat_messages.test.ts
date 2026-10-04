@@ -60,7 +60,7 @@ describe("server and desktop build identical messages", () => {
   });
 
   it("chat replies become the same assistant message", () => {
-    const reply = { success: true, reply: "On it!", action: "soundwave_shorts", status: "PROCESSING", jobId: "j9", topic: "space", tag: "AUDIO" as const };
+    const reply = { success: true, reply: "Draft saved.", emailDraftIds: ["draft-123"], tag: "SYS" as const };
     const s = server.replyToMessage(reply, "make a short about space");
     const w = web.replyToMessage(reply, "make a short about space");
     const { id: _s, ...sRest } = strip(s);

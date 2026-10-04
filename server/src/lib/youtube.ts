@@ -347,7 +347,7 @@ export class YouTubeService {
     const metadata = {
       snippet: {
         title: finalTitle,
-        description: `${params.description || params.title}\n\nMade with Soundwave AI — the agent that writes, narrates and posts its own videos.`,
+        description: params.description || params.title,
         tags,
         categoryId: "24", // Entertainment
       },

@@ -29,7 +29,6 @@ const { startFakeGoogle, useFakeGoogle, call, text } = await import("./helpers/f
 const settings = await import("../src/lib/brain/settings.js");
 const channels = await import("../src/lib/youtubeChannels.js");
 const { youtubeService } = await import("../src/lib/youtube.js");
-const { buildPromoInstruction, PROMO_FEATURES } = await import("../src/lib/brain/core/promo.js");
 const plans = await import("../src/lib/publishPlan.js");
 
 const KEY = "AIzaSyCHANNELS-test-000000wxyz";
@@ -91,15 +90,15 @@ describe("connected channels", () => {
 
   it("keeps both channels when a second one is connected", () => {
     const first = connect("Main Channel", "UCmain", "1//main");
-    const second = channels.registerChannel({ refreshToken: "1//demos", channelTitle: "Soundwave Demos", channelId: "UCdemos" });
+    const second = channels.registerChannel({ refreshToken: "1//second", channelTitle: "Second Channel", channelId: "UCsecond" });
     const list = channels.listChannels();
-    expect(list.map((c) => c.name)).toEqual(["Main Channel", "Soundwave Demos"]);
+    expect(list.map((c) => c.name)).toEqual(["Main Channel", "Second Channel"]);
     expect(channels.defaultChannelId()).toBe(first.id);
     expect(second.id).not.toBe(first.id);
     // The first one is still the default until someone says otherwise.
     expect(channels.channelFor(null)!.name).toBe("Main Channel");
-    expect(channels.channelFor("soundwave demos")!.id).toBe(second.id);
-    expect(channels.channelFor("UCdemos")!.id).toBe(second.id);
+    expect(channels.channelFor("second channel")!.id).toBe(second.id);
+    expect(channels.channelFor("UCsecond")!.id).toBe(second.id);
   });
 
   it("re-connecting the same channel updates it instead of duplicating it", () => {
@@ -120,17 +119,17 @@ describe("connected channels", () => {
 
   it("mints a token per channel, from that channel's own sign-in", async () => {
     const main = connect("Main Channel", "UCmain", "1//main");
-    const demos = channels.registerChannel({ refreshToken: "1//demos", channelTitle: "Soundwave Demos", channelId: "UCdemos" });
+    const demos = channels.registerChannel({ refreshToken: "1//second", channelTitle: "Second Channel", channelId: "UCsecond" });
 
     await channels.accessTokenFor(main);
     await channels.accessTokenFor(demos);
     const refreshes = fake.seen.filter((s) => s.path === "/token").map((s) => new URLSearchParams(s.raw).get("refresh_token"));
-    expect(refreshes).toEqual(["1//main", "1//demos"]);
+    expect(refreshes).toEqual(["1//main", "1//second"]);
   });
 
   it("uploads to the channel whose token it was given", async () => {
     const main = connect("Main Channel", "UCmain", "1//main");
-    const demos = channels.registerChannel({ refreshToken: "1//demos", channelTitle: "Soundwave Demos", channelId: "UCdemos" });
+    const demos = channels.registerChannel({ refreshToken: "1//second", channelTitle: "Second Channel", channelId: "UCsecond" });
 
     const first = await youtubeService.uploadWithToken(await channels.accessTokenFor(main), { videoPath: SAMPLE, title: "One", privacy: "public" });
     const second = await youtubeService.uploadWithToken(await channels.accessTokenFor(demos), { videoPath: SAMPLE, title: "Two", privacy: "unlisted" });
@@ -143,46 +142,75 @@ describe("connected channels", () => {
       ["One #shorts #viral", "Bearer ya29.fake-access-2"],
       ["Two #shorts #viral", "Bearer ya29.fake-access-2"],
     ]);
+    expect(fake.uploads.map((u) => u.description)).toEqual(["One", "Two"]);
+    expect(fake.uploads.every((u) => !u.description?.includes("Made with Soundwave"))).toBe(true);
     expect(fake.uploads.every((u) => u.bytes === 64 * 1024)).toBe(true);
   });
 
   it("removing the original connection really disconnects it", () => {
     connect("Main Channel", "UCmain", "1//main");
-    channels.registerChannel({ refreshToken: "1//demos", channelTitle: "Soundwave Demos", channelId: "UCdemos" });
+    channels.registerChannel({ refreshToken: "1//second", channelTitle: "Second Channel", channelId: "UCsecond" });
 
     expect(channels.removeChannel("default")).toBe(true);
-    expect(channels.listChannels().map((c) => c.name)).toEqual(["Soundwave Demos"]);
+    expect(channels.listChannels().map((c) => c.name)).toEqual(["Second Channel"]);
     expect(youtubeService.getConfig().refreshToken).toBe("");
     expect(channels.removeChannel("nope")).toBe(false);
   });
 });
 
-describe("what to publish on which channel", () => {
-  it("saves the instruction and reports when it runs next", async () => {
-    const demo = connect("Soundwave Demos", "UCdemos", "1//demos");
+describe("scheduled YouTube Shorts", () => {
+  it("saves a regular Shorts topic and reports when it runs next", async () => {
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
     const res = await request(app)
-      .patch(`/api/v1/youtube/channels/${demo.id}`)
-      .send({ plan: { what: "demos of the app making a short in one press", kind: "demo", everyDays: 3, auto: true, time: "18:00" } });
+      .patch(`/api/v1/youtube/channels/${channel.id}`)
+      .send({ plan: { what: "space facts", everyDays: 3, auto: true, time: "18:00" } });
     expect(res.status).toBe(200);
-    const saved = res.body.channels.find((c: { id: string }) => c.id === demo.id);
-    expect(saved.plan).toMatchObject({ what: "demos of the app making a short in one press", kind: "demo", everyDays: 3, auto: true, time: "18:00" });
+    const saved = res.body.channels.find((c: { id: string }) => c.id === channel.id);
+    expect(saved.plan).toMatchObject({ what: "space facts", everyDays: 3, auto: true, time: "18:00" });
+    expect(saved.plan).not.toHaveProperty("kind");
     expect(res.body.plan.active).toHaveLength(1);
   });
 
-  it("turns a channel's plan into the right kind of video", () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    channels.updateChannel(channel.id, { plan: { what: "demos of the app", kind: "demo", auto: true } });
-    const request = plans.planRequest(channels.channelFor(channel.id)!);
-    expect(request).toMatchObject({ topic: "demos of the app", promo: true, selfRecord: true, aspect: "16:9", autoPublishYouTube: true, youtubeChannelId: channel.id });
+  it("builds a normal vertical Short for the channel's chosen topic", () => {
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true } });
+    expect(plans.planRequest(channels.channelFor(channel.id)!)).toEqual({
+      topic: "space facts",
+      autoPublishYouTube: true,
+      youtubeChannelId: channel.id,
+    });
+  });
 
-    channels.updateChannel(channel.id, { plan: { kind: "short", what: "space facts" } });
-    const short = plans.planRequest(channels.channelFor(channel.id)!);
-    expect(short).toMatchObject({ topic: "space facts", promo: false, selfRecord: false, aspect: "9:16" });
+  it("migrates and disables an old self-recorded marketing plan", async () => {
+    const channel = connect("Main Channel", "UCmain", "1//main");
+    const file = path.join(config.dataDir, "youtube", "channels.json");
+    const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+    saved.channels[0].plan = {
+      what: "Soundwave app demos",
+      kind: "demo",
+      auto: true,
+      everyDays: 2,
+      time: "18:00",
+      lastRunAt: Date.now() - 2 * 86_400_000,
+      runs: 4,
+      lastError: null,
+    };
+    fs.writeFileSync(file, JSON.stringify(saved), "utf8");
+
+    const upgraded = channels.channelFor(channel.id)!.plan;
+    expect(upgraded).toMatchObject({ what: "", auto: false, everyDays: 3, time: "", lastRunAt: null, runs: 0 });
+    const persisted = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(persisted.channels[0].plan).not.toHaveProperty("kind");
+    expect(plans.planStatus().active).toHaveLength(0);
+
+    settings.saveBrainSettings({ apiKey: KEY });
+    expect(await plans.runDuePlans()).toEqual([]);
+    expect(mocks.startShortJob).not.toHaveBeenCalled();
   });
 
   it("is due immediately, then waits the channel's own number of days", () => {
     const channel = connect("Facts Daily", "UCfacts", "1//facts");
-    channels.updateChannel(channel.id, { plan: { what: "space facts", kind: "short", auto: true, everyDays: 2 } });
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true, everyDays: 2 } });
     const now = new Date();
     expect(channels.planDue(channels.channelFor(channel.id)!.plan, now)).toBe(true);
 
@@ -213,112 +241,83 @@ describe("what to publish on which channel", () => {
     expect(plans.planStatus().blocked).toMatch(/No channel has a plan/);
   });
 
-  it("makes the video for a due channel and posts it there", async () => {
+  it("makes the Short for a due channel and posts it there", async () => {
     settings.saveBrainSettings({ apiKey: KEY });
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    channels.updateChannel(channel.id, { plan: { what: "show how I make a short", kind: "demo", auto: true, everyDays: 1 } });
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true, everyDays: 1 } });
 
     const started = await plans.runDuePlans();
     expect(started).toHaveLength(1);
     expect(mocks.startShortJob).toHaveBeenCalledTimes(1);
-    expect(mocks.startShortJob.mock.calls[0]![0]).toMatchObject({
-      topic: "show how I make a short",
-      promo: true,
-      selfRecord: true,
-      aspect: "16:9",
+    expect(mocks.startShortJob.mock.calls[0]![0]).toEqual({
+      topic: "space facts",
       autoPublishYouTube: true,
       youtubeChannelId: channel.id,
+      userId: "agent-local",
     });
-    // It ran once, so it isn't due again right now.
     expect(channels.planDue(channels.channelFor(channel.id)!.plan)).toBe(false);
   });
 
   it("won't start a second video while one is rendering", async () => {
     settings.saveBrainSettings({ apiKey: KEY });
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    channels.updateChannel(channel.id, { plan: { what: "demos", auto: true, everyDays: 1 } });
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true, everyDays: 1 } });
     mocks.getActiveShortJobs.mockReturnValue([{ jobId: "job-busy", topic: "something else", startedAt: Date.now() }]);
     expect(await plans.runDuePlans()).toEqual([]);
     expect(mocks.startShortJob).not.toHaveBeenCalled();
   });
 
   it("says so when it can't run a plan without a Gemini key", async () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    channels.updateChannel(channel.id, { plan: { what: "demos", auto: true, everyDays: 1 } });
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true, everyDays: 1 } });
     expect(await plans.runDuePlans()).toEqual([]);
     expect(plans.planStatus().blocked).toMatch(/Gemini API key/);
   });
-
-  it("starts a demo right now when asked (the button / the tool)", async () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    const started = await plans.startDemo({ channelId: channel.id });
-    expect(started).toMatchObject({ jobId: "job-plan-1", channelId: channel.id, channelName: "Soundwave Demos" });
-    expect(mocks.startShortJob.mock.calls.at(-1)![0]).toMatchObject({ promo: true, selfRecord: true, aspect: "16:9", youtubeChannelId: channel.id });
-  });
 });
 
-describe("the pitch it writes for itself", () => {
-  it("only allows claims that are in the shipped feature list", () => {
-    const brief = buildPromoInstruction({ seconds: 60, subject: "demo", what: "show one-press shorts", showsAppOnScreen: true });
-    for (const feature of PROMO_FEATURES) expect(brief).toContain(feature);
-    expect(brief).toMatch(/Never invent users, testimonials, download numbers/);
-    expect(brief).toMatch(/Never claim a feature that is not in the list/);
-    expect(brief).toMatch(/no call to action/i);
-  });
 
-  it("describes what is on screen when the picture is the app", () => {
-    const brief = buildPromoInstruction({ seconds: 30, subject: "demo", what: "x", showsAppOnScreen: true });
-    expect(brief).toMatch(/real recording of the app's own window/);
-    expect(brief).toContain("63–78 words");
-  });
 
-  it("never pitches something the app doesn't do", () => {
-    const all = PROMO_FEATURES.join(" ").toLowerCase();
-    for (const never of ["wake word", "voice cloning", "clone your voice", "download any video", "download video", "subscribe", "free trial", "best on the market"]) {
-      expect(all).not.toContain(never);
-    }
-  });
-});
-
-describe("the agent's own tools for this", () => {
-  it("lists channels and their plans without leaking sign-ins", async () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    channels.updateChannel(channel.id, { plan: { what: "app demos", kind: "demo", auto: true, everyDays: 2 } });
+describe("channel planning tools", () => {
+  it("lists channels and plans without leaking sign-ins or exposing self-promotion", async () => {
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true, everyDays: 2 } });
     const { toolsFor } = await import("../src/lib/brain/tools.js");
-    const tool = toolsFor({ userId: "u", voice: "en-US-GuyNeural", resolution: "1080p", seconds: 60, desktop: true, platform: "linux", effects: { log: [] } } as never).find(
-      (t) => t.declaration.name === "list_youtube_channels",
-    )!;
+    const tools = toolsFor({ userId: "u", voice: "en-US-GuyNeural", resolution: "1080p", seconds: 60, desktop: true, platform: "linux", effects: { log: [] } } as never);
+    expect(tools.map((t) => t.declaration.name)).not.toContain("record_demo");
+    const tool = tools.find((t) => t.declaration.name === "list_youtube_channels")!;
     const result = await tool.run({}, {} as never);
     expect(result.connected).toBe(true);
-    expect((result.channels as Array<{ name: string }>)[0]!.name).toBe("Soundwave Demos");
+    expect((result.channels as Array<{ name: string }>)[0]!.name).toBe("Facts Daily");
     expect(JSON.stringify(result)).not.toContain("1//");
   });
 
-  it("sets a channel's plan from a sentence, and can turn it off", async () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
+  it("sets a normal Shorts schedule from a sentence, and can turn it off", async () => {
+    const channel = connect("Facts Daily", "UCfacts", "1//facts");
     const { toolsFor } = await import("../src/lib/brain/tools.js");
     const tool = toolsFor({ userId: "u", voice: "en-US-GuyNeural", resolution: "1080p", seconds: 60, desktop: true, platform: "linux", effects: { log: [] } } as never).find(
       (t) => t.declaration.name === "set_channel_plan",
     )!;
+    const props = (tool.declaration.parameters as { properties: Record<string, unknown> }).properties;
+    expect(props).not.toHaveProperty("kind");
 
-    const set = await tool.run({ channel: "Soundwave Demos", what: "demos of the app", kind: "demo", every_days: 2 }, {} as never);
+    const set = await tool.run({ channel: "Facts Daily", what: "space facts", every_days: 2 }, {} as never);
     expect(set.ok).toBe(true);
-    expect(channels.channelFor(channel.id)!.plan).toMatchObject({ what: "demos of the app", kind: "demo", everyDays: 2, auto: true });
+    expect(channels.channelFor(channel.id)!.plan).toMatchObject({ what: "space facts", everyDays: 2, auto: true });
 
-    const off = await tool.run({ channel: "Soundwave Demos", what: "demos of the app", auto: false }, {} as never);
+    const off = await tool.run({ channel: "Facts Daily", what: "space facts", auto: false }, {} as never);
     expect(off.ok).toBe(true);
     expect(channels.channelFor(channel.id)!.plan.auto).toBe(false);
 
     const missing = await tool.run({ channel: "Nope", what: "x" }, {} as never);
     expect(missing.ok).toBe(false);
-    expect(String(missing.reason)).toContain("Soundwave Demos");
+    expect(String(missing.reason)).toContain("Facts Daily");
   });
 });
 
 describe("the channels API", () => {
   it("lists channels, marks the default, and can move it", async () => {
     connect("Main Channel", "UCmain", "1//main");
-    const demos = channels.registerChannel({ refreshToken: "1//demos", channelTitle: "Soundwave Demos", channelId: "UCdemos" });
+    const demos = channels.registerChannel({ refreshToken: "1//second", channelTitle: "Second Channel", channelId: "UCsecond" });
 
     const before = await request(app).get("/api/v1/youtube/channels");
     expect(before.body.defaultId).toBe("default");
@@ -330,19 +329,27 @@ describe("the channels API", () => {
     expect(channels.channelFor(null)!.id).toBe(demos.id);
   });
 
+  it("rejects the removed demo kind instead of scheduling old marketing content", async () => {
+    const channel = connect("Main Channel", "UCmain", "1//main");
+    const res = await request(app).patch(`/api/v1/youtube/channels/${channel.id}`).send({
+      plan: { what: "Soundwave app demos", kind: "demo", auto: true },
+    });
+    expect(res.status).toBe(400);
+    expect(channels.channelFor(channel.id)!.plan.auto).toBe(false);
+  });
+
   it("runs one channel's plan right now, from the channel's own instruction", async () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    channels.updateChannel(channel.id, { plan: { what: "show the one-press flow", kind: "demo", auto: true, everyDays: 3 } });
+    const channel = connect("Second Channel", "UCsecond", "1//second");
+    channels.updateChannel(channel.id, { plan: { what: "space facts", auto: true, everyDays: 3 } });
 
     const res = await request(app).post(`/api/v1/youtube/channels/${channel.id}/publish-plan`);
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ok: true, jobId: "job-plan-1", aspect: "16:9", selfRecord: true });
-    expect(mocks.startShortJob.mock.calls.at(-1)![0]).toMatchObject({
-      topic: "show the one-press flow",
-      promo: true,
-      selfRecord: true,
+    expect(res.body).toMatchObject({ ok: true, jobId: "job-plan-1" });
+    expect(mocks.startShortJob.mock.calls.at(-1)![0]).toEqual({
+      topic: "space facts",
       youtubeChannelId: channel.id,
       autoPublishYouTube: true,
+      userId: "agent-local",
     });
   });
 
@@ -353,7 +360,7 @@ describe("the channels API", () => {
   });
 
   it("deletes a channel and everything it was told to do", async () => {
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
+    const channel = connect("Second Channel", "UCsecond", "1//second");
     channels.updateChannel(channel.id, { plan: { what: "demos", auto: true, everyDays: 1 } });
 
     const res = await request(app).delete(`/api/v1/youtube/channels/${channel.id}`);
@@ -366,37 +373,21 @@ describe("the channels API", () => {
   });
 });
 
-describe("the API for the Record-a-demo button", () => {
-  it("refuses honestly when there is no window to film", async () => {
+describe("retired self-promotion endpoints", () => {
+  it("no longer exposes the app-recording demo route", async () => {
     const res = await request(app).post("/api/v1/youtube/demo").send({});
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe("NO_WINDOW");
-    expect(res.body.error.message).toMatch(/desktop app/);
-  });
-
-  it("records when the app really provides a window", async () => {
-    const host = { captureWindow: async () => Buffer.alloc(2048), showWindow: () => undefined };
-    (globalThis as { __soundwaveDesktopHost?: unknown }).__soundwaveDesktopHost = host;
-    try {
-      connect("Soundwave Demos", "UCdemos", "1//demos");
-      const res = await request(app).post("/api/v1/youtube/demo").send({});
-      expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ ok: true, jobId: "job-plan-1" });
-      expect(mocks.startShortJob.mock.calls.at(-1)![0]).toMatchObject({ promo: true, selfRecord: true });
-    } finally {
-      delete (globalThis as { __soundwaveDesktopHost?: unknown }).__soundwaveDesktopHost;
-    }
+    expect(res.status).toBe(404);
   });
 });
 
 describe("Gemini can drive it too", () => {
   it("publishing to a named channel reaches the tool", async () => {
     settings.saveBrainSettings({ apiKey: KEY });
-    const channel = connect("Soundwave Demos", "UCdemos", "1//demos");
-    fake.gemini.push(call("make_youtube_short", { topic: "how one press makes a short", channel: "Soundwave Demos" }, "c1"));
+    const channel = connect("Second Channel", "UCsecond", "1//second");
+    fake.gemini.push(call("make_youtube_short", { topic: "how one press makes a short", channel: "Second Channel" }, "c1"));
     fake.gemini.push(text("On it."));
 
-    const res = await request(app).post("/api/v1/agent/chat").send({ message: "put a short about one-press shorts on my Soundwave Demos channel" });
+    const res = await request(app).post("/api/v1/agent/chat").send({ message: "put a short about one-press shorts on my Second Channel channel" });
     expect(res.status).toBe(200);
     const started = mocks.startShortJob.mock.calls.at(-1)![0] as { youtubeChannelId?: string; autoPublishYouTube?: boolean; topic: string };
     expect(started.topic).toBe("how one press makes a short");
