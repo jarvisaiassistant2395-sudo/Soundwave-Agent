@@ -8,20 +8,44 @@
 // our own backend, not a Microsoft round trip.
 
 import { useEffect, useState } from "react";
+import { getDesktop } from "./desktop";
 import { LOCAL_VOICE_PREFIX } from "./voices";
 import type { VoiceInfo } from "./types";
+
+export interface LocalVoiceSetupStatus {
+  managed: true;
+  phase: string;
+  message: string;
+  progress?: number;
+  progressLabel?: string;
+  updatedAt?: string;
+}
 
 export interface LocalVoiceStatus {
   available: boolean;
   engine: "kokoro";
   /** Why they aren't available, in the server's words. */
   reason?: string;
+  /** Progress from the packaged desktop's automatic first-run setup. */
+  setup?: LocalVoiceSetupStatus;
   /** Stated so the UI can be honest about the licence. */
   license?: string;
   voices: VoiceInfo[];
 }
 
 export const EMPTY_LOCAL_VOICES: LocalVoiceStatus = { available: false, engine: "kokoro", voices: [] };
+
+export function localVoiceSetupLabel(setup?: LocalVoiceSetupStatus): string {
+  if (!setup) return "";
+  if (setup.phase === "failed") return "Kokoro setup will retry next launch";
+  if (setup.phase === "cancelled") return "Kokoro setup was cancelled";
+  if (setup.phase === "cancelling") return "Cancelling Kokoro setup…";
+  if (typeof setup.progress === "number") return `Kokoro setup — ${Math.round(setup.progress)}%`;
+  if (setup.phase === "installing-python") return "Installing Kokoro's Python runtime…";
+  if (setup.phase === "installing-packages") return "Installing Kokoro's speech engine…";
+  if (setup.phase === "loading-model") return "Downloading and preparing Kokoro…";
+  return "Kokoro is preparing in the background…";
+}
 
 let cached: LocalVoiceStatus | null = null;
 let inflight: Promise<LocalVoiceStatus> | null = null;
@@ -50,13 +74,14 @@ export async function fetchLocalVoices(options: { fresh?: boolean } = {}): Promi
   if (!options.fresh && inflight) return inflight;
   inflight = fetch("/api/v1/voices")
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((body: { local?: { available?: boolean; reason?: string; license?: string; voices?: unknown[] } }) => {
+    .then((body: { local?: { available?: boolean; reason?: string; license?: string; setup?: LocalVoiceSetupStatus; voices?: unknown[] } }) => {
       const local = body.local ?? {};
       const voices = (local.voices ?? []).map((v) => toVoiceInfo(v as Parameters<typeof toVoiceInfo>[0]));
       const status: LocalVoiceStatus = {
         available: local.available === true && voices.length > 0,
         engine: "kokoro",
         reason: local.reason,
+        setup: local.setup?.managed === true ? local.setup : undefined,
         license: local.license,
         voices,
       };
@@ -71,20 +96,60 @@ export async function fetchLocalVoices(options: { fresh?: boolean } = {}): Promi
 }
 
 /** React hook: the local voices, or an empty list while unknown/unavailable. */
-export function useLocalVoices(): { status: LocalVoiceStatus; loading: boolean } {
+export function useLocalVoices(): {
+  status: LocalVoiceStatus;
+  loading: boolean;
+  canCancelSetup: boolean;
+  cancellingSetup: boolean;
+  cancelSetup: () => Promise<boolean>;
+} {
   const [status, setStatus] = useState<LocalVoiceStatus>(cached ?? EMPTY_LOCAL_VOICES);
   const [loading, setLoading] = useState(cached === null);
+  const [cancellingSetup, setCancellingSetup] = useState(false);
   useEffect(() => {
     let alive = true;
-    void fetchLocalVoices().then((s) => {
-      if (alive) {
-        setStatus(s);
-        setLoading(false);
+    let timer: number | undefined;
+    const refresh = async (fresh: boolean) => {
+      const next = await fetchLocalVoices({ fresh });
+      if (!alive) return;
+      setStatus(next);
+      setLoading(false);
+      if (next.setup?.managed && !next.available && !["ready", "failed", "cancelled"].includes(next.setup.phase)) {
+        timer = window.setTimeout(() => void refresh(true), 4_000);
       }
-    });
+    };
+    void refresh(false);
     return () => {
       alive = false;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, []);
-  return { status, loading };
+
+  const phase = status.setup?.phase;
+  const canCancelSetup = Boolean(
+    getDesktop() &&
+      status.setup?.managed &&
+      !status.available &&
+      phase &&
+      !["ready", "failed", "cancelled", "cancelling"].includes(phase),
+  );
+  const cancelSetup = async (): Promise<boolean> => {
+    const desktop = getDesktop();
+    if (!desktop || !canCancelSetup || cancellingSetup) return false;
+    setCancellingSetup(true);
+    try {
+      const accepted = await desktop.cancelKokoroSetup();
+      if (!accepted) return false;
+      const next = await fetchLocalVoices({ fresh: true });
+      setStatus(next);
+      setLoading(false);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setCancellingSetup(false);
+    }
+  };
+
+  return { status, loading, canCancelSetup, cancellingSetup, cancelSetup };
 }

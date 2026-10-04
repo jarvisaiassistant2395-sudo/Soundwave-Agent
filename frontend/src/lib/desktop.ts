@@ -70,6 +70,8 @@ export interface SoundwaveDesktop {
   readonly isDesktop: true;
   getState(): Promise<DesktopState>;
   updateSettings(patch: Partial<DesktopSettings>): Promise<DesktopState>;
+  /** Stop the first-run Kokoro download/install without affecting Soundwave voices. */
+  cancelKokoroSetup(): Promise<boolean>;
   /** The main window is visible and focused. */
   isAppFocused(): Promise<boolean>;
   onVoiceCommand(callback: (command: VoiceCommand) => void): () => void;

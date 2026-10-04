@@ -42,7 +42,7 @@ import { toast } from "../store/toast";
 import { ThinkingOrbVisualizer, ALL_ORB_STATES } from "../components/agent/ThinkingOrbVisualizer";
 import type { OrbState } from "thinking-orbs";
 import { AGENT_VOICES, agentVoiceLabel, displayNameFor, isKnownVoice, loadAgentVoice, saveAgentVoice } from "../lib/voices";
-import { useLocalVoices } from "../lib/localVoices";
+import { localVoiceSetupLabel, useLocalVoices } from "../lib/localVoices";
 import {
   CHAT_STORAGE_KEY,
   CHAT_SYNCED_EVENT,
@@ -1585,6 +1585,11 @@ export function AgentHub() {
               title="The agent's Soundwave voice — used for replies and for the shorts it makes"
               aria-label="Agent voice"
             >
+              {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
+                <option disabled value="__kokoro_status" className="bg-[#0A1224] text-gray-400">
+                  {localVoiceSetupLabel(localVoiceStatus.setup)}
+                </option>
+              )}
               {voiceChoices.map((v) => (
                 <option key={v.id} value={v.id} className="bg-[#0A1224] text-white">
                   {agentVoiceLabel(v.id)}
@@ -2343,6 +2348,11 @@ export function AgentHub() {
                   onChange={(e) => handleVoiceChange(e.target.value)}
                   className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
+                  {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
+                    <option disabled value="__kokoro_status">
+                      {localVoiceSetupLabel(localVoiceStatus.setup)}
+                    </option>
+                  )}
                   {voiceChoices.map((v) => (
                     <option key={v.id} value={v.id}>
                       {agentVoiceLabel(v.id)}
@@ -2748,6 +2758,11 @@ export function AgentHub() {
                     onChange={(e) => handleVoiceChange(e.target.value)}
                     className="w-full rounded-lg border border-[#172A4A] bg-[#0C172E] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                   >
+                    {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
+                      <option disabled value="__kokoro_status">
+                        {localVoiceSetupLabel(localVoiceStatus.setup)}
+                      </option>
+                    )}
                     {voiceChoices.map((v) => (
                       <option key={v.id} value={v.id}>
                         {agentVoiceLabel(v.id)}

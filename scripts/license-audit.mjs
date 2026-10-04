@@ -24,8 +24,10 @@
 //
 // Two hand-verified exemptions exist, and nothing automatic can claim them: a
 // `separateProgram` (mere aggregation) and a Python dependency that is
-// `notBundled` (the user pip-installs the voice service themselves). Both are
-// printed in the notices, so a reader sees the reason, not just the verdict.
+// `notBundled` (the component is not conveyed in the installer; Kokoro's
+// packaged Windows runtime downloads its own Python dependencies into the
+// user's data folder, while other optional sidecars are installed separately).
+// Both are printed in the notices, so a reader sees the reason, not just verdict.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -120,14 +122,16 @@ const BINARIES = [
 
 /**
  * The local voice service's Python dependencies. Not an npm tree, so they are
- * listed by hand — and none of them is bundled: the voice service is installed
- * by whoever wants it, from PyPI, on their own machine (see `notBundled`). The
- * desktop installer ships no Python at all — electron-builder.yml copies only
- * desktop/{src,app,bin}, and bin/ holds ffmpeg, yt-dlp and whisper.cpp.
+ * listed by hand. The installer conveys no Python runtime, wheels or model
+ * weights; packaged Windows first-run downloads the small Kokoro-only subset
+ * to per-user app data, while cloning/page-reader dependencies remain optional
+ * manual installs. All entries use the narrow `notBundled` exception below.
  */
 const NOT_BUNDLED =
-  "NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.";
+  "NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.";
 const PYTHON = [
+  { name: "CPython 3.13.16 Windows x64 runtime", licence: "PSF-2.0", notBundled: true, note: "Downloaded from python.org on first packaged Windows launch; the installer SHA-256 is pinned in desktop/src/kokoro-manager.cjs." },
+  { name: "pip", licence: "MIT", notBundled: true, note: "Used only inside the managed per-user Kokoro virtual environment." },
   { name: "chatterbox-tts (Resemble AI Chatterbox)", licence: "MIT", notBundled: true, note: "Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights)." },
   { name: "kokoro (Kokoro-82M)", licence: "Apache-2.0", notBundled: true, note: "On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them." },
   { name: "misaki", licence: "Apache-2.0", notBundled: true, note: "Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is." },
@@ -257,7 +261,7 @@ const sections = [
     entries: collectAppDeps(path.join(repoRoot, "mobile"), false).map((p) => ({ ...p, note: "" })),
   },
   {
-    title: "Local voice service (voiceclone/) — Python (installed separately, not bundled)",
+    title: "Local Python services and Kokoro runtime (not installer-bundled)",
     entries: PYTHON.map((p) => ({ name: p.name, version: "", licence: p.licence, note: p.note ?? "", notBundled: p.notBundled === true })),
   },
 ];
@@ -276,8 +280,8 @@ for (const section of sections) {
     // Two hand-verified exemptions from the deny rule, both narrow and both
     // printed in the notices so the reason travels with the claim:
     //   • separateProgram — mere aggregation, plus its own paper trail below.
-    //   • notBundled — nothing we ship conveys it; the user installs it from
-    //     PyPI themselves (only used for the voice service's Python list).
+    //   • notBundled — nothing in the installer conveys it; the user obtains it
+    //     from upstream (Kokoro may be downloaded by the packaged app at runtime).
     const check = entry.separateProgram
       ? { level: "ok", why: "separate program" }
       : entry.notBundled

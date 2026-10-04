@@ -65,6 +65,13 @@ from pydantic import BaseModel, Field
 CHATTERBOX_NANO = os.environ.get("CHATTERBOX_NANO", "").lower() in ("1", "true", "yes")
 DEVICE = os.environ.get("CHATTERBOX_DEVICE", "cpu")  # cpu | cuda:0 | mps | xpu
 MOCK = os.environ.get("CHATTERBOX_MOCK", "").lower() in ("1", "true", "yes")
+# The desktop-managed service installs only the smaller Kokoro dependency set.
+# Keep cloning endpoints present for API compatibility, but never import or
+# advertise Chatterbox there.
+CHATTERBOX_OFF = os.environ.get("CHATTERBOX_OFF", "").lower() in ("1", "true", "yes")
+# The packaged desktop warms the base model and default voice before uvicorn
+# begins listening, so the first narration request doesn't wait on downloads.
+KOKORO_PRELOAD = os.environ.get("KOKORO_PRELOAD", "").lower() in ("1", "true", "yes")
 # Emotion dial (0 = flat, 1 = excited) and how strongly the reference clip is
 # followed. Chatterbox's own defaults; env-tunable for a particular voice.
 EXAGGERATION = float(os.environ.get("CHATTERBOX_EXAGGERATION", "0.5"))
@@ -80,7 +87,7 @@ INDEX_PATH = PROFILES_DIR / "index.json"
 model = None
 model_lock = threading.Lock()
 
-if not MOCK:
+if not MOCK and not CHATTERBOX_OFF:
     print(f"[voiceclone] loading Chatterbox on {DEVICE}{' (nano)' if CHATTERBOX_NANO else ''} — this can take a minute…", flush=True)
     try:
         if CHATTERBOX_NANO:
@@ -93,6 +100,8 @@ if not MOCK:
     except Exception as e:  # noqa: BLE001 — surface a clean startup failure
         print(f"[voiceclone] FATAL: failed to load Chatterbox: {e}", flush=True)
         raise
+elif CHATTERBOX_OFF:
+    print("[voiceclone] Chatterbox cloning is disabled; running Kokoro narration only.", flush=True)
 
 SAMPLE_RATE = int(getattr(model, "sr", DEFAULT_SAMPLE_RATE)) if not MOCK else DEFAULT_SAMPLE_RATE
 
@@ -174,13 +183,24 @@ KOKORO_READY = False
 if not KOKORO_OFF and not MOCK:
     print(f"[voiceclone] loading Kokoro (narration, lang '{KOKORO_LANG}') — Apache-2.0, CPU…", flush=True)
     try:
-        _kokoro_pipeline(KOKORO_LANG)
+        engine = _kokoro_pipeline(KOKORO_LANG)
+        if KOKORO_PRELOAD:
+            # Download/cache the 82M model and its default voice before the
+            # desktop service reports ready. Other voice packs stay on-demand.
+            engine._ensure_model()
+            default_voice = next(v["id"] for v in KOKORO_VOICES if v.get("default"))
+            engine.voice_tensor(default_voice)
         KOKORO_READY = True
         print(f"[voiceclone] Kokoro ready ({len(KOKORO_VOICES)} voices)", flush=True)
     except Exception as e:  # noqa: BLE001
+        if KOKORO_PRELOAD:
+            # The managed desktop promises that first-use model downloads have
+            # completed before the local voice API says it is ready.
+            print(f"[voiceclone] FATAL: Kokoro preload failed: {e}", flush=True)
+            raise
         # Chatterbox cloning can still work without Kokoro; say so and carry on.
         print(f"[voiceclone] Kokoro unavailable ({e}) — narration voices are off, cloning still works", flush=True)
-elif MOCK:
+elif MOCK and not KOKORO_OFF:
     KOKORO_READY = True
 
 
@@ -336,8 +356,8 @@ def health() -> dict:
         "mock": MOCK,
         # Two engines, one service — the Node side reports each separately.
         "engines": {
-            "chatterbox": {"loaded": MOCK or model is not None, "code": "MIT", "weights": "MIT"},
-            "kokoro": {"loaded": KOKORO_READY, "code": "Apache-2.0", "weights": "Apache-2.0", "voices": len(KOKORO_VOICES)},
+            "chatterbox": {"enabled": not CHATTERBOX_OFF, "loaded": not CHATTERBOX_OFF and (MOCK or model is not None), "code": "MIT", "weights": "MIT"},
+            "kokoro": {"enabled": not KOKORO_OFF, "loaded": KOKORO_READY, "code": "Apache-2.0", "weights": "Apache-2.0", "voices": len(KOKORO_VOICES)},
         },
     }
 
@@ -367,6 +387,8 @@ async def create_profile(
     name: str = Form(...),
     refText: str | None = Form(None),
 ) -> dict:
+    if CHATTERBOX_OFF:
+        raise HTTPException(503, "Voice cloning is not installed in this Kokoro-only service.")
     name = name.strip()[:80]
     if not name:
         raise HTTPException(400, "A voice name is required.")
@@ -417,6 +439,8 @@ def delete_profile(profile_id: str) -> dict:
 
 @app.post("/clone", dependencies=[Depends(require_token)])
 def clone(req: CloneRequest) -> Response:
+    if CHATTERBOX_OFF:
+        raise HTTPException(503, "Voice cloning is not installed in this Kokoro-only service.")
     profile = _get_profile(req.profileId)
     if profile is None:
         raise HTTPException(404, "Voice profile not found — create it first via /profiles.")
@@ -440,6 +464,8 @@ async def clone_ephemeral(
     refText: str | None = Form(None),
     speed: float | None = Form(None),
 ) -> Response:
+    if CHATTERBOX_OFF:
+        raise HTTPException(503, "Voice cloning is not installed in this Kokoro-only service.")
     if not text or len(text) > 10_000:
         raise HTTPException(400, "Text is required (max 10,000 chars).")
     data = await file.read()

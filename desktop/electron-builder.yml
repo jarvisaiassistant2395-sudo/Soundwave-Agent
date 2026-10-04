@@ -37,6 +37,15 @@ extraResources:
     to: bin
     filter:
       - "**/*"
+  # Ship only Soundwave's voice-service source, not Python, wheels, or model
+  # weights. The packaged desktop provisions a CPU-only Kokoro environment in
+  # user data on first run, then supervises it invisibly in the background.
+  - from: ../voiceclone
+    to: voiceclone
+    filter:
+      - server.py
+      - kokoro_engine.py
+      - requirements-kokoro.txt
 
 win:
   icon: build/icon.ico

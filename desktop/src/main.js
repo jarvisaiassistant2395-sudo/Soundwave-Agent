@@ -1,11 +1,12 @@
 // Soundwave AI — desktop shell.
 //
 // Boots the bundled Express server IN-PROCESS (all dependencies are pure JS),
-// then opens the Command Center in a native window. No terminal, no .bat, no admin
-// prompts — everything a customer needs ships in the installer. The one
-// runtime download is yt-dlp keeping its user-data copy current (YouTube
-// breaks old builds), and yt-dlp's JavaScript runtime is this very binary
-// running as Node (ELECTRON_RUN_AS_NODE — see server/src/lib/jsRuntime.ts).
+// then opens the Command Center in a native window. No terminal, .bat, or admin
+// prompt. The optional Kokoro narrator provisions its CPU-only Python runtime
+// and model under user data on first launch, invisibly; yt-dlp also keeps its
+// writable user-data copy current (YouTube breaks old builds). yt-dlp's
+// JavaScript runtime is this very binary running as Node (ELECTRON_RUN_AS_NODE
+// — see server/src/lib/jsRuntime.ts).
 //
 // Voice: a system-wide shortcut (Ctrl+Shift+Space by default) opens a small
 // always-on-top voice bar (/overlay) that listens, asks the agent and speaks
@@ -33,7 +34,8 @@ const {
 const path = require("node:path");
 const http = require("node:http");
 const { pathToFileURL } = require("node:url");
-const { applyServerEnv } = require("./server-env.cjs");
+const { applyServerEnv, getFreePort } = require("./server-env.cjs");
+const { createManagedKokoro } = require("./kokoro-manager.cjs");
 const { createKeyWatcher } = require("./keywatch.cjs");
 const { DEFAULT_WAKE_PHRASES, vkCodesFor, wakeHit } = require("./wake.cjs");
 const {
@@ -95,6 +97,7 @@ let pendingVoice = [];
 let tray = null;
 let isQuitting = false;
 let serverStarted = false;
+let kokoroManager = null;
 let serverUrl = "";
 let appOrigin = "";
 let settings = null;
@@ -660,6 +663,7 @@ function notify({ title, body, route }) {
 function registerIpc() {
   ipcMain.handle("soundwave:get-state", (event) => (trusted(event) ? publicState() : null));
   ipcMain.handle("soundwave:update-settings", (event, patch) => (trusted(event) ? updateSettings(patch) : null));
+  ipcMain.handle("soundwave:cancel-kokoro-setup", (event) => (trusted(event) ? Boolean(kokoroManager?.cancelSetup()) : false));
   ipcMain.handle("soundwave:is-app-focused", (event) => {
     if (!trusted(event)) return false;
     return alive(mainWindow) && mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized();
@@ -759,7 +763,40 @@ async function main() {
     }
   }
 
-  const { appUrl } = await applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp: true });
+  const { appUrl, port: appPort } = await applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp: true });
+
+  // The packaged Windows app owns the Kokoro-only sidecar. Its one-time CPU
+  // runtime/model setup runs in the background; an explicitly configured
+  // service (dev, server or power-user install) is never replaced. Keep its
+  // port distinct from the app API's already-allocated loopback port.
+  try {
+    kokoroManager = await createManagedKokoro({
+      enabled: app.isPackaged,
+      platform: process.platform,
+      arch: process.arch,
+      env: process.env,
+      resourcesDir: app.isPackaged ? path.join(process.resourcesPath, "voiceclone") : path.join(__dirname, "..", "..", "voiceclone"),
+      userDataDir,
+      getFreePort: async () => {
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const candidate = await getFreePort();
+          if (candidate !== appPort) return candidate;
+        }
+        throw new Error("Could not allocate a separate loopback port for Kokoro.");
+      },
+    });
+    if (kokoroManager) {
+      process.env.LOCAL_VOICE_URL = kokoroManager.url;
+      process.env.LOCAL_VOICE_TOKEN = kokoroManager.token;
+      process.env.LOCAL_VOICE_STATUS_FILE = kokoroManager.statusFile;
+    }
+  } catch (err) {
+    // A local narrator is optional; a setup-manager hiccup must not stop the
+    // desktop app or its regular Microsoft neural voices.
+    console.warn("[soundwave-desktop] could not prepare managed Kokoro:", err.message);
+    kokoroManager = null;
+  }
+
   serverUrl = appUrl;
   appOrigin = new URL(appUrl).origin;
   restrictPermissions();
@@ -849,6 +886,7 @@ async function main() {
   // Import the bundled server (ESM) — this starts listening on loopback.
   await import(pathToFileURL(path.join(appRoot, "server", "dist", "index.js")).href);
   serverStarted = true;
+  if (kokoroManager) void kokoroManager.start();
 
   createTray();
   applyHotkey();
@@ -924,6 +962,9 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  // Stop the supervised local service when Soundwave quits; setup downloads and
+  // the service itself never keep running as an orphan process.
+  kokoroManager?.stop();
   // Server runs in-process — quitting the app stops the API with it.
   if (serverStarted) console.log("[soundwave-desktop] shutting down");
 });

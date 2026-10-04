@@ -57,6 +57,10 @@ export const config = {
   // says what it now is; VOICECLONE_URL still works, so existing installs keep
   // running. Empty = both local features are off.
   localVoiceUrl: str("LOCAL_VOICE_URL", "") || str("VOICECLONE_URL", ""),
+  // Desktop-managed Kokoro gets its own loopback-only bearer secret, separate
+  // from any remote Chatterbox/clone token.
+  localVoiceToken: str("LOCAL_VOICE_TOKEN", ""),
+  localVoiceStatusFile: str("LOCAL_VOICE_STATUS_FILE", ""),
   voiceCloneUrl: str("VOICECLONE_URL", ""),
   elevenLabsApiKey: str("ELEVENLABS_API_KEY", ""),
   // Shared secret for the sidecar — REQUIRED when VOICECLONE_URL is a public

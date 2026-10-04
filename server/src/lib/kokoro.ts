@@ -13,6 +13,7 @@
 // Voice ids are namespaced: "kokoro:af_heart". Anything without that prefix is
 // a Microsoft voice and never reaches this module.
 
+import fs from "node:fs";
 import { config } from "../config.js";
 import { ApiError } from "../middleware/error.js";
 import { estimateWordTimings } from "./voiceclone.js";
@@ -31,11 +32,22 @@ export interface LocalVoice {
   isDefault?: boolean;
 }
 
+export interface LocalVoiceSetupStatus {
+  managed: true;
+  phase: "checking" | "installing-python" | "installing-packages" | "loading-model" | "ready" | "failed" | string;
+  message: string;
+  progress?: number;
+  progressLabel?: string;
+  updatedAt?: string;
+}
+
 export interface LocalVoiceStatus {
   available: boolean;
   engine: "kokoro";
   /** Why it isn't available, in a sentence the UI can show as-is. */
   reason?: string;
+  /** Packaged desktop setup progress, if it owns the local service. */
+  setup?: LocalVoiceSetupStatus;
   /** Apache-2.0, stated where the UI can see it. */
   license?: string;
   voices: LocalVoice[];
@@ -66,7 +78,26 @@ export function localEngineConfigured(): boolean {
 }
 
 function authHeaders(): Record<string, string> {
-  return config.voiceCloneToken ? { Authorization: `Bearer ${config.voiceCloneToken}` } : {};
+  const token = config.localVoiceToken || config.voiceCloneToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function readManagedSetup(): LocalVoiceSetupStatus | undefined {
+  if (!config.localVoiceStatusFile) return undefined;
+  try {
+    const value = JSON.parse(fs.readFileSync(config.localVoiceStatusFile, "utf8")) as Partial<LocalVoiceSetupStatus>;
+    if (value.managed !== true || typeof value.phase !== "string" || typeof value.message !== "string") return undefined;
+    return {
+      managed: true,
+      phase: value.phase,
+      message: value.message.slice(0, 400),
+      ...(Number.isFinite(value.progress) ? { progress: Math.max(0, Math.min(100, Number(value.progress))) } : {}),
+      ...(typeof value.progressLabel === "string" ? { progressLabel: value.progressLabel.slice(0, 80) } : {}),
+      ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 const UNCONFIGURED: LocalVoiceStatus = {
@@ -84,11 +115,26 @@ const CACHE_MS = 5_000;
  * is a normal state the UI reports, not an error page.
  */
 export async function getLocalVoiceStatus(options: { fresh?: boolean } = {}): Promise<LocalVoiceStatus> {
-  if (!localEngineConfigured()) return UNCONFIGURED;
+  const setup = readManagedSetup();
+  if (!localEngineConfigured()) {
+    return setup ? { ...UNCONFIGURED, reason: setup.message, setup } : UNCONFIGURED;
+  }
+  if (setup && setup.phase !== "ready" && setup.phase !== "failed") {
+    return { available: false, engine: "kokoro", reason: setup.message, setup, voices: [] };
+  }
+  if (setup?.phase === "failed") {
+    return { available: false, engine: "kokoro", reason: setup.message, setup, voices: [] };
+  }
   if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.status;
 
   const fail = (reason: string): LocalVoiceStatus => {
-    const status: LocalVoiceStatus = { available: false, engine: "kokoro", reason, voices: [] };
+    const status: LocalVoiceStatus = {
+      available: false,
+      engine: "kokoro",
+      reason,
+      ...(setup ? { setup } : {}),
+      voices: [],
+    };
     cached = { at: Date.now(), status };
     return status;
   };
@@ -114,6 +160,7 @@ export async function getLocalVoiceStatus(options: { fresh?: boolean } = {}): Pr
       available: body.available === true && voices.length > 0,
       engine: "kokoro",
       license: "Kokoro-82M — Apache-2.0 (code and weights)",
+      ...(setup ? { setup } : {}),
       voices,
       ...(body.available === true && voices.length > 0
         ? {}

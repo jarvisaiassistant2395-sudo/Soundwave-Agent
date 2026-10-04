@@ -1,0 +1,14 @@
+# Minimal packages for the desktop-managed, Kokoro-only service.
+# The desktop starts it with CHATTERBOX_OFF=1 and KOKORO_PRELOAD=1.
+# Keep Chatterbox and its model out of the user's first-run download.
+# Kokoro itself is installed separately with --no-deps: its [en] extra pulls
+# GPL phonemizer/espeak-ng, which Soundwave deliberately does not use.
+fastapi
+huggingface-hub
+misaki
+numpy
+num2words
+python-multipart
+spacy
+transformers
+uvicorn

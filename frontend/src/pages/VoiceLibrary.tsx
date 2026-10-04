@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Mic, Play, Square, Sparkles, Volume2 } from "lucide-react";
 import { Navbar } from "../components/layout/Navbar";
+import { KokoroSetupNotice } from "../components/KokoroSetupNotice";
 import { Badge } from "../components/ui/Badge";
 import { IconButton } from "../components/ui/IconButton";
 import { DEFAULT_VOICES, displayNameFor, loadAgentVoice, saveAgentVoice, SAMPLE_SENTENCE } from "../lib/voices";
@@ -20,10 +21,10 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const navigate = useNavigate();
   const agentVoice = loadAgentVoice();
-  // The on-this-PC engine (Kokoro, Apache-2.0): its voices come from the running
-  // local voice service. Nothing is shown when it isn't running, and the reason
-  // is the server's own sentence rather than a guess.
-  const { status: localVoices } = useLocalVoices();
+  // Kokoro (Apache-2.0) voices come from the local service. The packaged
+  // Windows app prepares it automatically; other installs can point at one
+  // themselves. While setup is running, show the real status rather than guess.
+  const { status: localVoices, canCancelSetup, cancellingSetup, cancelSetup } = useLocalVoices();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -101,6 +102,13 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
 
         {/* ── NEURAL VOICE DIRECTORY ────────────────────────────────────── */}
         <div className="mt-8 space-y-6">
+          <KokoroSetupNotice
+            setup={localVoices.setup}
+            available={localVoices.available}
+            canCancelSetup={canCancelSetup}
+            cancellingSetup={cancellingSetup}
+            cancelSetup={cancelSetup}
+          />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-800 pb-4">
             <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
               {filtered.length} voices

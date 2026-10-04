@@ -397,7 +397,7 @@ soundwave-ai/
 │   ├── prisma/schema.prisma
 │   └── scripts/generate-samples.ts
 ├── deploy/              # Dockerfile.api, nginx.conf
-├── voiceclone/          # optional Chatterbox voice-cloning sidecar (see its README)
+├── voiceclone/          # Kokoro narrator + optional Chatterbox sidecar (see its README)
 ├── docker-compose.yml
 └── vendor/              # static ffmpeg (export) + yt-dlp zipapp (YouTube import); whisper/ (voice input, git-ignored)
 ```
@@ -634,18 +634,35 @@ OAuth identity; new OAuth users are created email-verified with no password.
 | Edge TTS (Microsoft) | unreachable | the agent shows why it can't speak (no robotic stand-in voice); a short fails with a clear message instead of being narrated by another voice |
 | Speech engine (whisper.cpp) | not in `vendor/whisper/` / `WHISPER_*` unset | `/agent/transcribe` answers 503 with the reason; the mic shows it; typing works |
 | Voice cloning | `VOICECLONE_URL` unset or sidecar down | `/tts/clone*` answers with a clear error; the Soundwave voices are unaffected |
+| Kokoro narration | on packaged Windows desktop, setup runs automatically; elsewhere, `LOCAL_VOICE_URL` unset or sidecar down | Kokoro choices stay unavailable; Soundwave voices continue to work, and an explicitly chosen Kokoro voice never silently changes |
 | Gemini (agent brain) | no key in Settings → Brain / `GEMINI_API_KEY` | the agent still makes shorts (built-in scripts) and finds videos; other chat answers explain how to add a key — nothing is made up |
 | Memory | not the desktop app (`MEMORY=1` turns it on) | no notes/summary in the agent's instruction; hosted servers never keep a shared memory |
 | Weather (Open-Meteo) | unreachable / no city | Morning Setup leaves the weather out and says why (`OPEN_METEO_GEOCODING_URL` / `OPEN_METEO_FORECAST_URL` point tests at a stand-in) |
 | YouTube | not linked | Morning Setup skips the channel numbers; posting buttons ask you to link it (`GOOGLE_OAUTH_*_URL` / `YOUTUBE_API_BASE` point tests at stand-ins) |
 
+### On-device narration (Kokoro)
+
+On the packaged **Windows x64 desktop app**, Kokoro sets itself up on first
+launch: a checksum-verified Python runtime, CPU-only PyTorch and the Kokoro
+packages/model download into per-user app data. It starts as a hidden background
+service whenever Soundwave runs and stops when the app exits. No terminal,
+manual environment setup or Chatterbox install is required; the first setup
+needs internet, while later narration runs on the PC. The Voice Library and
+Settings show setup progress and let you cancel it without affecting Soundwave's
+default voices; a cancelled setup can be retried next launch. CI can disable
+first-run setup with
+`SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP=1`.
+
+Standalone Node servers, development builds and non-Windows installs still use
+the optional service instructions in [`voiceclone/README.md`](voiceclone/README.md)
+and `LOCAL_VOICE_URL`.
+
 ### Voice cloning (Chatterbox)
 
-An optional sidecar in [`voiceclone/`](voiceclone/README.md) runs
+The optional full sidecar in [`voiceclone/`](voiceclone/README.md) runs
 [Chatterbox](https://github.com/resemble-ai/chatterbox) (Resemble AI's zero-shot
-voice cloning) next to the app. It is API-only (`/api/v1/tts/clone*`): the app
-no longer has a voiceover page — the agent is the only thing that makes videos,
-and it narrates with the Soundwave voices.
+voice cloning) for the API-only `/api/v1/tts/clone*` endpoints. The agent uses
+the selected Soundwave or Kokoro voice to narrate shorts.
 
 **Why Chatterbox:** its license is MIT for the code *and the pre-trained
 weights*, so cloned voices can lawfully be offered on paid plans. The model this

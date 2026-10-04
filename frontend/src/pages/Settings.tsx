@@ -26,6 +26,7 @@ import { cn } from "../lib/cn";
 import { formatNumber } from "../lib/format";
 import { PLANS, type Plan } from "../lib/plans";
 import { Button } from "../components/ui/Button";
+import { KokoroSetupNotice } from "../components/KokoroSetupNotice";
 import { TextField } from "../components/ui/TextField";
 import { Select } from "../components/ui/Select";
 import { Badge } from "../components/ui/Badge";
@@ -310,7 +311,7 @@ function PreferencesTab() {
   const [agentVoice, setAgentVoice] = useState(() => loadAgentVoice());
   // Soundwave voices first, then whatever the on-this-PC engine offers (empty
   // when the local voice service isn't running — nothing empty is rendered).
-  const { status: localVoices } = useLocalVoices();
+  const { status: localVoices, canCancelSetup, cancellingSetup, cancelSetup } = useLocalVoices();
   const [orbMode, setOrbMode] = useState(() => localStorage.getItem("soundwave_orb_mode") ?? "auto");
 
   const savePrefs = () => {
@@ -346,6 +347,13 @@ function PreferencesTab() {
               onChange={setAgentVoice}
               options={[...AGENT_VOICES, ...localVoices.voices].map((v) => ({ value: v.id, label: agentVoiceLabel(v.id) }))}
               ariaLabel="Agent voice"
+            />
+            <KokoroSetupNotice
+              setup={localVoices.setup}
+              available={localVoices.available}
+              canCancelSetup={canCancelSetup}
+              cancellingSetup={cancellingSetup}
+              cancelSetup={cancelSetup}
             />
           </div>
           <div>

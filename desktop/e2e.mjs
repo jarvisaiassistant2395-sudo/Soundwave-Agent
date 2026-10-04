@@ -170,6 +170,8 @@ try {
     env: {
       ...process.env,
       GEMINI_API_BASE: fakeGemini.url,
+      // CI verifies the app, not a multi-gigabyte first-run local-model install.
+      SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP: "1",
       // Morning Setup's weather from the same stand-in.
       OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
       OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
@@ -1192,6 +1194,7 @@ try {
         env: {
           ...process.env,
           GEMINI_API_BASE: fakeGemini.url,
+          SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP: "1",
           OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
           OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
         },

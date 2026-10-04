@@ -586,62 +586,68 @@ Phone app (mobile/) — everything in the APK
 • yauzl 2.10.0 — MIT
 • zod 4.1.11 — MIT
 
-Local voice service (voiceclone/) — Python (installed separately, not bundled)
+Local Python services and Kokoro runtime (not installer-bundled)
 ------------------------------------------------------------
 • apify-fingerprint-datapoints — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Fingerprint data for Scrapling's fetchers, from Apify.
 • browserforge — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Fingerprint generation for Scrapling's fetchers.
 • Camoufox — MPL-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     The stealth browser Scrapling drives, only if the person installs it (scrapling/install.sh STEALTH=1). MPL-2.0 is file-level copyleft over Mozilla's own code: we do not modify it, do not bundle it, and do not link it — the sidecar runs it as a separate program, like ffmpeg (GPL) is run. Its ~200 MB download is exactly why it is not in the installer.
 • chatterbox-tts (Resemble AI Chatterbox) — MIT
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Cloned voices — MIT for code AND weights, which is why it replaced OmniVoice (CC-BY-NC weights).
+• CPython 3.13.16 Windows x64 runtime — PSF-2.0
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
+    Downloaded from python.org on first packaged Windows launch; the installer SHA-256 is pinned in desktop/src/kokoro-manager.cjs.
 • curl_cffi — MIT
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Scrapling's fast fetcher: a real browser's TLS/HTTP-2 fingerprint, no browser involved.
 • FastAPI — MIT
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • graphemes_to_phonemes_en_us (G2P fallback model downloaded by misaki) — Not stated by the publisher
     A ~3 MB BART model (PeterReid/graphemes_to_phonemes_en_us) that misaki's FallbackNetwork loads for out-of-dictionary words. Its Hugging Face card is empty and carries no licence tag (checked 2026-10-04). Nothing we ship conveys it — it is downloaded to the user's own machine when the voice service runs — but the licence gap is recorded here rather than papered over.
 • huggingface-hub — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • kokoro (Kokoro-82M) — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them.
 • misaki — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is.
 • msgspec — BSD-3-Clause
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • num2words — LGPL-2.1
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Used by misaki to speak digits. LGPL-2.1 is acceptable here for three reasons, all of them checkable: nothing is bundled (see above), the module is unmodified, and a pure-Python module is trivially replaceable, so our own code's licence is unaffected. The audit still refuses an LGPL *npm* dependency in our trees.
 • numpy — BSD-3-Clause
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • patchright — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Part of Scrapling's optional fetcher extra. No browser binaries are downloaded by installing it.
+• pip — MIT
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
+    Used only inside the managed per-user Kokoro virtual environment.
 • protego — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     robots.txt parsing, pulled in by Scrapling.
 • python-multipart — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • PyTorch — BSD-3-Clause
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • Scrapling — BSD-3-Clause
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     The local page reader (scrapling/server.py). BSD-3-Clause, checked 2026-10-04 against the repository's LICENSE (repos/d4vinci/Scrapling). It fetches one page at a time and never follows links.
 • soundfile — BSD-3-Clause
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • spacy (with en_core_web_sm) — MIT
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
     Tokenizer/tagger misaki drives. en_core_web_sm is MIT as well.
 • transformers — Apache-2.0
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 • Uvicorn — BSD-3-Clause
-    NOT BUNDLED — the local services (the voice service and the page reader) are installed by the user, from PyPI, on their own machine; they are not part of the desktop installer or any Soundwave release.
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies it needs into per-user app data on first launch; optional cloning and page-reader packages are installed separately. The Python process runs as a separate local service.
 

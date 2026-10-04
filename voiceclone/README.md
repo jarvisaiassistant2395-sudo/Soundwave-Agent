@@ -19,6 +19,17 @@ The Node API proxies to this service (`POST /api/v1/tts/clone`,
 `/clone/profiles`, `/api/v1/tts/synthesize`, `/api/v1/voices`); the browser
 never calls it directly.
 
+**Packaged Windows desktop:** Soundwave provisions this service automatically
+in a Kokoro-only mode on first launch. It downloads a checksum-pinned Python
+runtime and CPU-only dependencies into the app's per-user data folder, fetches
+the narration model once, and runs the service as a hidden background process.
+No Python install, terminal, or separate manual start is needed. Voice Library
+and Settings show first-run progress and let you cancel setup; Soundwave's
+Microsoft voices remain available, and Kokoro can retry the next time the app
+starts. Chatterbox cloning is intentionally excluded from this automatic
+install. The full Chatterbox + Kokoro service below remains available for
+development and standalone/server installs.
+
 It holds the models in memory and is **stateless**: each generation request
 carries the reference clip with it (`POST /clone/ephemeral`), so cloned voices
 are owned per-user by the Node API and can survive this service restarting on
@@ -31,9 +42,12 @@ When `VOICECLONE_URL` points at anything other than localhost, set
 
 ---
 
-## 1. Install & run (Windows)
+## 1. Install & run (manual/development setup)
 
-> This guide targets Windows with an **AMD GPU** (e.g. RX 6650 XT). PyTorch
+> This manual guide is for the full service, including Chatterbox cloning, or
+> for a standalone Node server. The packaged Windows desktop installs and starts
+> its Kokoro-only narrator itself in the background (see above). This guide
+> targets Windows with an **AMD GPU** (e.g. RX 6650 XT). PyTorch
 > does not ship AMD support on Windows, so the models run on your **CPU** —
 > perfectly workable (Chatterbox RTF ≈ 0.3–1×; Kokoro is far lighter and
 > narrates about as fast as it plays). NVIDIA GPU or Linux? See
@@ -90,7 +104,7 @@ GPL-3.0 code is installed or linked anywhere in this service.
 *Linux/macOS:* run `./install.sh` (same steps, plus `TORCH=cu124 ./install.sh`
 if you want CUDA).
 
-## 2. Point Soundwave AI at it
+## 2. Point a development or hosted Soundwave API at it
 
 In `server/.env` add:
 
@@ -102,13 +116,18 @@ VOICECLONE_TIMEOUT_MS=600000
 
 Restart the Node API (`npm run dev`). Cloning is available through the API
 (`POST /api/v1/tts/clone/profiles` with a 3–10 s clean reference clip —
-WAV/MP3/FLAC/OGG — then `POST /api/v1/tts/clone`). The app itself no longer
-has a voiceover page: the agent is the only thing that makes videos, and it
-speaks and narrates with the Soundwave (Microsoft neural) voices. Unset
-`VOICECLONE_URL` to turn the feature off.
+WAV/MP3/FLAC/OGG — then `POST /api/v1/tts/clone`). `LOCAL_VOICE_URL` defaults
+to `VOICECLONE_URL`, so the same service can supply Kokoro narration. Set
+`LOCAL_VOICE_URL` separately if narration and cloning should use different
+services. Unset the URLs to turn those features off.
 
-`LOCAL_VOICE_URL` (defaults to `VOICECLONE_URL`) points at the same service for
-narration; leaving it unset is the normal case.
+For the packaged Windows desktop app, leave these unset: Soundwave chooses a
+loopback port and starts its managed Kokoro-only service. It stores the private
+Python environment, setup log, Hugging Face cache and model under the app's
+user-data folder, and stops the service when Soundwave exits. The first setup
+needs internet access; after that, synthesis runs on this PC. To disable the
+automatic setup for a diagnostic run, set
+`SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP=1` before launching Soundwave.
 
 ## 3. Narration on this PC (Kokoro)
 
@@ -226,10 +245,12 @@ clear "offline" error otherwise. Zero cost either way.
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `CHATTERBOX_DEVICE` | `cpu` | `cpu`, `cuda:0`, `mps`, `xpu` — used by both engines |
+| `CHATTERBOX_OFF` | — | `1` = Kokoro-only mode; do not load or expose Chatterbox cloning |
 | `CHATTERBOX_NANO` | — | `1` = the smaller Turbo/Nano model, built for CPU |
 | `CHATTERBOX_EXAGGERATION` | `0.5` | emotion dial, 0 = flat, 1 = excited |
 | `CHATTERBOX_CFG_WEIGHT` | `0.5` | how strongly the reference clip is followed |
 | `KOKORO_OFF` | — | `1` = narration off (cloning still works) |
+| `KOKORO_PRELOAD` | — | `1` = load the model and default voice before uvicorn listens; used by packaged desktop |
 | `KOKORO_SPEED` | `1.0` | narration speed; a request may override it |
 | `KOKORO_LANG` | `a` | default accent pipeline: `a` American, `b` British |
 | `VOICECLONE_TOKEN` | — (no auth) | REQUIRED on any non-localhost deployment; must match the Node API |

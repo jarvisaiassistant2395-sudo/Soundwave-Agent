@@ -46,7 +46,8 @@ describe("the ship-licence audit", () => {
     // next to the component — an exemption without its reasoning is how these
     // things rot.
     expect(notices).toMatch(/num2words — LGPL-2\.1/);
-    expect(notices).toMatch(/NOT BUNDLED — the local services \(the voice service and the page reader\) are installed by the user/);
+    expect(notices).toMatch(/NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads only the Kokoro dependencies/);
+    expect(notices).toMatch(/CPython 3\.13\.16 Windows x64 runtime — PSF-2\.0/);
     // The local page reader (scrapling/) is a second user-installed service, and
     // the reason it exists is in the paper: a walled page's address must not have
     // to leave the machine for the reader service on the internet.
@@ -65,6 +66,16 @@ describe("the ship-licence audit", () => {
     // OmniVoice may be *mentioned* in a note (it is why cloning moved), but it
     // must never appear as a component we ship.
     expect(notices).not.toMatch(/^• .*OmniVoice/m);
+  });
+
+  it("keeps the automatic Kokoro install free of the cloning stack and GPL phonemizer", () => {
+    const requirements = fs.readFileSync(path.join(repoRoot, "voiceclone", "requirements-kokoro.txt"), "utf8").toLowerCase();
+    const packages = requirements.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).join("\n");
+    expect(packages).not.toMatch(/chatterbox|phonemizer|espeakng|torchaudio/);
+    expect(requirements).toMatch(/fastapi/);
+    expect(requirements).toMatch(/spacy/);
+    expect(requirements).toMatch(/transformers/);
+    expect(requirements).toMatch(/huggingface-hub/);
   });
 
   it("keeps a committed copy of the notices in the repository", () => {
