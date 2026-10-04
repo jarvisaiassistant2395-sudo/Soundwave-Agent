@@ -110,6 +110,18 @@ try {
   const { appUrl } = await applyServerEnv({ appRoot, binDir, userDataDir });
   console.log(`[smoke] booting server at ${appUrl} (data: ${userDataDir})`);
 
+  // Exercise the assembled, obfuscated ESM module directly. The caption font
+  // lookup is lazy (it runs on the first short render), so a server boot alone
+  // wouldn't catch Node-only runtime globals such as the unavailable
+  // `__dirname`.
+  if (process.env.SOUNDWAVE_FONT_DIR) {
+    const fontResolver = await import(pathToFileURL(path.join(appRoot, "server", "dist", "lib", "captionFont.js")).href);
+    assert(
+      fontResolver.captionFontDir() === process.env.SOUNDWAVE_FONT_DIR && fontResolver.captionFontFamily() === fontResolver.CAPTION_FONT_FAMILY,
+      "assembled ESM resolves the shipped caption font for shorts",
+    );
+  }
+
   await import(pathToFileURL(path.join(appRoot, "server", "dist", "index.js")).href);
 
   // Wait for health (max 30s).

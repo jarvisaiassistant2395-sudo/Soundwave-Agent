@@ -23,8 +23,13 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveFfmpegPath } from "../config.js";
+
+// The server is native ESM (`type: module`), so Node does not define
+// `__dirname`. Resolve from this module URL instead; the caption path is first
+// exercised by a real video render, not during server startup.
 
 /** The family name inside Inter-ExtraBold.ttf (name table ID 1). */
 export const CAPTION_FONT_FAMILY = "Inter ExtraBold";
@@ -47,7 +52,8 @@ function candidates(): string[] {
   }
   // Source checkout: server/src/lib → ../../../assets/fonts, and the packaged
   // stage (resources/server/dist/lib) simply won't have it — harmlessly.
-  list.push(path.resolve(__dirname, "../../../assets/fonts"));
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  list.push(path.resolve(moduleDir, "../../../assets/fonts"));
   list.push(path.join(process.cwd(), "..", "assets", "fonts"));
   list.push(path.join(process.cwd(), "assets", "fonts"));
   return list;

@@ -155,7 +155,7 @@ export function useCompanion(): Companion {
    * an alarm at 06:30 must not fail because the kit hadn't been fetched yet in
    * that app session, when the PC is right there and can hand it over.
    */
-  const refreshKitRef = useRef<(() => Promise<void>) | null>(null);
+  const refreshKitRef = useRef<(() => Promise<PhoneKit | null>) | null>(null);
   const memoryRef = useRef<MemorySnapshot | null>(null);
   const outboxRef = useRef<Outbox>(EMPTY_OUTBOX);
   const stateRef = useRef(state);
@@ -305,18 +305,28 @@ export function useCompanion(): Companion {
     c.setOutbox(() => outboxRef.current);
     seenIds.current = conversationRef.current ? new Set(conversationRef.current.messages.map((m) => m.id)) : null;
 
-    const refreshKit = async () => {
+    // The PC can report a new kit while an earlier fetch is still in flight
+    // (for example, when the user saves a key just after pairing). Only the
+    // newest response may update local storage: otherwise a delayed `no_key`
+    // reply can erase the newer, valid kit.
+    let kitRefreshGeneration = 0;
+    const refreshKit = async (): Promise<PhoneKit | null> => {
+      const generation = ++kitRefreshGeneration;
       try {
         const k = await c.fetchKit();
+        if (generation !== kitRefreshGeneration) return kitRef.current;
         if (k.enabled) {
           setKit(k);
           setKitRefusal(null);
-        } else {
-          setKit(null); // sharing turned off or no key on the PC: the phone forgets the key
-          setKitRefusal(k.reason);
+          return k;
         }
+        setKit(null); // sharing turned off or no key on the PC: the phone forgets the key
+        setKitRefusal(k.reason);
+        return null;
       } catch (err) {
+        if (generation !== kitRefreshGeneration) return kitRef.current;
         if ((err as CompanionError).code === "UNKNOWN_OP") setKitRefusal(null); // an older Soundwave AI on the PC
+        return kitRef.current;
       }
     };
 
@@ -351,6 +361,9 @@ export function useCompanion(): Companion {
       }),
       c.on("jobs", setJobs),
       c.on("pc", (info) => {
+        // Keep the ref current before a kit refresh resolves; briefing/alarm
+        // callbacks can run between this event and React's next render.
+        pcRef.current = info;
         setPc(info);
         if (info.brain && info.brain.kitRev !== kitRef.current?.rev) void refreshKit();
         if (info.brain && !info.brain.phoneChat) setKitRefusal(info.brain.reason ?? null);
@@ -391,10 +404,12 @@ export function useCompanion(): Companion {
       }
     });
     return () => {
+      kitRefreshGeneration++;
       offs.forEach((off) => off());
       offForeground();
       c.stop();
       if (clientRef.current === c) clientRef.current = null;
+      if (refreshKitRef.current === refreshKit) refreshKitRef.current = null;
     };
     // The client is rebuilt only when the pairing itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -558,16 +573,16 @@ export function useCompanion(): Companion {
         const c = clientRef.current;
         if (!c || stateRef.current.kind === "forgotten") return;
         /** The kit — fetched from the PC if this session hasn't got it yet. */
-        const ensureKit = async (): Promise<PhoneKit | null> => {
-          if (kitRef.current) return kitRef.current;
+        const ensureKit = async (refresh = false): Promise<PhoneKit | null> => {
+          if (!refresh && kitRef.current) return kitRef.current;
           // Not a state check beyond "this phone still belongs to that PC":
           // while the connection is still being decided (""connecting"",
           // ""searching"") the PC may well answer, and a fetch with no
           // connection fails at once. Only a PC that removed this phone stops
           // the question being asked at all.
           if (stateRef.current.kind === "forgotten") return null;
-          await refreshKitRef.current?.().catch(() => undefined);
-          return kitRef.current;
+          const fresh = await refreshKitRef.current?.().catch(() => null);
+          return fresh ?? kitRef.current;
         };
         const find = () => [...(conversationRef.current?.messages ?? [])].reverse().find((m) => m.sender === "assistant" && m.briefingDate === day) ?? null;
         let msg = find();
@@ -597,6 +612,17 @@ export function useCompanion(): Companion {
             for (let i = 0; i < 20 && !answer.message && !answer.prepareRefused && !briefingStop.current; i++) {
               await new Promise((r) => setTimeout(r, 3000));
               answer = await c.briefingToday();
+            }
+            // A phone can ask during the tiny window between the PC saving a
+            // brain key and its companion snapshot catching up. Don't turn that
+            // transient `no-key` into a failed alarm briefing: refresh the kit
+            // and ask the PC again twice (bounded to 1.5 seconds). A real refusal
+            // still settles quickly, while an existing/scheduled briefing or a
+            // newly visible key is picked up before the phone falls back.
+            for (let i = 0; i < 2 && !answer.message && answer.prepareRefused === "no-key" && !briefingStop.current; i++) {
+              await ensureKit(true);
+              await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+              answer = await c.briefingToday({ prepare: true });
             }
             msg = answer.message;
             lastPrepareRefused.current =
