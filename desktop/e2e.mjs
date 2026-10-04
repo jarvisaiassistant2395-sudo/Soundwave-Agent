@@ -491,8 +491,27 @@ try {
     w.focus();
   });
   await main.waitForFunction(() => /MORNING BRIEFING/.test(document.body.innerText), null, { timeout: 90_000 });
-  const researched = fakeGemini.seen.filter((r) => /gemini-2\.5-flash:generateContent$/.test(r.url ?? "") && JSON.stringify(r.body?.tools ?? []).includes("googleSearch"));
-  if (!researched.length) await fail("daily briefing: the topic wasn't researched with Google Search");
+  // The card can appear while the research is still running (it is written in the
+  // background), so wait for the call itself rather than sampling once — and
+  // accept either free search model: the app tries 2.5 Flash first and Flash-Lite
+  // if the first refuses, and both are Google Search on the free tier.
+  const searched = (r) =>
+    /gemini-2\.5-flash(-lite)?:generateContent$/.test(r.url ?? "") && JSON.stringify(r.body?.tools ?? []).includes("googleSearch");
+  let researched = [];
+  for (let i = 0; i < 120 && !researched.length; i++) {
+    researched = fakeGemini.seen.filter(searched);
+    if (!researched.length) await sleep(500);
+  }
+  // …and that what it found reached the briefing: the writer's own prompt must
+  // carry the researched lines the stand-in returned (same check the smoke test
+  // uses). Neither half is the app grading itself.
+  const wroteFromResearch = fakeGemini.seen.some((r) => /Ollama 1\.0 shipped/.test(JSON.stringify(r.body ?? "")));
+  if (!researched.length || !wroteFromResearch) {
+    const models = fakeGemini.seen.filter((r) => /:generateContent$/.test(r.url ?? "")).map((r) => (r.url ?? "").replace(/^.*\/models\//, ""));
+    await fail(
+      `daily briefing: the topic wasn't researched with Google Search and written from it (search calls: ${JSON.stringify(models.slice(-6))}; a briefing written from the found lines: ${wroteFromResearch ? "yes" : "no"})`,
+    );
+  }
   let heardOn = null;
   for (let i = 0; i < 20 && !heardOn; i++) {
     heardOn = (await main.evaluate(async () => (await fetch("/api/v1/morning/briefing")).json())).heard?.on ?? null;
