@@ -474,12 +474,13 @@ function createKokoroManager({
   let reusedProcessId = null;
   let state = { phase: "checking", message: "Soundwave is preparing the on-device narration and voice-cloning engines in the background." };
 
-  function writeState(phase, message, progress, progressLabel) {
+  function writeState(phase, message, progress, progressLabel, extras = {}) {
     if (cancelled && phase !== "cancelling" && phase !== "cancelled") return;
     state = {
       managed: true,
       phase,
       message,
+      ...(typeof extras.cloneError === "string" && extras.cloneError ? { cloneError: extras.cloneError.slice(0, 600) } : {}),
       ...(Number.isFinite(progress) ? { progress: Math.max(0, Math.min(100, Math.round(progress))) } : {}),
       ...(typeof progressLabel === "string" && progressLabel ? { progressLabel: progressLabel.slice(0, 80) } : {}),
       updatedAt: new Date().toISOString(),
@@ -814,7 +815,7 @@ function createKokoroManager({
     }
   }
 
-  function launchService() {
+  function launchService({ mossEnabled = true } = {}) {
     if (stopped) throw new Error("Soundwave is closing.");
     fs.rmSync(setupProgressFile, { force: true });
     let serviceLogOffset = 0;
@@ -828,7 +829,10 @@ function createKokoroManager({
     const serviceEnv = managedPythonEnv({
       CHATTERBOX_OFF: "1",
       CHATTERBOX_MOCK: "0",
-      MOSS_OFF: "0",
+      // Cloning is optional for the managed app: Kokoro narration must come up
+      // even when the cloning model couldn't be downloaded or loaded.
+      MOSS_OFF: mossEnabled ? "0" : "1",
+      MOSS_OPTIONAL: "1",
       MOSS_PRELOAD: "1",
       MOSS_SOURCE_DIR: mossSourceDir,
       MOSS_MODEL_DIR: mossModelDir,
@@ -869,7 +873,7 @@ function createKokoroManager({
     const recordServiceFailure = (error) => {
       serviceExitError = error;
       if (serviceProcess === child) serviceProcess = null;
-      if (stopped || cancelled) return;
+      if (stopped || cancelled || child.soundwaveRestarting) return;
       if (state.phase === "ready") {
         fs.rmSync(assetsMarker, { force: true });
         writeState("failed", describeSetupFailure(error, readLogSince(serviceLogOffset), logFile));
@@ -881,6 +885,7 @@ function createKokoroManager({
     return child;
   }
 
+  /** Resolves with the health once Kokoro is loaded and cloning has settled (loaded, failed, or off). */
   async function waitForService(child) {
     const deadline = Date.now() + SERVICE_START_TIMEOUT_MS;
     while (!stopped && !cancelled && Date.now() < deadline) {
@@ -901,9 +906,8 @@ function createKokoroManager({
         health?.ok === true &&
         health?.engines?.kokoro?.enabled === true &&
         health?.engines?.kokoro?.loaded === true &&
-        health?.engines?.moss?.enabled === true &&
-        health?.engines?.moss?.loaded === true
-      ) return;
+        (health?.engines?.moss?.enabled !== true || health?.engines?.moss?.loaded === true || typeof health?.engines?.moss?.error === "string")
+      ) return health;
       await delay(1_000);
     }
     if (stopped) throw new Error("Soundwave is closing.");
@@ -925,14 +929,35 @@ function createKokoroManager({
       }
       await ensureEnvironment();
       if (stopped || cancelled) return;
-      await ensureVoiceAssets();
+      // The cloning model (~730 MB) must not hold the Kokoro voices hostage:
+      // if its download fails, narration still starts and cloning says why.
+      let cloneError = "";
+      try {
+        await ensureVoiceAssets();
+      } catch (error) {
+        if (stopped || cancelled) throw error;
+        console.warn("[soundwave-desktop] voice-cloning assets unavailable:", error.message);
+        cloneError = describeSetupFailure(error, readLogSince(setupLogOffset), logFile);
+      }
       if (stopped || cancelled) return;
-      writeState("loading-model", "Loading Kokoro narration and the CPU voice-cloning model.", undefined, "Loading local voice engines");
-      const child = launchService();
-      await waitForService(child);
+      writeState(
+        "loading-model",
+        cloneError ? "Loading Kokoro narration voices." : "Loading Kokoro narration and the CPU voice-cloning model.",
+        undefined,
+        "Loading local voice engines",
+      );
+      const child = launchService({ mossEnabled: !cloneError });
+      const health = await waitForService(child);
+      if (!cloneError && typeof health?.engines?.moss?.error === "string") {
+        cloneError = describeSetupFailure(new Error(health.engines.moss.error), "", logFile);
+      }
       if (!stopped && !cancelled) {
         atomicWriteJson(assetsMarker, { revision: RUNTIME_REVISION, readyAt: new Date().toISOString() });
-        writeState("ready", "On-device narration and voice cloning are ready.");
+        if (cloneError) {
+          writeState("ready", `Kokoro narration voices are ready. Voice cloning isn't yet: ${cloneError}`, undefined, undefined, { cloneError });
+        } else {
+          writeState("ready", "On-device narration and voice cloning are ready.");
+        }
       }
     } catch (error) {
       if (stopped) return;
@@ -987,9 +1012,26 @@ function createKokoroManager({
   }
 
   async function retrySetup() {
-    if (stopped || !["failed", "cancelled"].includes(state.phase)) return false;
+    const retryable = () => ["failed", "cancelled"].includes(state.phase) || (state.phase === "ready" && Boolean(state.cloneError));
+    if (stopped || !retryable()) return false;
     if (setupPromise) await setupPromise.catch(() => {});
-    if (stopped || !["failed", "cancelled"].includes(state.phase)) return false;
+    if (stopped || !retryable()) return false;
+    if (state.phase === "ready" && serviceProcess) {
+      // Kokoro works but cloning didn't: restart the service with cloning on.
+      const running = serviceProcess;
+      running.soundwaveRestarting = true;
+      serviceProcess = null;
+      try {
+        running.kill();
+      } catch {
+        /* already exited */
+      }
+      await new Promise((resolve) => {
+        if (running.exitCode !== null || running.signalCode !== null) return resolve();
+        running.once?.("exit", resolve);
+        setTimeout(resolve, 5_000).unref?.();
+      });
+    }
 
     try {
       fs.rmSync(runtimeFile, { force: true });

@@ -428,3 +428,132 @@ test("the first managed run gets a loopback URL and a private token without star
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Kokoro voices become ready even when the cloning model can't be prepared, and cloning can be retried", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-clone-optional-"));
+  const resourcesDir = path.join(dir, "resources");
+  const runtimeDir = path.join(dir, "user-data", "kokoro");
+  const venvPython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+  const originalFetch = global.fetch;
+  let manager;
+  let cloneAssetsFail = true;
+  let mossOffForRunningService = "1";
+  const mossOffFlags = [];
+
+  try {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+    fs.mkdirSync(path.dirname(venvPython), { recursive: true });
+    fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
+    fs.writeFileSync(venvPython, "test venv");
+    fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
+
+    global.fetch = async (url) => {
+      if (!String(url).endsWith("/health")) return { ok: false, status: 404 };
+      const mossEnabled = mossOffForRunningService === "0";
+      return {
+        ok: true,
+        json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: mossEnabled, loaded: mossEnabled } } }),
+      };
+    };
+
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir,
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48131,
+      prepareVoiceAssets: async () => {
+        if (cloneAssetsFail) throw new Error("The MOSS model asset download timed out (huggingface.co).");
+      },
+      spawnProcess: (_executable, args, options) => {
+        const child = new EventEmitter();
+        child.pid = 54400 + mossOffFlags.length;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => {
+          child.signalCode = "SIGTERM";
+          setImmediate(() => child.emit("exit", null, "SIGTERM"));
+          return true;
+        };
+        child.unref = () => {};
+        if (args.includes("uvicorn")) {
+          mossOffForRunningService = options.env.MOSS_OFF;
+          mossOffFlags.push(options.env.MOSS_OFF);
+          assert.equal(options.env.MOSS_OPTIONAL, "1");
+        } else {
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
+        }
+        return child;
+      },
+    });
+
+    await manager.start();
+    assert.equal(manager.state().phase, "ready", manager.state().message);
+    assert.match(manager.state().message, /Kokoro narration voices are ready/);
+    assert.match(manager.state().cloneError, /huggingface\.co/);
+    assert.equal(readJson(path.join(runtimeDir, "status.json")).phase, "ready");
+    assert.deepEqual(mossOffFlags, ["1"]);
+
+    cloneAssetsFail = false;
+    assert.equal(await manager.retrySetup(), true);
+    for (let i = 0; i < 100 && (manager.state().phase !== "ready" || manager.state().cloneError); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(manager.state().phase, "ready");
+    assert.equal(manager.state().cloneError, undefined);
+    assert.equal(manager.state().message, "On-device narration and voice cloning are ready.");
+    assert.deepEqual(mossOffFlags, ["1", "0"]);
+  } finally {
+    global.fetch = originalFetch;
+    manager?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a cloning model that fails to load is reported without blocking Kokoro", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-moss-load-"));
+  const resourcesDir = path.join(dir, "resources");
+  const runtimeDir = path.join(dir, "user-data", "kokoro");
+  const venvPython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+  const originalFetch = global.fetch;
+  let manager;
+  try {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+    fs.mkdirSync(path.dirname(venvPython), { recursive: true });
+    fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
+    fs.writeFileSync(venvPython, "test venv");
+    fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: false, error: "The voice-cloning model couldn't load: onnxruntime DLL load failed" } } }),
+    });
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir,
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48132,
+      prepareVoiceAssets: async () => {},
+      spawnProcess: (_executable, args) => {
+        const child = new EventEmitter();
+        child.pid = 54500;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => true;
+        child.unref = () => {};
+        if (!args.includes("uvicorn")) setImmediate(() => { child.exitCode = 0; child.emit("exit", 0, null); });
+        return child;
+      },
+    });
+    await manager.start();
+    assert.equal(manager.state().phase, "ready");
+    assert.match(manager.state().cloneError, /onnxruntime DLL load failed/);
+  } finally {
+    global.fetch = originalFetch;
+    manager?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

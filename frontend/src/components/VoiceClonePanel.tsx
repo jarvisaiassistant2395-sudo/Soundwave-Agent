@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { AudioLines, Mic, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiRequestError, http } from "../lib/api";
+import { getDesktop } from "../lib/desktop";
 import { Button } from "./ui/Button";
 
 interface VoiceCloneStatus {
@@ -8,6 +9,8 @@ interface VoiceCloneStatus {
   available: boolean;
   engine?: "moss" | "chatterbox" | "mock" | null;
   reason?: string;
+  /** The desktop app can retry the cloning setup (Kokoro narration is unaffected). */
+  canRetry?: boolean;
   referenceLimitsSeconds?: Record<string, { min: number; max: number }>;
   engines?: Record<string, unknown>;
 }
@@ -66,6 +69,7 @@ export function VoiceClonePanel() {
   const [consent, setConsent] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState(false);
 
   const limits = useMemo(() => {
     const engine = status?.engine;
@@ -102,6 +106,23 @@ export function VoiceClonePanel() {
     }, 5_000);
     return () => window.clearInterval(timer);
   }, [refresh, status?.available]);
+
+  const retryCloneSetup = async () => {
+    const desktop = getDesktop();
+    if (!desktop || retrying) return;
+    setRetrying(true);
+    setError("");
+    try {
+      const accepted = await desktop.retryKokoroSetup();
+      if (!accepted) setError("Setup is already running — give it a moment.");
+      else setMessage("Retrying the voice-cloning setup in the background. Kokoro voices stay available meanwhile.");
+      void refresh(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const chooseFile = async (next: File | null) => {
     setFile(next);
@@ -186,6 +207,11 @@ export function VoiceClonePanel() {
         )}
         {!loading && status && !status.available && (
           <p className="text-amber-200">{status.reason ?? (status.configured ? "The local cloning model is still starting." : "Voice cloning is not configured for this installation.")}</p>
+        )}
+        {!loading && status && !status.available && status.canRetry && getDesktop() && (
+          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void retryCloneSetup()} loading={retrying}>
+            <RefreshCw className="h-4 w-4" /> Retry voice-cloning setup
+          </Button>
         )}
         {error && <p role="alert" className="mt-2 text-sm text-rose-300">{error}</p>}
         {message && <p role="status" className="mt-2 text-sm text-emerald-300">{message}</p>}

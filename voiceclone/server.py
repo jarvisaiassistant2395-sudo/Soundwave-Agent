@@ -97,6 +97,9 @@ MOSS_PRELOAD = os.environ.get("MOSS_PRELOAD", "1").lower() in ("1", "true", "yes
 MOSS_SOURCE_DIR = os.environ.get("MOSS_SOURCE_DIR", "").strip()
 MOSS_MODEL_DIR = os.environ.get("MOSS_MODEL_DIR", "").strip()
 MOSS_MAX_REF_SECONDS = 10
+# Managed desktop: a cloning failure is reported in /health instead of taking
+# the Kokoro narration voices down with it.
+MOSS_OPTIONAL = os.environ.get("MOSS_OPTIONAL", "").lower() in ("1", "true", "yes")
 try:
     MOSS_CPU_THREADS = max(1, min(4, int(os.environ.get("MOSS_CPU_THREADS", "0"))))
 except ValueError:
@@ -247,22 +250,41 @@ def _kokoro_pipeline(lang_code: str):
         return engine
 
 
+def _with_retries(label: str, fn, attempts: int = 4):
+    """Run a download-backed step, retrying transient failures with backoff.
+
+    One dropped connection among the model and 28 voice packs used to abort
+    the whole setup. Errors that retrying can't fix are raised at once.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except (ImportError, AssertionError, KeyError, ValueError, TypeError, MemoryError):
+            raise
+        except Exception as e:  # noqa: BLE001 — network/IO errors from huggingface_hub/requests
+            if attempt >= attempts:
+                raise
+            wait = min(20, 2 * attempt * attempt)
+            print(f"[voiceclone] {label} failed (attempt {attempt}/{attempts}): {e} — retrying in {wait}s", flush=True)
+            time.sleep(wait)
+
+
 KOKORO_READY = False
 if not KOKORO_OFF and not MOCK:
     print(f"[voiceclone] loading Kokoro (narration, lang '{KOKORO_LANG}') — Apache-2.0, CPU…", flush=True)
     try:
         if KOKORO_PRELOAD:
             _write_kokoro_setup_progress("Loading Kokoro's English pronunciation model.", progress_label="Pronunciation assets")
-        engine = _kokoro_pipeline(KOKORO_LANG)
+        engine = _with_retries("Kokoro pronunciation model", lambda: _kokoro_pipeline(KOKORO_LANG))
         if KOKORO_PRELOAD:
             # Download/cache the model, both dialects' G2P fallback assets and
             # all 28 voice packs before the desktop reports ready. Subsequent
             # narration is offline, regardless of the advertised voice chosen.
             _write_kokoro_setup_progress("Downloading and loading the Kokoro speech model.", progress_label="Speech model")
-            engine._ensure_model()
+            _with_retries("Kokoro speech model download", engine._ensure_model)
             for lang_code, label in (("a", "American"), ("b", "British")):
                 _write_kokoro_setup_progress(f"Preparing Kokoro's {label} pronunciation assets.", progress_label=f"{label} text assets")
-                _kokoro_pipeline(lang_code).preload_text_assets()
+                _with_retries(f"Kokoro {label} pronunciation assets", lambda c=lang_code: _kokoro_pipeline(c).preload_text_assets())
             voice_ids = [voice["id"] for voice in KOKORO_VOICES]
             _write_kokoro_setup_progress(f"Caching all {len(voice_ids)} Kokoro voice packs.", 0, f"Voice packs (0/{len(voice_ids)})")
 
@@ -276,7 +298,9 @@ if not KOKORO_OFF and not MOCK:
                     f"Voice packs ({completed}/{total})",
                 )
 
-            engine.preload_voice_packs(voice_ids, report_voice_progress)
+            for completed, voice_id in enumerate(voice_ids, start=1):
+                _with_retries(f"Kokoro voice pack {voice_id}", lambda v=voice_id: engine.voice_tensor(v))
+                report_voice_progress(completed, len(voice_ids), voice_id)
         KOKORO_READY = True
         print(f"[voiceclone] Kokoro ready ({len(KOKORO_VOICES)} voices)", flush=True)
     except Exception as e:  # noqa: BLE001
@@ -296,6 +320,7 @@ elif MOCK and not KOKORO_OFF:
 # point MOSS_SOURCE_DIR / MOSS_MODEL_DIR at their own pinned local copies.
 moss_engine = None
 MOSS_READY = False
+MOSS_ERROR: str | None = None
 if not MOSS_OFF and not MOCK and MOSS_PRELOAD:
     print(f"[voiceclone] loading MOSS-TTS-Nano ONNX on CPU ({MOSS_CPU_THREADS} threads)…", flush=True)
     try:
@@ -309,8 +334,11 @@ if not MOSS_OFF and not MOCK and MOSS_PRELOAD:
         MOSS_READY = True
         print("[voiceclone] MOSS-TTS-Nano ready (CPU / ONNX Runtime)", flush=True)
     except Exception as e:  # noqa: BLE001 — managed setup must not claim readiness on a broken model
-        print(f"[voiceclone] FATAL: failed to load MOSS-TTS-Nano: {e}", flush=True)
-        raise
+        if not MOSS_OPTIONAL:
+            print(f"[voiceclone] FATAL: failed to load MOSS-TTS-Nano: {e}", flush=True)
+            raise
+        MOSS_ERROR = f"The voice-cloning model couldn't load: {e}"[:400]
+        print(f"[voiceclone] MOSS-TTS-Nano unavailable ({e}) — Kokoro narration still works", flush=True)
 elif MOCK and not MOSS_OFF:
     MOSS_READY = True
 
@@ -628,6 +656,7 @@ def health() -> dict:
             "moss": {
                 "enabled": not MOSS_OFF,
                 "loaded": not MOSS_OFF and MOSS_READY,
+                **({"error": MOSS_ERROR} if MOSS_ERROR else {}),
                 "code": "Apache-2.0",
                 "weights": "Apache-2.0",
                 "model": "MOSS-TTS-Nano-100M-ONNX",

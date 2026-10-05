@@ -109,6 +109,19 @@ export interface VoiceCloneStatus {
   engines?: Record<string, unknown>;
   referenceLimitsSeconds?: Record<string, { min: number; max: number }>;
   reason?: string;
+  /** The desktop app can retry the cloning setup (Kokoro narration is unaffected). */
+  canRetry?: boolean;
+}
+
+/** Why the packaged desktop's cloning setup didn't finish, from its status file. */
+function managedCloneError(): string | undefined {
+  if (!config.localVoiceStatusFile) return undefined;
+  try {
+    const value = JSON.parse(fs.readFileSync(config.localVoiceStatusFile, "utf8")) as { managed?: unknown; cloneError?: unknown };
+    return value.managed === true && typeof value.cloneError === "string" && value.cloneError ? value.cloneError.slice(0, 600) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function getVoiceCloneStatus(): Promise<VoiceCloneStatus> {
@@ -127,13 +140,16 @@ export async function getVoiceCloneStatus(): Promise<VoiceCloneStatus> {
       reference_limits_seconds?: Record<string, { min: number; max: number }>;
     };
     const available = body.clone_ready === true;
+    const mossError = (body.engines?.moss as { error?: unknown } | undefined)?.error;
+    const setupError = available ? undefined : managedCloneError() ?? (typeof mossError === "string" ? mossError : undefined);
     return {
       configured: true,
       available,
       engine: body.clone_engine ?? null,
       ...(body.engines ? { engines: body.engines } : {}),
       ...(body.reference_limits_seconds ? { referenceLimitsSeconds: body.reference_limits_seconds } : {}),
-      ...(!available ? { reason: "The service is running, but no voice-cloning model is ready." } : {}),
+      ...(!available ? { reason: setupError ?? "The service is running, but no voice-cloning model is ready." } : {}),
+      ...(setupError && config.localVoiceStatusFile ? { canRetry: true } : {}),
     };
   } catch (err) {
     return {
