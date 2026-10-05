@@ -4,7 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
+import type { Request, RequestHandler } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
+import { notFromApp } from "../middleware/localApp.js";
 import { ApiError } from "../middleware/error.js";
 import { usageLimiter, uploadLimiter } from "../lib/security.js";
 import { getStore } from "../lib/store.js";
@@ -156,7 +158,45 @@ function assertClonePlan(user: { plan: Plan }): void {
   }
 }
 
-router.get("/clone/status", requireAuth, async (_req, res, next) => {
+/**
+ * Who owns the cloned voices for this request.
+ *
+ * The desktop app has no sign-in: it is one person's PC, and every other local
+ * feature (chat, shorts, Ghost Operator) runs as the built-in "local-user". So
+ * in the desktop app, a request from the app's own window (same origin, and a
+ * loopback Host when the API only listens on loopback) uses that local profile.
+ * A signed-in session still works as before (CSRF-checked by requireAuth), and
+ * hosted deployments without DESKTOP_APP keep requiring sign-in.
+ */
+const LOCAL_CLONE_OWNER = "local-user";
+
+function hasSession(req: Request): boolean {
+  return /(?:^|;\s*)(?:access_token|refresh_token)=/.test(req.headers.cookie ?? "");
+}
+
+const cloneAccess: RequestHandler = (req, res, next) => {
+  if (!config.desktopApp) return requireAuth(req, res, next);
+  const useLocalProfile = () => {
+    const problem = notFromApp(req);
+    if (problem) return next(new ApiError(403, "FORBIDDEN", problem));
+    next();
+  };
+  if (!hasSession(req)) return useLocalProfile();
+  // A session cookie: honour it if it's valid. A stale one (left over from an
+  // older version, now cleared by requireAuth) falls back to the local profile
+  // instead of asking for a sign-in the desktop app doesn't have.
+  return requireAuth(req, res, (err?: unknown) => {
+    if (err instanceof ApiError && err.status === 401) return useLocalProfile();
+    next(err as Error | undefined);
+  });
+};
+
+/** The signed-in user's id, or the desktop app's local profile. */
+function cloneOwnerId(req: Request): string {
+  return req.user?.id ?? LOCAL_CLONE_OWNER;
+}
+
+router.get("/clone/status", cloneAccess, async (_req, res, next) => {
   try {
     res.json(await getVoiceCloneStatus());
   } catch (e) {
@@ -164,10 +204,10 @@ router.get("/clone/status", requireAuth, async (_req, res, next) => {
   }
 });
 
-router.get("/clone/profiles", requireAuth, async (req, res, next) => {
+router.get("/clone/profiles", cloneAccess, async (req, res, next) => {
   try {
     assertConfigured();
-    res.json({ profiles: await listCloneProfiles(req.user!.id) });
+    res.json({ profiles: await listCloneProfiles(cloneOwnerId(req)) });
   } catch (e) {
     next(e);
   }
@@ -175,8 +215,7 @@ router.get("/clone/profiles", requireAuth, async (req, res, next) => {
 
 router.get("/clone/profiles/:id/sample", optionalAuth, async (req, res, next) => {
   try {
-    const userId = req.user?.id || "local-user";
-    const samplePath = await getProfileSamplePath(userId, req.params.id ?? "");
+    const samplePath = await getProfileSamplePath(cloneOwnerId(req), req.params.id ?? "");
     const contentType: Record<string, string> = {
       ".flac": "audio/flac",
       ".m4a": "audio/mp4",
@@ -201,7 +240,7 @@ const createProfileSchema = z.object({
   consent: z.string().optional(),
 });
 
-router.post("/clone/profiles", requireAuth, uploadLimiter, refUpload.single("file"), async (req, res, next) => {
+router.post("/clone/profiles", cloneAccess, uploadLimiter, refUpload.single("file"), async (req, res, next) => {
   try {
     const parsed = createProfileSchema.safeParse(req.body);
     if (!parsed.success) throw new ApiError(400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid profile data.");
@@ -209,7 +248,7 @@ router.post("/clone/profiles", requireAuth, uploadLimiter, refUpload.single("fil
       throw new ApiError(400, "CLONE_CONSENT_REQUIRED", "Confirm that you own this voice or have the speaker's explicit permission before creating a clone.");
     }
     assertConfigured();
-    assertClonePlan(req.user!);
+    if (req.user) assertClonePlan(req.user);
     const cloneStatus = await getVoiceCloneStatus();
     if (!cloneStatus.available) {
       throw new ApiError(503, "VOICECLONE_UNAVAILABLE", cloneStatus.reason ?? "The voice-cloning model is not ready on this PC.");
@@ -221,7 +260,7 @@ router.post("/clone/profiles", requireAuth, uploadLimiter, refUpload.single("fil
     const filename = req.file.originalname || "reference.wav";
     const mimeType = req.file.mimetype || "audio/wav";
     const reference = await validateCloneReference({ audio: req.file.buffer, filename, mimeType });
-    const profile = await createCloneProfile(req.user!.id, {
+    const profile = await createCloneProfile(cloneOwnerId(req), {
       name: parsed.data.name.trim(),
       audio: req.file.buffer,
       filename,
@@ -236,10 +275,10 @@ router.post("/clone/profiles", requireAuth, uploadLimiter, refUpload.single("fil
   }
 });
 
-router.delete("/clone/profiles/:id", requireAuth, async (req, res, next) => {
+router.delete("/clone/profiles/:id", cloneAccess, async (req, res, next) => {
   try {
     assertConfigured();
-    await deleteCloneProfile(req.user!.id, req.params.id ?? "");
+    await deleteCloneProfile(cloneOwnerId(req), req.params.id ?? "");
     res.status(204).end();
   } catch (e) {
     next(e);
@@ -254,21 +293,25 @@ const cloneSchema = z.object({
 
 // Cloned-voice synthesis — same response shape as /synthesize (MP3 base64 +
 // word timings), same quota accounting.
-router.post("/clone", requireAuth, usageLimiter, validate({ body: cloneSchema }), async (req, res, next) => {
+router.post("/clone", cloneAccess, usageLimiter, validate({ body: cloneSchema }), async (req, res, next) => {
   try {
     assertConfigured();
-    assertClonePlan(req.user!);
     const { text, profileId, speed } = req.body as z.infer<typeof cloneSchema>;
 
-    const quota = await getQuotaFor(req.user!.id);
-    const characters = text.length;
-    if (quota.used + characters > quota.limit) {
-      throw new ApiError(403, "QUOTA_EXCEEDED", "You've reached your monthly character limit. Upgrade to Pro for more.");
+    // Plans and the monthly character quota belong to signed-in accounts. The
+    // desktop app's local profile runs the model on its own PC: no quota.
+    let quota: Awaited<ReturnType<typeof getQuotaFor>> | null = null;
+    if (req.user) {
+      assertClonePlan(req.user);
+      quota = await getQuotaFor(req.user.id);
+      if (quota.used + text.length > quota.limit) {
+        throw new ApiError(403, "QUOTA_EXCEEDED", "You've reached your monthly character limit. Upgrade to Pro for more.");
+      }
     }
 
-    const result = await synthesizeClone(req.user!.id, { text, profileId, speed });
+    const result = await synthesizeClone(cloneOwnerId(req), { text, profileId, speed });
 
-    if (req.user) {
+    if (req.user && quota) {
       const store = await getStore();
       await store.addUsageLog({
         userId: req.user.id,
@@ -289,9 +332,9 @@ router.post("/clone", requireAuth, usageLimiter, validate({ body: cloneSchema })
       duration: result.duration,
       wordTimings: result.wordTimings,
       voiceId: `clone:${profileId}`,
-      used: quota.used + text.length,
-      limit: quota.limit,
-      resetDate: quota.resetDate,
+      used: quota ? quota.used + text.length : null,
+      limit: quota ? quota.limit : null,
+      resetDate: quota ? quota.resetDate : null,
     });
   } catch (e) {
     next(e);

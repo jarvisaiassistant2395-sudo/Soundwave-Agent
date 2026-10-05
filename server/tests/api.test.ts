@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import fs from "node:fs";
 import { createApp } from "../src/app.js";
+import { config } from "../src/config.js";
 import { JsonStore, setStoreForTests } from "../src/lib/store.js";
 
 let app: ReturnType<typeof createApp>;
@@ -151,6 +152,78 @@ describe("voice cloning (sidecar not configured in tests)", () => {
       .send({ text: "", profileId: "" });
     expect(res.status).toBe(400);
   });
+});
+
+describe("voice cloning in the desktop app (no sign-in)", () => {
+  const c = config as { desktopApp: boolean };
+  const withDesktop = async (fn: () => Promise<void>) => {
+    const before = c.desktopApp;
+    c.desktopApp = true;
+    try {
+      await fn();
+    } finally {
+      c.desktopApp = before;
+    }
+  };
+
+  it("answers clone status without a session", () =>
+    withDesktop(async () => {
+      const res = await request(app).get("/api/v1/tts/clone/status").set("Host", "127.0.0.1:4000");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ configured: false, available: false });
+    }));
+
+  it("reaches the clone checks (not a sign-in error) when creating a profile", () =>
+    withDesktop(async () => {
+      const res = await request(app)
+        .post("/api/v1/tts/clone/profiles")
+        .set("Host", "127.0.0.1:4000")
+        .field("name", "My voice");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("CLONE_CONSENT_REQUIRED");
+    }));
+
+  it("reaches the engine (not a sign-in error) when synthesizing", () =>
+    withDesktop(async () => {
+      const res = await request(app)
+        .post("/api/v1/tts/clone")
+        .set("Host", "127.0.0.1:4000")
+        .send({ text: "hello there", profileId: "abc-123" });
+      expect(res.status).toBe(503);
+      expect(JSON.stringify(res.body)).toContain("VOICECLONE_NOT_CONFIGURED");
+    }));
+
+  it("refuses other websites", () =>
+    withDesktop(async () => {
+      const res = await request(app)
+        .post("/api/v1/tts/clone/profiles")
+        .set("Host", "127.0.0.1:4000")
+        .set("Origin", "https://evil.example")
+        .field("name", "Stolen voice")
+        .field("consent", "true");
+      expect(res.status).toBe(403);
+    }));
+
+  it("falls back to the local profile when a leftover login cookie is stale", () =>
+    withDesktop(async () => {
+      const res = await request(app)
+        .get("/api/v1/tts/clone/status")
+        .set("Host", "127.0.0.1:4000")
+        .set("Cookie", "access_token=expired.or.bogus; refresh_token=bogus");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ configured: false, available: false });
+    }));
+
+  it("still CSRF-checks a signed-in session", () =>
+    withDesktop(async () => {
+      const res = await request(app)
+        .post("/api/v1/tts/clone")
+        .set("Host", "127.0.0.1:4000")
+        .set("Cookie", cookie)
+        .send({ text: "hello there", profileId: "abc-123" });
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("CSRF_FAILED");
+    }));
 });
 
 describe("projects", () => {
