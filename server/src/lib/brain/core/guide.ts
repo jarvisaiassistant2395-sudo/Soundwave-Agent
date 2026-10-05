@@ -27,7 +27,7 @@ Main parts:
 - Command Center: the main page (it opens first). Type or talk to the agent; it makes shorts, answers questions, explains the app, opens websites and apps, and checks the PC.
 - Shorts: the agent writes a script for the topic (with Gemini), narrates it in a Soundwave voice, adds big word-by-word captions over gameplay from the Orbital NCG YouTube channel, and renders a 9:16 video — a few minutes per short.
 - YouTube: link a channel once — in a normal build it's one press and a Google sign-in — and shorts can be posted automatically or with one click.
-- Gmail: optionally connect a Google mailbox in Settings → Email. Soundwave can search/read inbox messages and create unsent reply drafts. It never sends from chat; sending requires reviewing the recipient and body and explicitly confirming in the draft card. Email content you ask it to read or draft is sent to the Gemini provider configured in Settings → Brain.
+- Google account (Settings → Email): connect a mailbox once and Soundwave can search and read Gmail, write drafts, send email when you tell it to, look up your contacts, read the next days of your calendar and find files on Drive. Sending from chat is on by default with a daily limit you set there (25 a day; every message it sends is listed on that page). A draft it saved can be sent by telling it "send it" — if the draft changed in Gmail first, it asks you to review instead. If you'd rather it never send, turn the switch off and it only saves drafts (you can still press Send yourself in a draft card). Email content you ask it to read is sent to the Gemini provider configured in Settings → Brain; instructions inside an email are never treated as yours.
 - Brain: Google Gemini with the user's own free API key (Settings → Brain).
 - Memory: notes the agent saves, a summary of earlier conversations, and the list of shorts made — so it remembers what you did together.
 - Voice: tap the mic, hold it to talk, or press Ctrl+Shift+Space from any app. Speech is recognized on the PC; replies are spoken in Microsoft neural voices.
@@ -56,7 +56,7 @@ Center: the thinking orb (click it to talk) with a status line under it, and the
 
 Right column — Conversation: "Clear" starts a fresh conversation (the memory keeps a summary of the old one), "Export"/"Extract Conversation" downloads it. Messages from the phone are labelled "YOU (PHONE)", spoken ones "YOU (VOICE)". Agent replies have a speaker button to hear them again. Finished shorts appear with a player, "Download Video (MP4)" and "Post to YouTube". Above the message box: a live progress bar while a short renders, and the chips "🌅 Morning Setup" and "🎬 Make Short".
 
-Assistant Configuration (gear) has five tabs: General & Voice (assistant name, Soundwave voice with "Test Voice", Speak Replies Aloud, voice input status), Memory (the agent's notes and conversation summary), YouTube API & Shorts (link YouTube, auto-publish, privacy), Email (optional Gmail read/draft access with explicit send confirmation) and Thinking Orb (orb animation style).`,
+Assistant Configuration (gear) has five tabs: General & Voice (assistant name, Soundwave voice with "Test Voice", Speak Replies Aloud, voice input status), Memory (the agent's notes and conversation summary), YouTube API & Shorts (link YouTube, auto-publish, privacy), Email (connect a Google account for Gmail, contacts, calendar and Drive; the "let the agent send" switch, its daily limit and the list of what it sent) and Thinking Orb (orb animation style).`,
   },
   {
     id: "make-short",
@@ -226,7 +226,9 @@ Privacy: your messages and the recent conversation go to Google with your key (o
 - Talk: answer questions, brainstorm topics, hooks, titles and descriptions, write scripts, translate, quick maths.
 - Search the web, if Search is on in Settings → Brain (needs billing).
 
-It can't: send emails or messages, sign into accounts, change PC settings other than the volume, act inside another app (it can open one, not click in it), or edit videos after they're made. It never claims to have done something it didn't.
+It can: write and send email from your Gmail when you ask (on the desktop app, with your contacts, calendar and Drive to hand).
+
+It can't: sign into accounts, take instructions from inside an email, send anything you didn't ask for, delete or change files on your Drive, change PC settings other than the volume, act inside another app (it can open one, not click in it), or edit videos after they're made. It never claims to have done something it didn't.
 
 When the PC is off, the phone's agent can chat, explain the app, use the memory, change the daily briefing and give it (researching your topics with Gemini) — making shorts, videos, and anything on the PC (screen, files, volume, timers) waits for it to be back.`,
   },

@@ -7,6 +7,7 @@ import { Projects } from "./pages/Projects";
 import { Settings } from "./pages/Settings";
 import { Help } from "./pages/Help";
 import { VoiceLibrary } from "./pages/VoiceLibrary";
+import { Profile } from "./pages/Profile";
 import { AgentHub } from "./pages/AgentHub";
 import { CreatorStudio } from "./pages/CreatorStudio";
 import { VoiceOverlay } from "./pages/VoiceOverlay";
@@ -100,6 +101,15 @@ export default function App() {
           element={
             <AppShell>
               <Help />
+            </AppShell>
+          }
+        />
+        {/* The page behind the bottom-left profile banner. */}
+        <Route
+          path="/profile"
+          element={
+            <AppShell>
+              <Profile />
             </AppShell>
           }
         />

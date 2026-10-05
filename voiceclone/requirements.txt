@@ -27,11 +27,15 @@ chatterbox-tts
 #                              its licence text ships with this service.
 #   transformers   Apache-2.0  imported by misaki.en
 #   huggingface-hub            model/voice download
+#   loguru         MIT         declared by `kokoro` and imported by
+#                              kokoro/model.py; --no-deps means pip will not
+#                              bring it in, so it is listed here by hand.
 misaki
 spacy
 num2words
 transformers
 huggingface-hub
+loguru
 
 # Service plumbing.
 fastapi

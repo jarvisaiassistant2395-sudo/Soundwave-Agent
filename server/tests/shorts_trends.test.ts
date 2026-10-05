@@ -11,6 +11,7 @@ const { startFakeGoogle, useFakeGoogle } = await import("./helpers/fakeGoogle.js
 const settings = await import("../src/lib/brain/settings.js");
 const trends = await import("../src/lib/trends.js");
 const st = await import("../src/lib/shortsTrends.js");
+const googleTrends = await import("../src/lib/googleTrends.js");
 
 type Fake = Awaited<ReturnType<typeof startFakeGoogle>>;
 let fake: Fake;
@@ -69,6 +70,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   st.setShortsSearchForTests(null);
+  st.setShortsFallbackForTests(null);
+  googleTrends.setGoogleTrendsForTests(null);
   trends.resetTrendsForTests();
   await fake.close();
 });
@@ -78,6 +81,12 @@ beforeEach(() => {
   trends.resetTrendsForTests();
   settings.resetBrainSettingsForTests();
   st.setShortsSearchForTests(async (q, kind) => fixtureFor(q, kind));
+  // No test may spawn yt-dlp or reach trends.google.com: both free readers are
+  // replaced here and overridden per test.
+  st.setShortsFallbackForTests(async () => {
+    throw new Error("yt-dlp fallback not expected in this test");
+  });
+  googleTrends.setGoogleTrendsForTests(async () => ({ trends: [], geo: "US", fetchedAt: Date.now() }));
 });
 
 describe("reading YouTube's display text", () => {
@@ -182,5 +191,113 @@ describe("the trend scout uses it first, for free", () => {
     const result = await trends.refreshTrends({ reason: "startup" });
     expect(result.ok).toBe(true);
     expect(trends.trendsStatus().via).toBe("youtube");
+  });
+});
+
+describe("the free readers that back the scan up", () => {
+  it("falls back to yt-dlp (no key, no quota) when YouTube.js is refused", async () => {
+    st.setShortsSearchForTests(async () => {
+      throw new Error("HTTP 429");
+    });
+    st.setShortsFallbackForTests(async (q, kind) => fixtureFor(q, kind));
+    const { shorts, failures, sources } = await st.collectTrendingShorts({ queries: [{ query: "habits", label: "Psychology & Mind Tricks" }] });
+    expect(failures).toBe(0);
+    expect(shorts.length).toBeGreaterThan(3);
+    expect(shorts.every((s) => s.source === "yt-dlp")).toBe(true);
+    expect(sources).toEqual(["YouTube search (yt-dlp fallback)"]);
+  });
+
+  it("reads yt-dlp's upload_date as an age, so velocity still works", () => {
+    // Midnight UTC yesterday: between 24 and 48 hours old whenever the test
+    // runs, which is exactly the granularity yt-dlp's upload_date gives.
+    const at = new Date();
+    const yesterday = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()) - 86_400_000);
+    const stamp = `${yesterday.getUTCFullYear()}${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}${String(yesterday.getUTCDate()).padStart(2, "0")}`;
+    const node = st.normalizeNode(
+      { type: "Video", video_id: id(700), title: { text: "POV: a yt-dlp result" }, view_count: { text: "240000" }, length_text: { text: "0:42" }, uploaded_at: stamp },
+      "facts",
+    )!;
+    expect(node.ageHours).toBeGreaterThan(23);
+    expect(node.ageHours).toBeLessThanOrEqual(48);
+  });
+
+  it("turns the week's Shorts into concrete ideas without calling a model", async () => {
+    settings.saveBrainSettings({ apiKey: "AIzaSyTREND-test-key-000wxyz" });
+    const scan = await st.scanTrendingShorts();
+    expect(scan.ideas.length).toBeGreaterThanOrEqual(3);
+    for (const idea of scan.ideas) {
+      // An idea is a fill-in opener plus the evidence it came from, not a category.
+      expect(idea).toMatch(/“.*”/);
+      expect(idea).toMatch(/trending now:|spiking across|Google Trends/);
+      expect(idea.length).toBeLessThanOrEqual(240);
+    }
+    expect(scan.ideas.join("\n")).toMatch(/psychology|mindset/i);
+    expect(fake.generateCalls()).toHaveLength(0);
+  });
+
+  it("offers the day's Google searches as ideas too", () => {
+    const shorts = st.scanTrendingShorts;
+    const ideas = st.buildShortIdeas(
+      Array.from({ length: 6 }, (_, i) => ({
+        id: id(800 + i),
+        title: `POV: the truth about habits #mindset (${i})`,
+        url: `https://www.youtube.com/shorts/${id(800 + i)}`,
+        views: 2_000_000 - i * 100_000,
+        channel: `Chan${i}`,
+        query: "psychology",
+      })),
+      ["diwali 2026", "election results"],
+    );
+    expect(ideas.length).toBeGreaterThanOrEqual(3);
+    expect(ideas.join("\n")).toMatch(/diwali 2026|election results/);
+    expect(typeof shorts).toBe("function"); // the scan entry point itself is untouched
+  });
+
+  it("parses the Google Trends RSS feed into topics", () => {
+    const xml = `<?xml version="1.0"?><rss xmlns:ht="https://trends.google.com"><channel>
+      <item><title>diwali 2026</title><ht:approx_traffic>200,000+</ht:approx_traffic>
+        <ht:news_item><ht:news_item_title>Diwali celebrations begin</ht:news_item_title></ht:news_item></item>
+      <item><title>election &amp; results</title><ht:approx_traffic>100,000+</ht:approx_traffic></item>
+      <item><title>diwali 2026</title><ht:approx_traffic>50,000+</ht:approx_traffic></item>
+    </channel></rss>`;
+    const parsed = googleTrends.parseGoogleTrendsRss(xml);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ title: "diwali 2026", traffic: "200,000+", news: "Diwali celebrations begin" });
+    expect(parsed[1]!.title).toBe("election & results");
+    expect(googleTrends.parseGoogleTrendsRss("not xml")).toEqual([]);
+  });
+
+  it("stores the Google searches and the ideas in the digest (still zero Gemini calls)", async () => {
+    settings.saveBrainSettings({ apiKey: "AIzaSyTREND-test-key-000wxyz" });
+    googleTrends.setGoogleTrendsForTests(async () => ({
+      trends: [{ title: "diwali 2026", traffic: "200,000+", news: "" }],
+      geo: "US",
+      fetchedAt: Date.now(),
+    }));
+    const result = await trends.refreshTrends({ reason: "schedule" });
+    expect(result.ok).toBe(true);
+    expect(fake.generateCalls()).toHaveLength(0);
+    const status = trends.trendsStatus();
+    expect(status.googleTrends).toEqual(["diwali 2026"]);
+    expect(status.ideas.length).toBeGreaterThanOrEqual(3);
+    expect(status.findings.join("\n")).toMatch(/Trending searches today \(Google, US\)/);
+    expect(status.sources.join("\n")).toMatch(/Google Trends/);
+  });
+
+  it("rotates regions when more than one is configured", () => {
+    const previousRegions = process.env.TRENDS_REGIONS;
+    const previousRegion = process.env.TRENDS_REGION;
+    delete process.env.TRENDS_REGION;
+    process.env.TRENDS_REGIONS = "US, gb ,de";
+    try {
+      st._resetTrendsRegionForTests();
+      expect([st.nextRegion(), st.nextRegion(), st.nextRegion(), st.nextRegion()]).toEqual(["US", "GB", "DE", "US"]);
+      expect(st.regionsForScan()).toEqual(["US", "GB", "DE"]);
+    } finally {
+      if (previousRegions === undefined) delete process.env.TRENDS_REGIONS;
+      else process.env.TRENDS_REGIONS = previousRegions;
+      if (previousRegion !== undefined) process.env.TRENDS_REGION = previousRegion;
+      st._resetTrendsRegionForTests();
+    }
   });
 });

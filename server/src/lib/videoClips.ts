@@ -23,22 +23,30 @@ import { isReadableMediaFile } from "./mediaFile.js";
 import { fetchMetadata, parseYouTubeUrl } from "./ytdlp.js";
 import { importYouTubeLink } from "./youtubeImport.js";
 import { probeMedia, resolveFfmpegPath, runFfmpegExport, type ExportSettings, type SubtitleStyleInput } from "./ffmpeg.js";
-import { STT_SAMPLE_RATE, analyzePcm, encodeWav, transcribe } from "./stt.js";
+import { STT_SAMPLE_RATE, encodeWav, transcribe } from "./stt.js";
 import {
   DEFAULT_CLIPS,
   MAX_CLIPS,
+  MAX_CLIP_SECONDS,
   MAX_PICK_TRANSCRIPTS,
+  MIN_CLIP_SECONDS,
+  audioProfile,
   buildPickerAsk,
   captionCues,
+  candidateWindows,
   clipFileName,
   clock,
   clockRange,
-  fallbackPicks,
   inVideoOrder,
+  momentFeatures,
+  momentReason,
+  momentScore,
   parsePickerReply,
+  pickMoments,
   planWindows,
   rankWindows,
-  windowScore,
+  snapToSpeech,
+  speechRuns,
   withoutOverlaps,
   type ClipPick,
   type VideoWindow,
@@ -165,7 +173,11 @@ async function speechAvailable(pcm: Int16Array): Promise<boolean> {
   }
 }
 
-/** Asks Gemini which windows to clip; the visible text of the answer, or "" when unusable. */
+/**
+ * Asks Gemini which moments to clip — one call per video, and only when a key
+ * is configured (the local scoring below picks perfectly usable clips without
+ * it). The windows it sees already start and end at speech boundaries.
+ */
 async function askPicker(windows: VideoWindow[], snippets: string[], count: number, focus?: string): Promise<string> {
   const brain = activeBrain();
   if (!brain) return "";
@@ -174,6 +186,10 @@ async function askPicker(windows: VideoWindow[], snippets: string[], count: numb
   for (const model of models) {
     try {
       const resp = await generateContent({
+        purpose: "clips",
+        // Re-clipping the same video with the same moments heard asks the same
+        // question — the answer is reusable.
+        cache: true,
         apiKey: brain.apiKey,
         model,
         request: {
@@ -280,8 +296,7 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
     { actionOutput: `From ${source.url}` },
   );
 
-  const windows = planWindows(total);
-  if (!windows.length) {
+  if (total < MIN_CLIP_SECONDS) {
     await all(0, "Failed");
     for (const job of jobs) {
       await store.updateJob(job.id, { status: "FAILED", errorMessage: "The video is too short to clip.", completedAt: new Date().toISOString() });
@@ -306,7 +321,22 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
     return;
   }
 
-  const scores = windows.map((w) => windowScore(w, analyzePcm(pcmSlice(pcm, w.start, w.end))));
+  // Where the moments are: read the whole video's sound once, find the places
+  // someone talks (opening on an onset, closing on a pause — not on a grid
+  // line), and score them. A video nobody talks in falls back to the grid.
+  const profile = audioProfile(pcm, STT_SAMPLE_RATE);
+  const runs = speechRuns(profile);
+  const fromSpeech = candidateWindows(runs, total);
+  const windows = fromSpeech.length ? fromSpeech : planWindows(total);
+  let scores = windows.map((w) => momentScore(momentFeatures(w, profile)));
+  const listening = Math.min(windows.length, MAX_PICK_TRANSCRIPTS);
+  say(
+    fromSpeech.length
+      ? `✂️ Found ${windows.length} moment${windows.length === 1 ? "" : "s"} where someone is talking in “${source.name}” — listening to the most promising ${listening}.`
+      : `✂️ No speech stood out in “${source.name}” — searching ${windows.length} even window${windows.length === 1 ? "" : "s"}.`,
+    { actionOutput: fromSpeech.length ? "Cut points follow speech, not a fixed grid" : "No speech measured — the search falls back to even windows" },
+  );
+
   const canListen = await speechAvailable(pcm);
   const ranked = rankWindows(windows, scores).slice(0, MAX_PICK_TRANSCRIPTS);
   const snippets: string[] = windows.map(() => "");
@@ -316,20 +346,32 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
     if (!canListen) break;
     snippets[ranked[i]!] = await listen(pcm, w.start, w.end).catch(() => "");
   }
+  // What was heard changes the ranking: words can lift a moment past a loud
+  // patch of nothing-saying, and filler drops it back.
+  const features = windows.map((w, i) => momentFeatures(w, profile, snippets[i]));
+  scores = windows.map((w, i) => (snippets[i] ? momentScore(features[i]!) : scores[i]!));
 
-  // Which moments: the brain's picks, topped up with the loudest windows, then
-  // in video order so the chat reads like the video does.
+  // Which moments: the brain's picks (snapped onto the same speech boundaries),
+  // topped up with the best-scoring moments, then in video order so the chat
+  // reads like the video does.
   await all(40, "Choosing the best moments…");
   const reply = await askPicker(windows, snippets, count, focus);
-  const modelPicks: ClipPick[] = reply ? parsePickerReply(reply, total, count) : [];
-  const finalPicks = inVideoOrder(withoutOverlaps([...modelPicks, ...fallbackPicks(windows, scores, total, count)], count));
+  const modelPicks: ClipPick[] = (reply ? parsePickerReply(reply, total, count) : []).map((pick) => {
+    const snapped = snapToSpeech(pick, runs, 2.5, total);
+    return { ...pick, start: snapped.start, end: snapped.end };
+  });
+  const localPicks = pickMoments(windows, scores, total, count).map((pick) => {
+    const index = windows.findIndex((w) => w.start === pick.start);
+    return index >= 0 ? { ...pick, reason: momentReason(features[index]!) } : pick;
+  });
+  const finalPicks = inVideoOrder(withoutOverlaps([...modelPicks, ...localPicks], count));
   await all(44, `Cutting ${finalPicks.length === 1 ? "the clip" : `${finalPicks.length} clips`}…`);
 
   for (let i = 0; i < finalPicks.length; i++) {
     const pick = finalPicks[i]!;
     const job = jobs[i];
     if (!job) break;
-    const length = Math.min(59, Math.max(12, pick.end - pick.start));
+    const length = Math.min(MAX_CLIP_SECONDS, Math.max(MIN_CLIP_SECONDS, pick.end - pick.start));
     const range = { start: pick.start, end: pick.start + length };
     const title = pick.title || `${source.name} — ${clock(pick.start)}`;
     const base = job.id;
@@ -346,16 +388,14 @@ async function runClips(source: Source, jobIds: string[], count: number, focus: 
       await job.report(58, "Taking its sound…");
       await runFfmpeg(["-y", "-ss", pick.start.toFixed(3), "-t", length.toFixed(3), "-i", filePath, "-vn", "-c:a", "aac", "-b:a", "160k", audioOnly]);
 
-      // Captions: what is said in this moment. Prefer a window already heard
-      // that overlaps the clip; else listen to the clip's own sound.
-      let said = snippets.find((text, index) => text && !(windows[index]!.end < range.start || windows[index]!.start > range.end)) ?? "";
-      if (!said && canListen) {
-        try {
-          const raw = await runFfmpeg(["-y", "-i", audioOnly, "-ac", "1", "-ar", String(STT_SAMPLE_RATE), "-f", "s16le", "pipe:1"], { collectStdout: true });
-          said = await listen(toPcm(raw), 0, length).catch(() => "");
-        } catch {
-          said = "";
-        }
+      // Captions: the clip's own sound is what the captions must match, so
+      // listen to exactly that stretch (the PCM is already in memory — no
+      // second decode), and only fall back to an overlapping window's
+      // transcript when the speech engine isn't there.
+      let said = "";
+      if (canListen) said = await listen(pcm, pick.start, pick.start + length).catch(() => "");
+      if (!said) {
+        said = snippets.find((text, index) => text && !(windows[index]!.end < range.start || windows[index]!.start > range.end)) ?? "";
       }
       const cues = said ? captionCues(said, 0, length) : [];
 

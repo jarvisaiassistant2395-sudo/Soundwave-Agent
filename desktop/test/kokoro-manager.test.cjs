@@ -185,7 +185,7 @@ test("cancelling model setup terminates the sidecar and preserves a cancelled st
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -248,7 +248,7 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(pythonExe), { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(pythonExe, "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -444,7 +444,7 @@ test("Kokoro voices become ready even when the cloning model can't be prepared, 
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -523,7 +523,7 @@ test("a cloning model that fails to load is reported without blocking Kokoro", a
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -570,7 +570,7 @@ test("package installs pass pip's retry settings through the environment, never 
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     global.fetch = async () => ({ ok: true, json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }) });
@@ -625,7 +625,7 @@ test("a failed setup retries by itself", async () => {
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -664,4 +664,60 @@ test("a failed setup retries by itself", async () => {
     manager?.stop();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ── The loguru miss: regression guards ──────────────────────────────────────
+// Kokoro is installed with --no-deps (its declared misaki[en] extra is GPL-3.0
+// phonemizer + espeak-ng, which this service never imports), so pip cannot
+// install kokoro's own requirements for us. `loguru` — imported at module
+// level by kokoro/model.py — was missed once, and the packaged setup reported
+// success while the service then died with
+// "ModuleNotFoundError: No module named 'loguru'". These tests keep the three
+// places that close that hole in step with each other: the requirements file,
+// the preflight import list, and the message people see.
+const repoRoot = path.resolve(__dirname, "..", "..");
+const voicecloneDir = path.join(repoRoot, "voiceclone");
+
+test("the managed requirements declare every package the --no-deps Kokoro install still needs", () => {
+  const requirements = fs.readFileSync(path.join(voicecloneDir, "requirements-kokoro.txt"), "utf8");
+  const packages = requirements
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  // loguru: declared by kokoro itself; the one that was missing.
+  assert.ok(packages.some((p) => /^loguru\b/.test(p)), "loguru must be in requirements-kokoro.txt");
+  // The pieces kokoro.model / misaki.en import and pip will not bring in.
+  for (const name of ["misaki", "transformers", "huggingface-hub", "spacy", "numpy"]) {
+    assert.ok(
+      packages.some((p) => p.replace(/[\[<>=!~].*$/, "").trim() === name),
+      `${name} must be in requirements-kokoro.txt`,
+    );
+  }
+  // And the deliberate exclusions must stay excluded.
+  for (const gpl of ["phonemizer-fork", "espeakng-loader", "misaki[en]"]) {
+    assert.ok(!requirements.includes(gpl), `${gpl} must never be installed by this file`);
+  }
+});
+
+test("the preflight checks the packages the service imports, including loguru, and ships with the app", () => {
+  const preflight = fs.readFileSync(path.join(voicecloneDir, "preflight.py"), "utf8");
+  for (const name of ["loguru", "misaki", "torch", "torchaudio", "onnxruntime", "sentencepiece", "truststore"]) {
+    assert.ok(preflight.includes(`"${name}"`), `preflight.py must require ${name}`);
+  }
+  // It must keep the GPL path out of the environment, like KokoroEngine does.
+  assert.match(preflight, /phonemizer/);
+  assert.match(preflight, /espeakng_loader/);
+  // The packaged app only ships the files the manager checks for; preflight.py
+  // is one of them (desktop/electron-builder.yml extraResources filter).
+  const builder = fs.readFileSync(path.join(repoRoot, "desktop", "electron-builder.yml"), "utf8");
+  const voiceFilter = builder.slice(builder.indexOf("../voiceclone"));
+  assert.match(voiceFilter.split("- from:")[0] ?? voiceFilter, /preflight\.py/);
+});
+
+test("describeSetupFailure names the missing package and says it repairs itself", () => {
+  const log = "Traceback (most recent call last):\n  File \"kokoro/model.py\", line 1, in <module>\n    from loguru import logger\nModuleNotFoundError: No module named 'loguru'";
+  const message = describeSetupFailure(new Error("python.exe exited with code 1."), log);
+  assert.match(message, /No module named 'loguru'/);
+  assert.match(message, /repair/i);
+  assert.doesNotMatch(message, /internet|couldn't download/i);
 });

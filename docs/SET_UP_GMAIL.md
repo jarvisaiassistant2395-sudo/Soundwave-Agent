@@ -1,15 +1,22 @@
-# Set up "Connect Gmail" (about 5 minutes, once)
+# Set up "Connect Google" for email (about 5 minutes, once)
 
 Gmail sign-in uses **the same Google OAuth client you already made for
 YouTube** (`youtube-client.json`, see `SET_UP_YOUTUBE_ONECLICK.md`). You don't
 need a new client or a new JSON file: you only switch on the Gmail API in that
 same Google Cloud project and allow its permissions.
 
-Soundwave asks for two Gmail permissions:
+Soundwave asks for two Gmail permissions, and offers three optional ones:
 
 - `gmail.readonly`: read the inbox so the agent can summarise and answer questions.
-- `gmail.compose`: create **drafts**. The agent never sends email by itself;
-  you review the draft and send it.
+- `gmail.compose`: save **drafts** and **send** the mail you ask it to send.
+  Sending from chat has a switch and a daily cap in Settings → Email (25/day by
+  default), everything it sends is listed there, and the same message isn't
+  sent twice. Google's own permission covers both, so there is nothing extra to
+  enable for it.
+- `contacts.readonly`, `calendar.readonly`, `drive.readonly` (optional): let the
+  agent resolve "email John" to John's address, read the next days of your
+  calendar and find files on Drive. You can refuse these on Google's screen —
+  the Email tab then shows them as not granted, and only email works.
 
 ---
 
@@ -28,7 +35,9 @@ Soundwave asks for two Gmail permissions:
 
 5. ☰ → **Google Auth platform** → **Data access** → **Add or remove scopes**.
 6. In the filter, search `gmail.readonly` and tick it, then search
-   `gmail.compose` and tick it. Click **Update** → **Save**.
+   `gmail.compose` and tick it. Optionally also tick `contacts.readonly`,
+   `calendar.readonly` and `drive.readonly` (contacts/calendar/Drive read
+   access). Click **Update** → **Save**.
 
 ## 4. Allow your Google account
 
@@ -41,12 +50,13 @@ Soundwave asks for two Gmail permissions:
 ## 5. Connect in Soundwave
 
 9. Restart Soundwave (tray icon → Quit, then start it again).
-10. Open the gear → **Email** → **Connect Gmail**.
+10. Open the gear → **Email** → **Connect Google**.
 11. Your browser opens Google's sign-in. Pick the account. On *"Google hasn't
     verified this app"*, click **Continue** (expected while it's your own
-    unverified app), tick both Gmail permissions, and click **Continue**.
+    unverified app), tick the permissions you want (Gmail at least; contacts,
+    calendar and Drive are optional), and click **Continue**.
 12. The browser says you can close it, and Settings → Email shows the
-    connected address.
+    connected address plus the permissions it has (`✓ Gmail`, `✓ Contacts`…).
 
 ---
 
@@ -57,8 +67,11 @@ Soundwave asks for two Gmail permissions:
 | "Set up a Google OAuth client in Settings → YouTube & Shorts…" | The YouTube client JSON isn't installed on this PC. Put `youtube-client.json` in `%APPDATA%\Soundwave AI\` (step 5 of the YouTube guide). |
 | `access_denied` / "app is being tested" | The Gmail address isn't a test user (step 8). |
 | "Gmail request failed (403)…" | The Gmail API isn't enabled in **this** project (step 3/4), or you enabled it in a different project. |
-| Missing permission after sign-in | You unticked a permission on Google's screen. Connect again and tick both. |
-| "The Google OAuth client changed. Reconnect Gmail" | You replaced `youtube-client.json`. Connect Gmail again. |
+| Missing permission after sign-in | You unticked a permission on Google's screen. Connect again and tick the ones you want. |
+| "Soundwave doesn't have permission to read your contacts/calendar/Drive" | That optional permission wasn't granted: reconnect Google and allow it, or keep going without it (email still works). |
+| The agent refuses to send: "turned off in Settings" | The switch in Settings → Email is off. Turn it back on, or let it save a draft instead. |
+| The agent refuses to send: "that's the N emails a day" | The daily cap was reached. Raise it in Settings → Email, or send tomorrow. |
+| "The Google OAuth client changed. Reconnect Google" | You replaced `youtube-client.json`. Connect Google again. |
 
 ## Before customers use it
 

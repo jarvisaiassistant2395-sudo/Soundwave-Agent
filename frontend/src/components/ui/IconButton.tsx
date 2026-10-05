@@ -14,9 +14,9 @@ const SIZES = {
 } as const;
 
 const TONES = {
-  ghost: "border-[#172A4A] bg-[#070D18] text-gray-300 hover:border-cyan-400/60 hover:text-cyan-300",
+  ghost: "border-[#24252D] bg-[#050506] text-gray-300 hover:border-cyan-400/60 hover:text-cyan-300",
   plain: "text-gray-400 hover:text-cyan-300",
-  cyan: "border-cyan-500/40 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500 hover:text-[#070B14]",
+  cyan: "border-cyan-500/40 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500 hover:text-[#050506]",
   red: "border-red-500/40 bg-red-600/20 text-red-300 hover:bg-red-600/35",
 } as const;
 

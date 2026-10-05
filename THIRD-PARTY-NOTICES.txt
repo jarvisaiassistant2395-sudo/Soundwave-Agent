@@ -251,6 +251,9 @@ Local Python services and Kokoro + MOSS runtime (not installer-bundled)
 • kokoro (Kokoro-82M) — Apache-2.0
     NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration + MOSS cloning runtime and dependencies into per-user app data on first local-voice use; optional Chatterbox and page-reader packages remain separate manual installs. The Python process runs as a separate local service.
     On-this-PC narration voices — Apache-2.0 for code AND weights. Installed with pip's --no-deps, deliberately: its declared misaki[en] extra is phonemizer-fork + espeakng-loader, both GPL-3.0, and this service neither needs nor installs them.
+• loguru — MIT
+    NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration + MOSS cloning runtime and dependencies into per-user app data on first local-voice use; optional Chatterbox and page-reader packages remain separate manual installs. The Python process runs as a separate local service.
+    Declared by `kokoro` and imported by kokoro/model.py: because Kokoro is installed with --no-deps (to keep GPL phonemizer/espeak-ng out), pip does not bring it in, so voiceclone/requirements-kokoro.txt lists it by hand. voiceclone/preflight.py fails setup when it or any other import the service needs is missing.
 • misaki — Apache-2.0
     NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration + MOSS cloning runtime and dependencies into per-user app data on first local-voice use; optional Chatterbox and page-reader packages remain separate manual installs. The Python process runs as a separate local service.
     Kokoro's G2P. Only misaki.en is imported (kokoro_engine.py): the dictionary plus misaki's own FallbackNetwork for out-of-dictionary words. misaki.espeak, which would link GPL-3.0 espeak-ng into the process, is never imported — KokoroEngine refuses to start if it ever is.

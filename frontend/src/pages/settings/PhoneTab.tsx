@@ -82,7 +82,7 @@ function PairingQr({ link }: { link: string }) {
   const [svg, setSvg] = useState("");
   useEffect(() => {
     let cancelled = false;
-    QRCode.toString(link, { type: "svg", errorCorrectionLevel: "M", margin: 1, color: { dark: "#0c0d12", light: "#ffffff" } })
+    QRCode.toString(link, { type: "svg", errorCorrectionLevel: "M", margin: 1, color: { dark: "#000000", light: "#ffffff" } })
       .then((s) => !cancelled && setSvg(s))
       .catch(() => !cancelled && setSvg(""));
     return () => {

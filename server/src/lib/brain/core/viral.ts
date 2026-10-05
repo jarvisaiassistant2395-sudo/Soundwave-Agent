@@ -517,6 +517,12 @@ export interface ScriptInstructionOptions {
   trends?: string[];
   /** When `trends` was researched (ms epoch), shown as an age in the brief. */
   trendsAt?: number;
+  /**
+   * Concrete short ideas the trend scout built from this week's popular Shorts
+   * and the day's Google searches (shortsTrends.buildShortIdeas). Optional and
+   * never required — they are a starting point when the topic is open-ended.
+   */
+  trendIdeas?: string[];
 }
 
 /** “today”, “yesterday”, “4 days ago” — how old the trend research is. */
@@ -570,6 +576,16 @@ export function buildScriptInstruction(opts: ScriptInstructionOptions): string {
     lines.push(
       `WHAT'S WORKING RIGHT NOW (Web research, ${ageLabel(opts.trendsAt)} — follow these over your instincts; the RULES below still beat everything):`,
       ...opts.trends.map((t) => `- ${t}`),
+      ``,
+    );
+  }
+
+  // Ideas the scout derived from the same data (no model was called for them).
+  // They are one possible angle each, not instructions: the topic always wins.
+  if (opts.trendIdeas?.length) {
+    lines.push(
+      `IF THE TOPIC IS OPEN-ENDED, THESE ANGLES ARE PROVEN THIS WEEK (pick one only if it genuinely fits "${opts.trendIdeas.length === 1 ? "the topic" : "the topic"}"):`,
+      ...opts.trendIdeas.map((i) => `- ${i}`),
       ``,
     );
   }

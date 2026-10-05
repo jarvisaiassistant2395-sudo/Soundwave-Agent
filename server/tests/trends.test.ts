@@ -21,6 +21,7 @@ const viral = await import("../src/lib/brain/core/viral.js");
 const { writeShortScript } = await import("../src/lib/brain/script.js");
 const { toolsFor } = await import("../src/lib/brain/tools.js");
 const shortsTrends = await import("../src/lib/shortsTrends.js");
+const googleTrends = await import("../src/lib/googleTrends.js");
 
 /** YouTube unreachable: the default here, so the Gemini fallback can be tested. */
 const youtubeDown = async () => {
@@ -69,6 +70,8 @@ afterAll(async () => {
   // Don't hand a researched digest to the next test file (one DATA_DIR for all).
   trends.resetTrendsForTests();
   shortsTrends.setShortsSearchForTests(null);
+  shortsTrends.setShortsFallbackForTests(null);
+  googleTrends.setGoogleTrendsForTests(null);
   await fake.close();
 });
 
@@ -76,6 +79,15 @@ beforeEach(() => {
   fake.reset();
   trends.resetTrendsForTests();
   shortsTrends.setShortsSearchForTests(youtubeDown);
+  // …and the yt-dlp fallback would really look for (and run) yt-dlp: offline,
+  // both readers are stubbed, which is what these tests are about.
+  shortsTrends.setShortsFallbackForTests(async () => {
+    throw new Error("yt-dlp is not installed in this test");
+  });
+  // The Google Trends feed is a real address on the internet: no test may wait
+  // on it (an unreachable one is what the scouts see offline). Tests that want
+  // its contents install their own reader.
+  googleTrends.setGoogleTrendsForTests(async ({ geo }) => ({ trends: [], geo: geo ?? "US", fetchedAt: Date.now() }));
   settings.resetBrainSettingsForTests();
 });
 

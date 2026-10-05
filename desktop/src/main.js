@@ -810,14 +810,16 @@ async function main() {
   restrictPermissions();
   registerIpc();
 
-  // Set up the on-device voices (Kokoro narration + voice cloning) right away
-  // in the background — including the first launch straight after the
-  // installer — instead of waiting for someone to find the voice page. Nobody
-  // has to press anything; failures retry by themselves.
+  // Set up the on-device voices (Kokoro narration + voice cloning) in the
+  // background — including the first launch straight after the installer —
+  // instead of waiting for someone to find the voice page, and restart the
+  // service on every later launch. Nobody has to press anything; failures
+  // retry by themselves (see kokoro-manager.cjs). A short delay keeps window
+  // creation and the server's own start-up ahead of the Python work.
   if (kokoroManager) {
     setTimeout(() => {
       if (kokoroManager) void kokoroManager.start();
-    }, 4_000).unref?.();
+    }, 1_200).unref?.();
   }
 
   // The agent's hands on this PC (server/src/lib/brain/pc.ts): it opens web

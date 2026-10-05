@@ -132,7 +132,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search"
-                className="rounded-xl border border-gray-800 bg-[#0C1220] px-3.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
+                className="rounded-xl border border-gray-800 bg-[#0A0A0C] px-3.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none"
               />
               <div className="flex flex-wrap gap-1.5">
                 {(["all", "Male", "Female"] as GenderFilter[]).map((g) => (
@@ -141,7 +141,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     onClick={() => setGender(g)}
                     title={g === "all" ? "Every voice" : `${g} voices`}
                     className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
-                      gender === g ? "border-cyan-500 bg-cyan-500/20 text-cyan-300" : "border-gray-800 bg-[#0C1220] text-gray-400 hover:text-white"
+                      gender === g ? "border-cyan-500 bg-cyan-500/20 text-cyan-300" : "border-gray-800 bg-[#0A0A0C] text-gray-400 hover:text-white"
                     }`}
                   >
                     {g === "all" ? "All" : g === "Male" ? "M" : "F"}
@@ -153,7 +153,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     onClick={() => setAccent(a)}
                     title={a === "all" ? "Every accent" : `${a} accent`}
                     className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
-                      accent === a ? "border-blue-500 bg-blue-500/20 text-blue-300" : "border-gray-800 bg-[#0C1220] text-gray-400 hover:text-white"
+                      accent === a ? "border-blue-500 bg-blue-500/20 text-blue-300" : "border-gray-800 bg-[#0A0A0C] text-gray-400 hover:text-white"
                     }`}
                   >
                     {a === "all" ? "All" : a === "American" ? "US" : "UK"}
@@ -177,7 +177,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                 {localVoices.voices.map((v) => (
                   <div
                     key={v.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-emerald-900/50 bg-[#08130F] p-5 transition-all duration-200 hover:border-emerald-500/40"
+                    className="flex flex-col gap-3 rounded-2xl border border-emerald-900/50 bg-[#080A09] p-5 transition-all duration-200 hover:border-emerald-500/40"
                   >
                     <div className="flex items-center gap-3">
                       <button
@@ -187,7 +187,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                           "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all duration-200 cursor-pointer",
                           playing === v.id
                             ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                            : "bg-[#0C172E] text-gray-400 hover:text-emerald-300 border border-gray-800",
+                            : "bg-[#101013] text-gray-400 hover:text-emerald-300 border border-gray-800",
                         )}
                       >
                         {playing === v.id ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -218,7 +218,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
             {filtered.map((v) => (
               <div
                 key={v.id}
-                className="flex flex-col gap-3 rounded-2xl border border-gray-800/80 bg-[#0A101D] p-5 transition-all duration-200 hover:border-cyan-500/40 hover:shadow-lg hover:shadow-cyan-950/20"
+                className="flex flex-col gap-3 rounded-2xl border border-gray-800/80 bg-[#08090B] p-5 transition-all duration-200 hover:border-cyan-500/40 hover:shadow-lg hover:shadow-cyan-950/20"
               >
                 <div className="flex items-center gap-3">
                   <button
@@ -227,8 +227,8 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     className={cn(
                       "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all duration-200 cursor-pointer",
                       playing === v.id
-                        ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-[#070B14] shadow-md shadow-cyan-500/30"
-                        : "bg-[#070B14] border border-gray-800 text-gray-300 hover:text-cyan-400 hover:border-cyan-500/40",
+                        ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-[#050506] shadow-md shadow-cyan-500/30"
+                        : "bg-[#050506] border border-gray-800 text-gray-300 hover:text-cyan-400 hover:border-cyan-500/40",
                     )}
                   >
                     {playing === v.id ? <Square className="h-4 w-4 fill-current" /> : <Play className="ml-0.5 h-4 w-4" />}

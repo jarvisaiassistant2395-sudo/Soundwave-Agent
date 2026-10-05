@@ -7,18 +7,26 @@ import {
   MAX_CLIPS,
   MAX_CLIP_SECONDS,
   MIN_CLIP_SECONDS,
+  audioProfile,
   buildPickerAsk,
+  candidateWindows,
   captionCues,
   clipFileName,
   clipLength,
   clock,
   clockRange,
   fallbackPicks,
+  highlightSignals,
   inVideoOrder,
+  momentScore,
+  momentsFor,
   normalizePick,
   parsePickerReply,
+  pickMoments,
   planWindows,
   rankWindows,
+  snapToSpeech,
+  speechRuns,
   windowScore,
   withoutOverlaps,
 } from "../src/lib/brain/core/clips.js";
@@ -190,5 +198,106 @@ describe("captions from words without word timings", () => {
     expect(clipFileName(0, "Coffee Is King!")).toBe("soundwave_clip_1_coffee-is-king.mp4");
     expect(clipFileName(2, "")).toBe("soundwave_clip_3.mp4");
     expect(clipFileName(1, "x".repeat(80), "job9")).toBe(`soundwave_clip_2_${"x".repeat(40)}_job9.mp4`);
+  });
+});
+
+// ── Finding the moments (local, no model) ───────────────────────────────────
+// The heart of "don't clip randomly": the video's own sound says where someone
+// talks, where a thought ends, and which stretches are livelier than the rest;
+// the words, when they were heard, say whether a moment says something.
+describe("finding the moments worth clipping (no model)", () => {
+  const RATE = 16_000;
+  /** A deterministic tone (220 Hz) at `level` × full scale, in seconds. */
+  const parts = (spec: Array<[number, number]>): Int16Array => {
+    const samples: number[] = [];
+    for (const [seconds, level] of spec) {
+      const n = Math.round(seconds * RATE);
+      for (let i = 0; i < n; i++) {
+        // A sine plus a little frame-to-frame variation, so dynamics see life.
+        const wobble = 1 + 0.35 * Math.sin((2 * Math.PI * 7 * i) / RATE);
+        samples.push(Math.round(level * 32767 * wobble * Math.sin((2 * Math.PI * 220 * i) / RATE)));
+      }
+    }
+    return Int16Array.from(samples);
+  };
+
+  it("hears talking over room tone, and keeps word gaps inside one run", () => {
+    const pcm = parts([
+      [2, 0.002], // room tone
+      [3, 0.3], // talking
+      [0.6, 0.002], // a pause long enough to be a thought boundary
+      [2, 0.3],
+      [4, 0.002],
+    ]);
+    const profile = audioProfile(pcm, RATE);
+    // The floor is the room tone; the speech sits ~50 dB over it.
+    expect(profile.thresholdDb).toBeGreaterThanOrEqual(profile.floorDb + 9);
+    const runs = speechRuns(profile);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]!.start).toBeGreaterThan(1.8);
+    expect(runs[0]!.start).toBeLessThan(2.3);
+    expect(runs[0]!.end).toBeGreaterThan(4.7);
+    expect(runs[0]!.end).toBeLessThan(5.3);
+    expect(runs[1]!.start).toBeGreaterThan(5.4);
+    expect(runs[1]!.end).toBeGreaterThan(7.4);
+  });
+
+  it("opens a candidate on an onset and closes it on the furthest pause that fits", () => {
+    const runs = [
+      { start: 3.2, end: 20.5 },
+      { start: 21.0, end: 33.0 },
+      { start: 34.0, end: 70.0 },
+    ];
+    const windows = candidateWindows(runs, 90);
+    expect(windows[0]).toEqual({ start: 3.2, end: 33 });
+    for (const w of windows) {
+      expect(w.end - w.start).toBeGreaterThanOrEqual(MIN_CLIP_SECONDS);
+      expect(w.end - w.start).toBeLessThanOrEqual(MAX_CLIP_SECONDS);
+    }
+  });
+
+  it("slides a candidate back so a full Short still fits at the very end", () => {
+    const windows = candidateWindows([{ start: 88, end: 89 }], 90);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.end - windows[0]!.start).toBeGreaterThanOrEqual(MIN_CLIP_SECONDS);
+    expect(windows[0]!.end).toBeLessThanOrEqual(90);
+  });
+
+  it("falls back to even windows when nobody speaks (music, ambience)", () => {
+    const profile = audioProfile(parts([[70, 0.02]]), RATE);
+    const found = momentsFor(profile);
+    expect(found.length).toBeGreaterThan(0);
+    expect(found).toEqual(planWindows(70));
+  });
+
+  it("scores a promise — and a clean, heard moment — over a loud patch of nothing", () => {
+    const heard = (hooks: number, fillers: number) => ({ speechRatio: 0.9, loudness: 0.6, dynamics: 0.5, heard: true, hooks, fillers });
+    const loudestUnheard = { speechRatio: 1, loudness: 1, dynamics: 1, heard: false, hooks: 0, fillers: 0 };
+    expect(momentScore(heard(3, 0))).toBeGreaterThan(momentScore(heard(0, 0)));
+    expect(momentScore(heard(2, 2))).toBeLessThan(momentScore(heard(2, 0)));
+    expect(momentScore(heard(0, 0))).toBeGreaterThan(momentScore(loudestUnheard));
+  });
+
+  it("reads promises and housekeeping out of the words themselves", () => {
+    expect(highlightSignals("How I made $10,000 in 30 days").hooks).toBeGreaterThanOrEqual(2);
+    expect(highlightSignals("Why does everyone get this wrong?").hooks).toBeGreaterThanOrEqual(2);
+    expect(highlightSignals("Welcome back! In this video, um, let me explain the sponsor deal.").fillers).toBeGreaterThanOrEqual(3);
+    expect(highlightSignals("").hooks).toBe(0);
+  });
+
+  it("snaps a model's pick onto the nearest speech boundary", () => {
+    const runs = [
+      { start: 9.8, end: 15.0 },
+      { start: 15.4, end: 31.2 },
+    ];
+    expect(snapToSpeech({ start: 10.4, end: 30.9 }, runs, 2.5, 60)).toEqual({ start: 9.8, end: 31.2 });
+    // Nothing near: the moment is left where it was.
+    expect(snapToSpeech({ start: 40, end: 55 }, runs, 2.5, 60)).toEqual({ start: 40, end: 55 });
+  });
+
+  it("picks the best moments from different parts of the video", () => {
+    const windows = [0, 45, 90, 135].map((start) => ({ start, end: start + 40 }));
+    const scores = [0.9, 0.2, 0.4, 0.3];
+    expect(pickMoments(windows, scores, 180, 2).map((p) => p.start)).toEqual([0, 90]);
   });
 });

@@ -11,7 +11,11 @@ const tls = require("node:tls");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const SETUP_REVISION = 3;
+// Revision 4: the first shipped managed setup installed `kokoro` with
+// --no-deps and forgot its `loguru` requirement, so the package step appeared
+// to succeed and the service then died importing kokoro.model. The revision
+// bump makes every affected install re-run the (now complete) package step.
+const SETUP_REVISION = 4;
 // The managed stack now includes CPU MOSS-TTS-Nano cloning as well as Kokoro.
 // A runtime revision forces a restart so older Kokoro-only services are not
 // mistaken for a complete offline-ready install.
@@ -245,6 +249,13 @@ function describeSetupFailure(error, logTail = "", logPath = "") {
     const host = hostIn(evidence);
     return `Local voice setup couldn't download from ${host || "a setup server"}${because}. If your internet is working, a firewall, antivirus, VPN, or proxy may be blocking it, or the server was briefly unavailable. Choose Retry. ${kept}${where}`;
   }
+  // A package the service imports is missing (the loguru case): the raw
+  // `No module named '…'` is kept verbatim so the name is searchable, and the
+  // repair is spelled out — Soundwave installs its own packages.
+  const missingModule = /ModuleNotFoundError: (No module named '([^']+)')|No module named '([^']+)'/.exec(evidence);
+  if (missingModule) {
+    return `A Python package the local voice service needs is missing (${missingModule[1] ?? `No module named '${missingModule[3]}'`}). Soundwave installs its own packages, so this is repaired automatically — choose Retry to reinstall it now. ${kept}${where}`;
+  }
   if (/timed out during local voice setup/i.test(summary)) {
     return `A local voice setup step took too long and was stopped${because}. Choose Retry to continue where it left off. ${kept}${where}`;
   }
@@ -456,6 +467,7 @@ function createKokoroManager({
   const logFile = path.join(runtimeDir, "kokoro.log");
   const cacheDir = path.join(runtimeDir, "cache");
   const profilesDir = path.join(runtimeDir, "profiles");
+  const preflightScript = path.join(resourcesDir, "preflight.py");
   const mossSourceDir = path.join(runtimeDir, "moss-source");
   const mossSourceMarker = path.join(runtimeDir, "moss-source-ready.json");
   const mossModelDir = path.join(runtimeDir, "models");
@@ -473,8 +485,13 @@ function createKokoroManager({
   let runtime = null;
   let reusedProcessId = null;
   // Automatic retries after a failure (a dropped connection, a server
-  // hiccup): people shouldn't have to babysit setup. Reset on success.
+  // hiccup): people shouldn't have to babysit setup. Reset on success. The
+  // tail keeps trying every half hour for the rest of the session — a machine
+  // that came back online later must not need the app restarted, and a laptop
+  // that was simply offline at launch recovers on its own.
   const AUTO_RETRY_DELAYS_MS = [20_000, 90_000, 5 * 60_000];
+  const AUTO_RETRY_TAIL_MS = 30 * 60_000;
+  const MAX_AUTO_RETRIES = 8;
   let autoRetries = 0;
   let autoRetryTimer = null;
   let state = { phase: "checking", message: "Soundwave is preparing the on-device narration and voice-cloning engines in the background." };
@@ -747,12 +764,11 @@ function createKokoroManager({
     const markerMatches = marker?.revision === SETUP_REVISION && marker?.python === PYTHON_VERSION;
     if (markerMatches && fs.existsSync(venvPython)) {
       try {
-        await runCommand(venvPython, ["-m", "pip", "check"], { cwd: resourcesDir, env: managedPythonEnv(), timeoutMs: 60_000 });
-        await runCommand(
-          venvPython,
-          ["-c", "import fastapi, huggingface_hub, misaki, numpy, onnxruntime, sentencepiece, spacy, torch, torchaudio, transformers, uvicorn; from kokoro.model import KModel; assert torch.__version__.split('+')[0] == '2.7.0'; assert torchaudio.__version__.split('+')[0] == '2.7.0'; print('Kokoro + MOSS CPU runtime verified')"],
-          { cwd: resourcesDir, env: managedPythonEnv(), timeoutMs: 60_000 },
-        );
+        // Informational only: Kokoro's `misaki[en]` metadata names the GPL extras
+        // we deliberately don't install, so pip check can be unhappy about a
+        // working environment. The preflight below is the authoritative gate.
+        await runCommand(venvPython, ["-m", "pip", "check"], { cwd: resourcesDir, env: managedPythonEnv(), timeoutMs: 60_000, successCodes: [0, 1] });
+        await runCommand(venvPython, [preflightScript], { cwd: resourcesDir, env: managedPythonEnv(), timeoutMs: 3 * 60_000 });
         return;
       } catch {
         // A broken or incomplete update is repaired below; no app crash.
@@ -778,7 +794,7 @@ function createKokoroManager({
     // pip retries flaky connections itself (PIP_RETRIES above) and, from pip
     // 24.2, trusts the Windows certificate store.
     const common = ["-m", "pip", "install", "--disable-pip-version-check", "--progress-bar", "off"];
-    const packageSteps = 6;
+    const packageSteps = 7;
     let completedPackageSteps = 0;
     const runPackageStep = async (label, executable, args, options = {}) => {
       const progress = Math.round((completedPackageSteps / packageSteps) * 100);
@@ -807,15 +823,14 @@ function createKokoroManager({
       ["-c", "import truststore; truststore.inject_into_ssl(); from spacy.cli import download; download('en_core_web_sm')"],
       { cwd: resourcesDir, env: pipEnv },
     );
-    await runPackageStep(
-      "runtime verification",
-      venvPython,
-      [
-        "-c",
-        "import sys, truststore, fastapi, huggingface_hub, misaki, numpy, onnxruntime, sentencepiece, spacy, torch, torchaudio, transformers, uvicorn; from kokoro.model import KModel; forbidden={'phonemizer','espeakng_loader','misaki.espeak'} & set(sys.modules); assert not forbidden, forbidden; assert torch.__version__.split('+')[0] == '2.7.0'; assert torchaudio.__version__.split('+')[0] == '2.7.0'; print('Kokoro + MOSS CPU runtime verified')",
-      ],
-      { cwd: resourcesDir, env: pipEnv, timeoutMs: 2 * 60_000 },
-    );
+    // Informational (see the note in ensureEnvironment): the preflight below is
+    // the gate; this line is here so the setup log says what pip thinks.
+    await runPackageStep("the package check", venvPython, [...common, "check"], { cwd: resourcesDir, env: pipEnv, timeoutMs: 60_000, successCodes: [0, 1] });
+    // The preflight imports the whole service (server.py, kokoro_engine.py,
+    // moss_engine.py) and every package they import, so a dependency the
+    // --no-deps Kokoro install still needs (loguru was one) fails here — with
+    // the module's name in the log — instead of at service start-up.
+    await runPackageStep("runtime verification", venvPython, [preflightScript], { cwd: resourcesDir, env: pipEnv, timeoutMs: 3 * 60_000 });
     atomicWriteJson(installMarker, { revision: SETUP_REVISION, python: PYTHON_VERSION, installedAt: new Date().toISOString() });
     writeState("installing-packages", "The on-device narration and cloning packages are ready.", 100, "Python packages");
   }
@@ -888,9 +903,15 @@ function createKokoroManager({
       serviceExitError = error;
       if (serviceProcess === child) serviceProcess = null;
       if (stopped || cancelled || child.soundwaveRestarting) return;
+      // The sidecar was already running and died (a crash, an out-of-memory
+      // kill, antivirus): bring it back on its own in the background. Without
+      // this the local voices went quiet until the next app launch.
+      const reason = describeSetupFailure(error, readLogSince(serviceLogOffset), logFile);
+      const wait = scheduleAutoRetry(reason);
+      const next = wait ? ` Soundwave will restart it by itself in ${waitLabel(wait)} — you don't need to do anything.` : "";
       if (state.phase === "ready") {
         fs.rmSync(assetsMarker, { force: true });
-        writeState("failed", describeSetupFailure(error, readLogSince(serviceLogOffset), logFile));
+        writeState("failed", `${reason}${next}`);
       }
       fs.rmSync(runtimeFile, { force: true });
     };
@@ -932,8 +953,8 @@ function createKokoroManager({
   function scheduleAutoRetry(reason) {
     if (stopped || cancelled || autoRetryTimer) return false;
     if (/disk space/i.test(reason)) return false; // retrying can't fix a full disk
-    const wait = AUTO_RETRY_DELAYS_MS[autoRetries];
-    if (wait === undefined) return false;
+    if (autoRetries >= MAX_AUTO_RETRIES) return false;
+    const wait = AUTO_RETRY_DELAYS_MS[autoRetries] ?? AUTO_RETRY_TAIL_MS;
     autoRetries++;
     autoRetryTimer = setTimeout(() => {
       autoRetryTimer = null;
@@ -956,7 +977,7 @@ function createKokoroManager({
     setupStarted = true;
     try {
       writeState("checking", "Soundwave is preparing its on-device narration and voice-cloning engines in the background.");
-      for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) {
+      for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) {
         if (!fs.existsSync(path.join(resourcesDir, file))) throw new Error(`The packaged local voice component is missing ${file}.`);
       }
       await ensureEnvironment();

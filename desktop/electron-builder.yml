@@ -46,6 +46,7 @@ extraResources:
       - server.py
       - kokoro_engine.py
       - moss_engine.py
+      - preflight.py
       - requirements-kokoro.txt
 
 win:

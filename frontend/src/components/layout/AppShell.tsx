@@ -23,6 +23,7 @@ import {
 import { cn } from "../../lib/cn";
 import { LogoMark } from "../Logo";
 import { useAuth } from "../../store/auth";
+import { avatarColorClass, useLocalProfile } from "../../store/profile";
 import { initials } from "../../lib/format";
 import { Dropdown } from "../ui/Dropdown";
 import { toast } from "../../store/toast";
@@ -68,6 +69,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const user = auth.user;
   const signOut = auth.signOut;
+  const profile = useLocalProfile();
+  // The account's name wins when there is a session; otherwise this PC's saved
+  // profile names the workspace (both are set on the Profile page).
+  const displayName = (user?.name || profile.name || "Creator Workspace").trim();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -113,6 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (path.startsWith("/dashboard")) return { section: "Workspace", current: "Overview" };
     if (path.startsWith("/projects")) return { section: "Workspace", current: "Projects" };
     if (path.startsWith("/voices")) return { section: "Workspace", current: "Voice Library" };
+    if (path.startsWith("/profile")) return { section: "Account", current: "Profile" };
     if (path.startsWith("/settings")) return { section: "Manage", current: "Settings" };
     if (path.startsWith("/help")) return { section: "Manage", current: "Help & Support" };
     return { section: "Workspace", current: "Command Center" };
@@ -128,7 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
    * nothing else — the same buttons, reachable, with the labels as tooltips.
    */
   const renderSidebar = (rail: boolean) => (
-    <div className="flex h-full flex-col bg-[#0F1017] text-gray-300 select-none" data-testid="sidebar" data-collapsed={rail ? "true" : "false"}>
+    <div className="flex h-full flex-col bg-[#08080A] text-gray-300 select-none" data-testid="sidebar" data-collapsed={rail ? "true" : "false"}>
       {/* Workspace Brand Switcher */}
       <div className={cn("flex h-14 items-center border-b border-white/[0.06]", rail ? "justify-center px-1" : "justify-between px-3.5")}>
         <NavLink to="/agent" className="flex items-center gap-2.5 group" title="Soundwave AI — Command Center">
@@ -167,7 +173,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {rail && (
         <div className="flex justify-center pt-2">
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.1] bg-[#16171F] text-gray-400 transition-colors hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.1] bg-[#131419] text-gray-400 transition-colors hover:text-white"
             onClick={toggleCollapsed}
             aria-label="Expand the sidebar"
             aria-expanded={!collapsed}
@@ -233,40 +239,56 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      {/* Bottom User Area */}
+      {/* Bottom User Area — the profile banner. Clicking the name/avatar opens
+          the Profile page (real content: name, avatar, plan, today's ideas);
+          the chevron opens the quick menu. In the rail there is no room for a
+          chevron, so the avatar itself is the Profile link. */}
       <div className="border-t border-white/[0.06] p-2.5">
-        <Dropdown
-          align="right"
-          label="Account options"
-          trigger={
-            <button
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-white/[0.05]",
-                rail && "justify-center",
-              )}
-              title={rail ? (user?.name ?? "Account") : undefined}
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-600/80 text-xs font-semibold text-white">
-                {initials(user?.name ?? "Creator")}
-              </span>
-              {!rail && (
-                <>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-white">{user?.name ?? "Creator Workspace"}</p>
-                    <p className="truncate text-[11px] text-gray-400">{user?.plan ?? "PRO"} Plan</p>
-                  </div>
-                  <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                </>
-              )}
-            </button>
-          }
-          items={[
-            { key: "profile", label: "Profile", icon: <CircleUserRound className="h-4 w-4" />, onClick: () => navigate("/settings") },
-            { key: "billing", label: "Plan & Billing", icon: <CreditCard className="h-4 w-4" />, onClick: () => navigate("/settings/billing") },
-            { key: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" />, onClick: () => navigate("/settings") },
-            { key: "logout", label: "Sign out", icon: <LogOut className="h-4 w-4" />, danger: true, onClick: handleSignOut },
-          ]}
-        />
+        <div className={cn("flex items-center gap-1", rail && "flex-col")}>
+          <NavLink
+            to="/profile"
+            title={rail ? `${displayName} — Profile` : "Open your profile"}
+            aria-label={`Open your profile (${displayName})`}
+            data-testid="profile-banner"
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-white/[0.05]",
+              rail && "justify-center",
+            )}
+          >
+            <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white", avatarColorClass(profile.color))}>
+              {initials(displayName)}
+            </span>
+            {!rail && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-white">{displayName}</p>
+                <p className="truncate text-[11px] text-gray-400">{user ? `${user.plan} Plan` : "Local workspace"}</p>
+              </div>
+            )}
+          </NavLink>
+          {!rail && (
+            <Dropdown
+              align="right"
+              label="Account options"
+              trigger={
+                <button
+                  className="flex h-8 w-6 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white"
+                  aria-label="Account options"
+                  title="Account options"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              }
+              items={[
+                { key: "profile", label: "Profile", icon: <CircleUserRound className="h-4 w-4" />, onClick: () => navigate("/profile") },
+                { key: "billing", label: "Plan & Billing", icon: <CreditCard className="h-4 w-4" />, onClick: () => navigate("/settings/billing") },
+                { key: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" />, onClick: () => navigate("/settings") },
+                ...(user
+                  ? [{ key: "logout", label: "Sign out", icon: <LogOut className="h-4 w-4" />, danger: true, onClick: handleSignOut }]
+                  : [{ key: "help", label: "Help & Docs", icon: <HelpCircle className="h-4 w-4" />, onClick: () => navigate("/help") }]),
+              ]}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -274,14 +296,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div
       className={cn(
-        "min-h-screen bg-[#0C0D12] text-gray-100 flex flex-col",
+        "min-h-screen bg-[#000000] text-gray-100 flex flex-col",
         isCommandCenter && "lg:h-screen lg:min-h-0 lg:overflow-hidden",
       )}
     >
       {/* Desktop sidebar — 15rem, or the 4rem rail when minimized */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-20 hidden border-r border-white/[0.06] bg-[#0F1017] transition-[width] duration-200 lg:block",
+          "fixed inset-y-0 left-0 z-20 hidden border-r border-white/[0.06] bg-[#08080A] transition-[width] duration-200 lg:block",
           collapsed ? "w-16" : "w-60",
         )}
         data-testid="desktop-sidebar"
@@ -302,7 +324,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               onClick={() => setMobileOpen(false)}
             />
             <motion.aside
-              className="fixed inset-y-0 left-0 z-30 w-64 bg-[#0F1017] border-r border-white/[0.08] lg:hidden"
+              className="fixed inset-y-0 left-0 z-30 w-64 bg-[#08080A] border-r border-white/[0.08] lg:hidden"
               initial={{ x: -260 }}
               animate={{ x: 0 }}
               exit={{ x: -260 }}
@@ -317,7 +339,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Main column */}
       <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60", isCommandCenter && "lg:min-h-0")}>
         {/* Header Bar */}
-        <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#0C0D12]/90 backdrop-blur-md">
+        <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#000000]/90 backdrop-blur-md">
           <div className="flex h-full items-center justify-between px-4 sm:px-6">
             {/* Left: Mobile trigger & Breadcrumbs */}
             <div className="flex items-center gap-3">

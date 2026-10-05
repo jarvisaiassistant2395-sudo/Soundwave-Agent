@@ -160,6 +160,7 @@ export async function readScreen(question: string): Promise<ScreenRead> {
   for (const model of models) {
     try {
       const resp = await generateContent({
+        purpose: "screen",
         apiKey: brain.apiKey,
         model,
         request: screenRequest(question, shot.png, model) as never,

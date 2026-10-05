@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { config } from "../config.js";
-import { gmailService, GmailError, startGmailConnect } from "../lib/gmail.js";
+import { gmailSendPolicy, gmailSentLog, gmailService, GmailError, saveGmailSendPolicy, startGmailConnect } from "../lib/gmail.js";
 import { localAppGuard } from "../middleware/localApp.js";
+import { validate } from "../middleware/validate.js";
 
 const router = Router();
 router.use(localAppGuard(() => config.desktopApp, "Gmail access is available only in the Soundwave desktop app."));
@@ -33,6 +34,33 @@ router.post("/connect", (req, res) => {
 router.post("/disconnect", (_req, res) => {
   gmailService.disconnect();
   res.json({ ok: true });
+});
+
+// ── How much the agent may send, and what it has sent ──────────────────────
+// The switch the person flips in Settings → Email. Reading is always allowed;
+// sending from chat is what this governs (a person pressing Send in a draft
+// card is their own action and is not capped).
+router.get("/policy", (_req, res) => {
+  const status = gmailService.status();
+  res.json({
+    ...gmailSendPolicy(),
+    sentToday: status.sending.sentToday,
+    remaining: status.sending.remaining,
+    connected: status.connected,
+    scopes: status.scopes,
+    sent: gmailSentLog(15),
+  });
+});
+
+const policySchema = z.object({
+  enabled: z.boolean().optional(),
+  dailyLimit: z.number().int().min(1).max(200).optional(),
+});
+router.put("/policy", validate({ body: policySchema }), (req, res) => {
+  const body = req.body as z.infer<typeof policySchema>;
+  const policy = saveGmailSendPolicy(body);
+  const status = gmailService.status();
+  res.json({ ...policy, sentToday: status.sending.sentToday, remaining: status.sending.remaining, connected: status.connected, scopes: status.scopes, sent: gmailSentLog(15) });
 });
 
 const inboxQuery = z.object({

@@ -6,9 +6,16 @@
 // and writes a short digest into the data folder. Every script is then written
 // with that digest in hand, and the agent can answer "what's trending?" from it.
 //
+// Two free readers feed the digest: the Shorts scan above, and Google Trends'
+// daily RSS for the day's actual searches (./googleTrends.ts) — the second
+// answers what the scans cannot see (a topic about to break, before it has
+// Shorts). From both, the digest also carries concrete short ideas
+// (shortsTrends.buildShortIdeas) so "what should I make today?" has an answer
+// with zero AI calls.
+//
 // Gemini + Google Search is only a fallback, and only when someone presses
-// "search again" and YouTube couldn't be read: background refreshes never
-// spend AI quota.
+// "search again" and the free readers came back with nothing: background
+// refreshes never spend AI quota.
 //
 // Honest failure: when nothing usable comes back, nothing is invented and
 // nothing is wiped — the previous digest stays, with its age on it, and the
@@ -21,6 +28,7 @@ import { GeminiError, generateContent, visibleText } from "./brain/gemini.js";
 import { RESEARCH_MODELS } from "./brain/core/research.js";
 import { activeBrain } from "./brain/settings.js";
 import { scanTrendingShorts, type TrendingShort } from "./shortsTrends.js";
+import { DEFAULT_TRENDS_GEO, fetchGoogleTrends } from "./googleTrends.js";
 
 /** A digest is good for this many days before the scout looks again (12 hours: the YouTube scan is free). */
 export const TREND_REFRESH_DAYS = 0.5;
@@ -41,6 +49,12 @@ export interface TrendDigest {
   via: "youtube" | "search";
   /** The most-viewed Shorts of the week (YouTube scans only). */
   top?: TopShort[];
+  /** Concrete "make this" ideas built from the findings, without an AI call. */
+  ideas?: string[];
+  /** The day's Google trending searches (free RSS), when they were read. */
+  googleTrends?: string[];
+  /** The country the Shorts scan read (YouTube scans only). */
+  region?: string;
 }
 
 /** What the app shows and the agent can cite for one popular Short. */
@@ -65,6 +79,10 @@ export interface TrendStatus {
   sources: string[];
   via: TrendDigest["via"] | null;
   top: TopShort[];
+  /** Concrete short ideas from the last free scan (empty for search digests). */
+  ideas: string[];
+  /** The day's Google trending searches, when the last scan read them. */
+  googleTrends: string[];
 }
 
 function fileFor(): string {
@@ -95,7 +113,19 @@ export function loadTrendDigest(): TrendDigest | null {
         ...(typeof t.ageHours === "number" ? { ageHours: t.ageHours } : {}),
         ...(typeof t.seconds === "number" ? { seconds: t.seconds } : {}),
       }));
-    return { researchedAt: raw.researchedAt, findings, sources, via, ...(top.length ? { top } : {}) };
+    const ideas = (Array.isArray(raw.ideas) ? raw.ideas : []).map((i) => clean(i, 200)).filter((i) => i.length >= 12).slice(0, MAX_FINDINGS);
+    const googleTrends = (Array.isArray(raw.googleTrends) ? raw.googleTrends : []).map((t) => clean(t, 80)).filter(Boolean).slice(0, 10);
+    const region = typeof raw.region === "string" && /^[A-Z]{2}$/.test(raw.region) ? raw.region : undefined;
+    return {
+      researchedAt: raw.researchedAt,
+      findings,
+      sources,
+      via,
+      ...(top.length ? { top } : {}),
+      ...(ideas.length ? { ideas } : {}),
+      ...(googleTrends.length ? { googleTrends } : {}),
+      ...(region ? { region } : {}),
+    };
   } catch {
     return null;
   }
@@ -135,6 +165,8 @@ export function trendsStatus(now = new Date()): TrendStatus {
     sources: digest?.sources ?? [],
     via: digest?.via ?? null,
     top: digest?.top ?? [],
+    ideas: digest?.ideas ?? [],
+    googleTrends: digest?.googleTrends ?? [],
   };
 }
 
@@ -191,20 +223,44 @@ let refreshing: Promise<TrendRefresh> | null = null;
 export function refreshTrends(opts: { reason?: "schedule" | "manual" | "startup"; signal?: AbortSignal; now?: Date } = {}): Promise<TrendRefresh> {
   if (refreshing) return refreshing;
   refreshing = (async (): Promise<TrendRefresh> => {
-    // 1. Free: this week's popular Shorts, straight from YouTube's search.
+    // 1. Free: the day's searches (Google Trends RSS) then this week's popular
+    //    Shorts (YouTube search). The Google read happens first so the Shorts
+    //    scan can turn its topics into concrete ideas, and either one alone is
+    //    still a usable digest.
+    const google = await fetchGoogleTrends({ signal: opts.signal });
     let youtubeDetail = "";
     try {
-      const scan = await scanTrendingShorts({ signal: opts.signal });
-      if (scan.findings.length >= MIN_FINDINGS) {
+      const scan = await scanTrendingShorts({
+        signal: opts.signal,
+        extraTopics: google.trends.map((t) => t.title),
+      });
+      const googleLine = google.trends.length
+        ? `Trending searches today (Google, ${google.geo}): ${google.trends.slice(0, 6).map((t) => t.title).join(", ")}.`
+        : "";
+      // The day's searches lead: they are the freshest signal in the digest and
+      // a topic that is only *about* to have Shorts is the most useful thing a
+      // scriptwriter can be told. The scan's own findings follow.
+      const findings = [googleLine, ...scan.findings].filter((f) => f.length >= 12).slice(0, MAX_FINDINGS);
+      if (findings.length >= MIN_FINDINGS) {
+        const sources = [
+          `YouTube search — ${scan.shorts.length} popular Shorts from this week${scan.region !== DEFAULT_TRENDS_GEO ? ` (${scan.region})` : ""}`,
+          ...scan.sources,
+          ...(google.trends.length ? [`Google Trends daily searches (${google.geo})`] : []),
+        ];
         const digest: TrendDigest = {
           researchedAt: Date.now(),
-          findings: scan.findings.slice(0, MAX_FINDINGS),
-          sources: [`YouTube search — ${scan.shorts.length} popular Shorts from this week`],
+          findings,
+          sources: [...new Set(sources)].slice(0, 6),
           via: "youtube",
           top: scan.shorts.slice(0, 20).map(({ velocity: _velocity, ...t }) => t),
+          ideas: scan.ideas,
+          ...(google.trends.length ? { googleTrends: google.trends.map((t) => t.title) } : {}),
+          region: scan.region,
         };
         saveTrendDigest(digest);
-        console.log(`[trends] refreshed from YouTube (${opts.reason ?? "manual"}): ${digest.findings.length} findings from ${scan.shorts.length} Shorts, no Gemini used`);
+        console.log(
+          `[trends] refreshed (${opts.reason ?? "manual"}): ${findings.length} findings and ${digest.ideas?.length ?? 0} ideas from ${scan.shorts.length} Shorts${google.trends.length ? ` + ${google.trends.length} Google searches` : ""} — no Gemini used`,
+        );
         return { ok: true, digest };
       }
       youtubeDetail = `YouTube returned too little to read trends from (${scan.shorts.length} Shorts)`;
@@ -223,6 +279,7 @@ export function refreshTrends(opts: { reason?: "schedule" | "manual" | "startup"
     for (const model of RESEARCH_MODELS) {
       try {
         const resp = await generateContent({
+          purpose: "trends",
           apiKey: brain.apiKey,
           model,
           signal: opts.signal,

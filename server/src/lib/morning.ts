@@ -293,7 +293,7 @@ export async function writeBriefing(facts: MorningFacts, signal?: AbortSignal): 
   if (!brain) return { text: templateBriefing(facts, { noKey: true }), model: null };
   for (const model of [...new Set([brain.model, FALLBACK_MODEL])]) {
     try {
-      const resp = await generateContent({ apiKey: brain.apiKey, model, request: morningRequest(facts, model), signal, timeoutMs: 25_000 });
+      const resp = await generateContent({ apiKey: brain.apiKey, model, purpose: "morning", request: morningRequest(facts, model), signal, timeoutMs: 25_000 });
       const text = plainReply(visibleText(resp.candidates?.[0]?.content?.parts));
       if (text) return { text, model };
       break;

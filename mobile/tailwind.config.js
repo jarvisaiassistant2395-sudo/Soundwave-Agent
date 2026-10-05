@@ -4,10 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        navy: "#0C0D12",
-        panel: "#13141C",
-        elevated: "#191B26",
-        line: "rgba(255, 255, 255, 0.08)",
+        // The phone is part of the same black app: true-black background,
+        // surfaces barely above it, accents unchanged.
+        navy: "#000000",
+        panel: "#0A0A0C",
+        elevated: "#111114",
+        line: "rgba(255, 255, 255, 0.09)",
         accent: "#2563EB",
       },
       fontFamily: {

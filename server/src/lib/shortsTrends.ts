@@ -1,16 +1,30 @@
 // ── Free Shorts trend tracker (no Gemini, no API key) ───────────────────────
 // YouTube has no public "trending Shorts" API, and it retired the Trending page
-// in 2025. What it still has is its own search, which can be limited to Shorts
-// uploaded this week and ranked by popularity. This module reads that through
-// YouTube.js (LuanRT/YouTube.js, MIT — the Innertube client the website uses),
-// across a few general queries plus every niche the app writes for, then works
-// out the findings itself: rising hashtags and topics, hook shapes that are
-// landing, typical length, and the fastest climbers.
+// in 2025. There are three free ways to get close, and this module uses two of
+// them together:
+//
+//   1. YouTube's own search, limited to Shorts uploaded this week and ranked by
+//      popularity, read through YouTube.js (LuanRT/YouTube.js, MIT — the
+//      Innertube client the website itself uses). This is the richest source:
+//      ages (→ views-per-hour), lengths, channels, the Shorts tab.
+//   2. yt-dlp (Unlicense — the binary Soundwave already ships for imports) as a
+//      fallback reader when YouTube.js is refused or throttled: `ytsearch`
+//      flat entries carry titles, channels, view counts and lengths.
+//
+// (The third free source, Google Trends' daily RSS, is fetched by lib/trends.ts
+// next to this scan — it answers "what is the country searching today", this
+// answers "which Shorts are climbing".)
+//
+// The scan then works out the findings itself: rising hashtags and topics, hook
+// shapes that are landing, typical length, the fastest climbers — and a handful
+// of concrete short ideas built from those, so a person who opens the app to
+// "what should I make?" has an answer without spending one token.
 //
 // Nothing here calls Gemini, so refreshing trends costs no AI quota at all.
 // The scripts and the agent read the result exactly like the old search digest.
 
 import { NICHES } from "./brain/core/viral.js";
+import { searchVideos } from "./ytdlp.js";
 
 /** One Short seen in this week's popular results. */
 export interface TrendingShort {
@@ -26,19 +40,27 @@ export interface TrendingShort {
   query: string;
   /** Views per hour since upload (only when the age is known). */
   velocity?: number;
+  /** Which reader found it: YouTube.js, or the yt-dlp fallback. */
+  source?: "youtube" | "yt-dlp";
 }
 
 export interface ShortsScan {
   scannedAt: number;
   shorts: TrendingShort[];
   findings: string[];
+  /** Concrete "make this" ideas built from the findings (free, deterministic). */
+  ideas: string[];
   queries: string[];
+  /** Which country's results these were. */
+  region: string;
+  /** The readers that actually returned something, in order of use. */
+  sources: string[];
   /** Searches that failed (the scan still counts if enough came back). */
   failures: number;
 }
 
 /** What one search returns: YouTube.js result nodes (duck-typed, so tests can feed fixtures). */
-export type ShortsSearchFn = (query: string, kind: "shorts" | "video", signal?: AbortSignal) => Promise<unknown[]>;
+export type ShortsSearchFn = (query: string, kind: "shorts" | "video", signal?: AbortSignal, region?: string) => Promise<unknown[]>;
 
 // General queries cast the wide net; the niche queries keep it relevant.
 const GENERAL_QUERIES = ["#shorts", "viral shorts"];
@@ -53,6 +75,35 @@ const NICHE_QUERY: Record<string, string> = {
   crime: "true crime shorts",
   health: "health facts shorts",
 };
+
+/**
+ * Which countries to read. One is the default; TRENDS_REGIONS="US,GB" rotates
+ * one region per scan (each region keeps its own Innertube client). Kept short
+ * on purpose: the point is a second English-language signal, not a bot farm.
+ */
+export function regionsForScan(): string[] {
+  const list = (process.env.TRENDS_REGIONS ?? "")
+    .split(",")
+    .map((r) => r.trim().toUpperCase())
+    .filter((r) => /^[A-Z]{2}$/.test(r));
+  if (list.length) return [...new Set(list)].slice(0, 4);
+  const single = (process.env.TRENDS_REGION ?? "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(single) ? [single] : ["US"];
+}
+
+let regionCursor = 0;
+/** The next region to scan (round-robin when more than one is configured). */
+export function nextRegion(): string {
+  const list = regionsForScan();
+  const region = list[regionCursor % list.length]!;
+  regionCursor = (regionCursor + 1) % Number.MAX_SAFE_INTEGER;
+  return region;
+}
+
+/** Tests: forget the rotation. */
+export function _resetTrendsRegionForTests(): void {
+  regionCursor = 0;
+}
 
 export function scanQueries(): Array<{ query: string; label: string }> {
   const niches = NICHES.map((n) => ({ query: NICHE_QUERY[n.id] ?? `${n.name} shorts`, label: n.name }));
@@ -126,7 +177,7 @@ export function normalizeNode(node: unknown, query: string): TrendingShort | nul
     if (seconds !== undefined && seconds > 180) return null;
     if (/live/i.test(text(n.length_text)) || n.is_live) return null;
     const views = parseViews(text(n.view_count) || text(n.short_view_count));
-    const ageHours = parseAgeHours(text(n.published));
+    const ageHours = parseAgeHours(text(n.published)) ?? ageHoursFromUploadDate(String(n.uploaded_at ?? ""));
     const channel = text(n.author?.name) || undefined;
     return {
       id,
@@ -160,23 +211,24 @@ function flatten(nodes: unknown[], depth = 0): unknown[] {
 
 // ── The default search: YouTube.js (loaded on first use) ────────────────────
 
-let innertube: Promise<any> | null = null;
+const innertube = new Map<string, Promise<any>>();
 
-async function client(): Promise<any> {
-  if (!innertube) {
-    innertube = (async () => {
-      const { Innertube } = await import("youtubei.js");
-      return Innertube.create({ retrieve_player: false, lang: "en", location: process.env.TRENDS_REGION || "US", generate_session_locally: true });
-    })().catch((err) => {
-      innertube = null; // try again next time
-      throw err;
-    });
-  }
-  return innertube;
+async function client(region: string): Promise<any> {
+  const cached = innertube.get(region);
+  if (cached) return cached;
+  const created = (async () => {
+    const { Innertube } = await import("youtubei.js");
+    return Innertube.create({ retrieve_player: false, lang: "en", location: region, generate_session_locally: true });
+  })().catch((err) => {
+    innertube.delete(region); // try again next time
+    throw err;
+  });
+  innertube.set(region, created);
+  return created;
 }
 
-const youtubeSearch: ShortsSearchFn = async (query, kind) => {
-  const yt = await client();
+const youtubeSearch: ShortsSearchFn = async (query, kind, _signal, region = "US") => {
+  const yt = await client(region);
   const filters =
     kind === "shorts"
       ? { type: "shorts", upload_date: "week", prioritize: "popularity" }
@@ -185,7 +237,39 @@ const youtubeSearch: ShortsSearchFn = async (query, kind) => {
   return Array.from((res?.results ?? []) as unknown[]);
 };
 
+/** "20261001" (yt-dlp's upload_date) → hours since midnight UTC of that day. */
+function ageHoursFromUploadDate(raw: string): number | undefined {
+  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(raw ?? "").trim());
+  if (!m) return undefined;
+  const at = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (!Number.isFinite(at)) return undefined;
+  const hours = (Date.now() - at) / 3_600_000;
+  return hours >= 0 && hours < 24 * 400 ? Math.round(hours * 10) / 10 : undefined;
+}
+
+/**
+ * The fallback reader: yt-dlp's `ytsearch` (the binary is already there for
+ * imports; Unlicense, no key). Flat entries do not carry an age or a Shorts
+ * flag, so they are shaped like regular search results and the same
+ * normalizeNode() reads them — a title, a channel, a view count, a length.
+ */
+async function ytdlpSearch(query: string, kind: "shorts" | "video", signal?: AbortSignal): Promise<unknown[]> {
+  if (signal?.aborted) throw new Error("cancelled");
+  const results = await searchVideos(query, { limit: kind === "shorts" ? 12 : 20, timeoutMs: 45_000 });
+  return results.map((r) => ({
+    type: "Video",
+    video_id: r.id,
+    title: { text: r.title },
+    author: { name: r.channel },
+    view_count: { text: r.views === null ? "" : String(r.views) },
+    published: { text: "" },
+    length_text: { text: r.duration === null ? "" : `${Math.floor(r.duration / 60)}:${String(Math.floor(r.duration % 60)).padStart(2, "0")}` },
+    ...(r.uploadedAt ? { uploaded_at: r.uploadedAt } : {}),
+  }));
+}
+
 let searchImpl: ShortsSearchFn = youtubeSearch;
+let fallbackImpl: ShortsSearchFn = ytdlpSearch;
 /** A polite pause between searches. */
 let pauseMs = 250;
 
@@ -193,7 +277,13 @@ let pauseMs = 250;
 export function setShortsSearchForTests(fn: ShortsSearchFn | null): void {
   searchImpl = fn ?? youtubeSearch;
   pauseMs = fn ? 0 : 250;
-  innertube = null;
+  innertube.clear();
+}
+
+/** Tests: replace the yt-dlp fallback (null restores the real binary). */
+export function setShortsFallbackForTests(fn: ShortsSearchFn | null): void {
+  fallbackImpl = fn ?? ytdlpSearch;
+  pauseMs = fn ? 0 : pauseMs;
 }
 
 /** When the first searches all fail and nothing has come back, YouTube is unreachable: stop. */
@@ -203,15 +293,24 @@ const GIVE_UP_AFTER_FAILURES = 3;
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Runs the searches (two at a time, gently) and returns every distinct Short found. */
-export async function collectTrendingShorts(opts: { signal?: AbortSignal; queries?: Array<{ query: string; label: string }> } = {}): Promise<{ shorts: TrendingShort[]; failures: number; searches: number }> {
+/**
+ * Runs the searches (two at a time, gently) and returns every distinct Short
+ * found. YouTube.js is the reader; when it fails for a job (throttled, refused,
+ * changed shape) the yt-dlp fallback is tried for the same query before the job
+ * is written off — both are free, so reliability costs nothing.
+ */
+export async function collectTrendingShorts(
+  opts: { signal?: AbortSignal; queries?: Array<{ query: string; label: string }>; region?: string } = {},
+): Promise<{ shorts: TrendingShort[]; failures: number; searches: number; sources: string[] }> {
   const queries = opts.queries ?? scanQueries();
+  const region = opts.region ?? nextRegion();
   const jobs: Array<{ query: string; label: string; kind: "shorts" | "video" }> = [];
   for (const q of queries) {
     jobs.push({ ...q, kind: "video" }); // has channel, age and length
     jobs.push({ ...q, kind: "shorts" }); // the Shorts tab itself
   }
   const byId = new Map<string, TrendingShort>();
+  const sources = new Set<string>();
   let failures = 0;
   let successes = 0;
   let next = 0;
@@ -220,12 +319,25 @@ export async function collectTrendingShorts(opts: { signal?: AbortSignal; querie
       if (opts.signal?.aborted) return;
       if (successes === 0 && failures >= GIVE_UP_AFTER_FAILURES) return;
       const job = jobs[next++]!;
+      const read = async (): Promise<{ nodes: unknown[]; source: TrendingShort["source"] }> => {
+        try {
+          const nodes = await searchImpl(job.query, job.kind, opts.signal, region);
+          if (nodes.length) return { nodes, source: "youtube" };
+        } catch (err) {
+          console.warn(`[trends] YouTube.js search "${job.query}" (${job.kind}) failed: ${(err as Error).message}; trying yt-dlp`);
+        }
+        const nodes = await fallbackImpl(job.query, job.kind, opts.signal, region);
+        return { nodes, source: "yt-dlp" };
+      };
       try {
-        const nodes = flatten(await searchImpl(job.query, job.kind, opts.signal));
+        const { nodes: rawNodes, source } = await read();
+        const nodes = flatten(rawNodes);
+        sources.add(source === "youtube" ? "YouTube search (YouTube.js)" : "YouTube search (yt-dlp fallback)");
         successes++;
         for (const node of nodes) {
           const s = normalizeNode(node, job.label);
           if (!s) continue;
+          s.source = source;
           const prev = byId.get(s.id);
           // Merge: the video result knows the channel/age; the Shorts card may have fresher views.
           if (!prev) byId.set(s.id, s);
@@ -233,14 +345,16 @@ export async function collectTrendingShorts(opts: { signal?: AbortSignal; querie
         }
       } catch (err) {
         failures++;
-        console.warn(`[trends] YouTube search "${job.query}" (${job.kind}) failed: ${(err as Error).message}`);
+        console.warn(`[trends] YouTube search "${job.query}" (${job.kind}) failed in both readers: ${(err as Error).message}`);
       }
       if (pauseMs) await delay(pauseMs);
     }
   };
   await Promise.all([worker(), worker()]);
-  const shorts = [...byId.values()].map((s) => (s.ageHours && s.ageHours > 0 ? { ...s, velocity: Math.round(s.views / Math.max(1, s.ageHours)) } : s));
-  return { shorts, failures, searches: successes + failures };
+  const shorts = [...byId.values()].map((s) =>
+    s.ageHours && s.ageHours > 0 ? { ...s, velocity: Math.round(s.views / Math.max(1, s.ageHours)) } : s,
+  );
+  return { shorts, failures, searches: successes + failures, sources: [...sources] };
 }
 
 // ── Turning the data into findings (deterministic) ──────────────────────────
@@ -274,6 +388,34 @@ const HOOKS: Array<{ label: string; test: RegExp }> = [
   { label: "“nobody/no one tells you” secrets", test: /no ?one|nobody|they don'?t (?:want|tell)|secret|hidden/i },
   { label: "shock words (insane, crazy, unbelievable)", test: /\b(?:insane|crazy|unbelievable|shocking|impossible|mind ?blowing|can'?t believe)\b/i },
 ];
+
+/**
+ * Topic words that keep showing up across different channels — the raw material
+ * for the idea seeds (and finding #4). `top` is already ranked by views.
+ */
+export function topTopics(top: TrendingShort[], max = 6): string[] {
+  const wordChannels = new Map<string, Set<string>>();
+  const wordViews = new Map<string, number>();
+  for (const s of top) {
+    const words = new Set(
+      s.title
+        .toLowerCase()
+        .replace(/#[\p{L}\p{N}_]+/gu, " ")
+        .split(/[^\p{L}\p{N}']+/u)
+        .filter((w) => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)),
+    );
+    for (const w of words) {
+      if (!wordChannels.has(w)) wordChannels.set(w, new Set());
+      wordChannels.get(w)!.add(s.channel ?? s.id);
+      wordViews.set(w, (wordViews.get(w) ?? 0) + s.views);
+    }
+  }
+  return [...wordChannels.entries()]
+    .filter(([, ch]) => ch.size >= 3)
+    .sort((a, b) => b[1].size * (wordViews.get(b[0]) ?? 0) - a[1].size * (wordViews.get(a[0]) ?? 0))
+    .slice(0, max)
+    .map(([w]) => w);
+}
 
 /** The findings the script writer and the agent read. 3–8 lines, most useful first. */
 export function analyzeTrendingShorts(shorts: TrendingShort[]): string[] {
@@ -318,27 +460,7 @@ export function analyzeTrendingShorts(shorts: TrendingShort[]): string[] {
   if (tags.length >= 2) findings.push(`Hashtags riding the most-viewed Shorts this week: ${tags.join(", ")}.`);
 
   // 4. Topic words that keep showing up across different channels.
-  const wordChannels = new Map<string, Set<string>>();
-  const wordViews = new Map<string, number>();
-  for (const s of top) {
-    const words = new Set(
-      s.title
-        .toLowerCase()
-        .replace(/#[\p{L}\p{N}_]+/gu, " ")
-        .split(/[^\p{L}\p{N}']+/u)
-        .filter((w) => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)),
-    );
-    for (const w of words) {
-      if (!wordChannels.has(w)) wordChannels.set(w, new Set());
-      wordChannels.get(w)!.add(s.channel ?? s.id);
-      wordViews.set(w, (wordViews.get(w) ?? 0) + s.views);
-    }
-  }
-  const topics = [...wordChannels.entries()]
-    .filter(([, ch]) => ch.size >= 3)
-    .sort((a, b) => b[1].size * (wordViews.get(b[0]) ?? 0) - a[1].size * (wordViews.get(a[0]) ?? 0))
-    .slice(0, 6)
-    .map(([w]) => w);
+  const topics = topTopics(top);
   if (topics.length >= 3) findings.push(`Topics spiking across many channels this week: ${topics.join(", ")}.`);
 
   // 5. Length of what's working.
@@ -361,17 +483,104 @@ export function analyzeTrendingShorts(shorts: TrendingShort[]): string[] {
   return findings.slice(0, 8);
 }
 
+// ── "What should I make?" — ideas without an AI call ────────────────────────
+
+/**
+ * Each hook shape paired with a fill-in line, so an idea is a concrete opener a
+ * script can start from, not a category. Kept in the same order as HOOKS above
+ * so the shapes the scan says are landing are also the ones offered first.
+ */
+const IDEA_HOOKS: Array<{ label: string; template: string }> = [
+  { label: "POV setup", template: "POV: you just found out the truth about {topic}" },
+  { label: "question", template: "Why does nobody explain {topic} like this?" },
+  { label: "numbered list", template: "3 things about {topic} that are hard to believe" },
+  { label: "wait for it", template: "Wait until you see what {topic} does at the end" },
+  { label: "part 2", template: "Day 2 of explaining {topic} in under a minute" },
+  { label: "face-off", template: "{topic} vs what everyone actually believes" },
+  { label: "nobody tells you", template: "What nobody tells you about {topic}" },
+  { label: "shock", template: "The {topic} fact that sounds made up" },
+];
+
+/** A Google Trends title ("diwali 2026") → a topic phrase safe to drop in a hook. */
+const topicFromTrend = (title: string): string =>
+  title
+    .replace(/^(?:\d+|no)\s+/i, "")
+    .replace(/["“”'’]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+
+/**
+ * Concrete short ideas from the scan, deterministically: the most-viewed
+ * topics are paired with the hook shapes that are over-performing this week,
+ * and each line carries the evidence it came from. No model is involved — the
+ * findings are already ranked, so this only writes them down as briefs.
+ *
+ * `extraTopics` are the day's Google trending searches (lib/trends.ts), which
+ * the Shorts scan cannot see; they are offered after the Shorts-derived topics.
+ */
+export function buildShortIdeas(shorts: TrendingShort[], extraTopics: string[] = [], max = 5): string[] {
+  if (!shorts.length) return [];
+  const pool = shorts.filter((s) => s.views > 0).sort((a, b) => b.views - a.views);
+  if (pool.length < 5) return [];
+  const top = pool.slice(0, Math.min(60, pool.length));
+
+  // The hook shape landing hardest this week (falls back to the list order).
+  const rankedHooks = HOOKS.map((h) => {
+    const hits = top.filter((s) => h.test.test(s.title));
+    return { label: h.label, count: hits.length, med: median(hits.map((s) => s.views)) };
+  })
+    .filter((h) => h.count >= 3)
+    .sort((a, b) => b.med * b.count - a.med * a.count);
+  const preferred = (rankedHooks[0]?.label ?? IDEA_HOOKS[0]!.label).toLowerCase();
+  // Put the best hook first, keep the rest in order (variety across the list).
+  const hookOrder = [...IDEA_HOOKS].sort((a, b) => Number(b.label.toLowerCase().includes(preferred.split(" ")[0]!) || preferred.includes(b.label.toLowerCase())) - Number(a.label.toLowerCase().includes(preferred.split(" ")[0]!) || preferred.includes(a.label.toLowerCase())));
+
+  const ideas: string[] = [];
+  const used = new Set<string>();
+
+  const push = (topic: string, evidence: string) => {
+    const key = topic.toLowerCase();
+    if (!topic || used.has(key) || ideas.length >= max) return;
+    used.add(key);
+    const hook = hookOrder[ideas.length % hookOrder.length]!;
+    const line = hook.template.replace("{topic}", topic);
+    ideas.push(`“${line}” — ${evidence}`);
+  };
+
+  // 1. Topics from the Shorts themselves, with the Short that proves them.
+  for (const topic of topTopics(top, 8)) {
+    const proof = top.find((s) => s.title.toLowerCase().includes(topic));
+    const evidence = proof
+      ? `trending now: ${proof.views ? `${fmtViews(proof.views)} views` : "popular"}${proof.ageHours ? ` in ${fmtAge(proof.ageHours)}` : ""} on a similar Short`
+      : "a topic spiking across this week's top Shorts";
+    push(topic, evidence);
+  }
+
+  // 2. The day's searches (Google Trends) — the world's topics, not YouTube's.
+  for (const raw of extraTopics) {
+    push(topicFromTrend(String(raw ?? "")), "a trending search today (Google Trends)");
+  }
+
+  return ideas.slice(0, max);
+}
+
 /** One full scan: search, merge, analyze. Throws only when nothing at all came back. */
-export async function scanTrendingShorts(opts: { signal?: AbortSignal } = {}): Promise<ShortsScan> {
+export async function scanTrendingShorts(opts: { signal?: AbortSignal; region?: string; extraTopics?: string[] } = {}): Promise<ShortsScan> {
   const queries = scanQueries();
-  const { shorts, failures, searches } = await collectTrendingShorts({ signal: opts.signal, queries });
+  const region = opts.region ?? nextRegion();
+  const { shorts, failures, searches, sources } = await collectTrendingShorts({ signal: opts.signal, queries, region });
   if (!shorts.length) throw new Error(failures >= searches ? "YouTube search could not be reached" : "YouTube returned no Shorts");
   const ranked = shorts.sort((a, b) => b.views - a.views);
+  const ideas = buildShortIdeas(ranked, opts.extraTopics ?? []);
   return {
     scannedAt: Date.now(),
     shorts: ranked.slice(0, 40),
     findings: analyzeTrendingShorts(ranked),
+    ideas,
     queries: queries.map((q) => q.query),
+    region,
+    sources,
     failures,
   };
 }

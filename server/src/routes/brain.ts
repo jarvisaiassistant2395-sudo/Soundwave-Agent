@@ -35,6 +35,7 @@ import {
   type GenerateRequest,
 } from "../lib/brain/gemini.js";
 import { searchRefused } from "../lib/brain/chat.js";
+import { clearGeminiCache, cacheSize } from "../lib/brain/cache.js";
 import { findApp, listStartApps, pcStatus } from "../lib/brain/pc.js";
 
 const router = Router();
@@ -85,6 +86,13 @@ router.delete("/key", settingsOnly, (_req, res) => {
   res.json(brainStatus({ includeKeyHint: true }));
 });
 
+// Drop the reusable answers (cache.ts). Nothing else is touched and the count
+// of calls already made today stays — those calls happened.
+router.delete("/cache", settingsOnly, (_req, res) => {
+  const cleared = clearGeminiCache();
+  res.json({ ok: true, cleared, remaining: cacheSize() });
+});
+
 function testRequest(forModel: string): GenerateRequest {
   return {
     contents: [{ role: "user", parts: [{ text: "This is a connection test. Reply with exactly one word: ready" }] }],
@@ -109,7 +117,9 @@ router.post("/test", settingsOnly, validate({ body: testSchema }), async (req, r
     const started = Date.now();
     let reply = "";
     try {
-      const resp = await generateContent({ apiKey: key, model: testModel, request: testRequest(testModel), timeoutMs: 30_000 });
+      // A key test must reach Google even if a daily ceiling is configured
+      // (and it is never cached — nothing opts in here).
+      const resp = await generateContent({ apiKey: key, model: testModel, purpose: "test", bypassBudget: true, request: testRequest(testModel), timeoutMs: 30_000 });
       reply = visibleText(resp.candidates?.[0]?.content?.parts);
     } catch (err) {
       if (!(err instanceof GeminiError)) throw err;
@@ -128,6 +138,8 @@ router.post("/test", settingsOnly, validate({ body: testSchema }), async (req, r
         await generateContent({
           apiKey: key,
           model: testModel,
+          purpose: "test",
+          bypassBudget: true,
           request: { ...testRequest(testModel), tools: [{ googleSearch: {} }] },
           timeoutMs: 30_000,
         });

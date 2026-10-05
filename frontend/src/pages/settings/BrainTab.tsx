@@ -444,6 +444,63 @@ export function BrainTab() {
         </p>
       </Card>
 
+      {status.usage && (
+        <Card title="Gemini use today" icon={<Zap className="h-4 w-4" />}>
+          <p className="text-sm text-gray-400">
+            Soundwave keeps Gemini for what only Gemini can do: trends are read from YouTube, clip moments are found in the video's own sound, and a
+            script falls back to the built-in writer. Requests that are safe to repeat — the same script for the same topic, the same video's moments —
+            are answered from a cache on this PC and cost nothing.
+          </p>
+          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2">
+              <dt className="text-xs text-gray-500">Calls made</dt>
+              <dd className="mt-0.5 text-lg font-semibold text-white" data-testid="gemini-usage-calls">
+                {status.usage.calls}
+                {status.usage.limits.total ? <span className="text-sm font-normal text-gray-500"> / {status.usage.limits.total}</span> : null}
+              </dd>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2">
+              <dt className="text-xs text-gray-500">Answered from cache</dt>
+              <dd className="mt-0.5 text-lg font-semibold text-white">{status.usage.cached}</dd>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2">
+              <dt className="text-xs text-gray-500">Free paths used</dt>
+              <dd className="mt-0.5 text-lg font-semibold text-white">{status.usage.blocked}</dd>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2">
+              <dt className="text-xs text-gray-500">Cached answers</dt>
+              <dd className="mt-0.5 text-lg font-semibold text-white">{status.usage.cachedAnswers}</dd>
+            </div>
+          </dl>
+          {Object.keys(status.usage.byPurpose).length > 0 && (
+            <p className="mt-3 text-xs text-gray-500">
+              {Object.entries(status.usage.byPurpose)
+                .map(([name, count]) => `${name}: ${count}`)
+                .join(" · ")}
+            </p>
+          )}
+          <div className="mt-4 flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Trash2 className="h-3.5 w-3.5" />}
+              onClick={async () => {
+                try {
+                  const result = await brainApi.clearCache();
+                  toast.success("Cache cleared", `${result.cleared} saved answer${result.cleared === 1 ? "" : "s"} removed.`);
+                  await refresh();
+                } catch {
+                  toast.info("Couldn't clear the cache", "Try again in a moment.");
+                }
+              }}
+            >
+              Clear cache
+            </Button>
+            <span className="text-xs text-gray-500">Set GEMINI_DAILY_LIMITS="script=20,chat=100" to cap spending.</span>
+          </div>
+        </Card>
+      )}
+
       <Card title="What the agent can do" icon={<Gauge className="h-4 w-4" />}>
         <ul className="space-y-2.5 text-sm">
           <Ability ok icon={<Film className="h-3.5 w-3.5" />} label="Make YouTube Shorts" note={configured ? "with scripts Gemini writes for your topic" : "with the built-in scripts until you add a key"} />

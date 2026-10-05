@@ -27,9 +27,17 @@ export default defineConfig({
       OPEN_METEO_GEOCODING_URL: "http://127.0.0.1:9/geocode",
       OPEN_METEO_FORECAST_URL: "http://127.0.0.1:9/forecast",
       YOUTUBE_API_BASE: "http://127.0.0.1:9",
+      GMAIL_API_BASE: "http://127.0.0.1:9/gmail",
+      PEOPLE_API_BASE: "http://127.0.0.1:9/people",
+      CALENDAR_API_BASE: "http://127.0.0.1:9/calendar",
+      DRIVE_API_BASE: "http://127.0.0.1:9/drive",
+      GOOGLE_TRENDS_FEED_URL: "http://127.0.0.1:9/trends",
       GOOGLE_OAUTH_AUTH_URL: "http://127.0.0.1:9/auth",
       GOOGLE_OAUTH_TOKEN_URL: "http://127.0.0.1:9/token",
     },
+    // Clears the on-disk Gemini cache/counters between tests (one DATA_DIR is
+    // shared by every file — see tests/setup.ts).
+    setupFiles: ["./tests/setup.ts"],
     // Each test file gets an isolated store file.
     fileParallelism: false,
   },

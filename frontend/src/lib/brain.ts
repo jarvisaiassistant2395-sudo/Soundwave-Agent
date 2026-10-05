@@ -29,6 +29,18 @@ export interface BrainStatus {
   lastLatencyMs: number | null;
   lastError: { kind: string; message: string; detail: string; at: string } | null;
   updatedAt: string | null;
+  /** How much Gemini was used today, and how much the free paths avoided. */
+  usage?: {
+    day: string;
+    calls: number;
+    cached: number;
+    blocked: number;
+    byPurpose: Record<string, number>;
+    limits: { total: number; purposes: Record<string, number> };
+    remaining: { total: number | null; purposes: Record<string, number | null> };
+    /** Answers kept on disk that can be reused (cache.ts). */
+    cachedAnswers: number;
+  };
 }
 
 export interface BrainTestResult {
@@ -87,6 +99,7 @@ export const brainApi = {
   status: () => call<BrainStatus>("GET"),
   save: (patch: { apiKey?: string; model?: string; thinking?: ThinkingLevel; webSearch?: boolean }) => call<BrainStatus>("PUT", "", patch),
   removeKey: () => call<BrainStatus>("DELETE", "/key"),
+  clearCache: () => call<{ ok: boolean; cleared: number }>("DELETE", "/cache"),
   test: (body: { apiKey?: string; model?: string } = {}) => call<BrainTestResult>("POST", "/test", body),
   models: () => call<BrainModels>("GET", "/models"),
   abilities: () => call<BrainAbilities>("GET", "/abilities"),

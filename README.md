@@ -98,6 +98,9 @@ it never claims something it didn't do:
 | `list_voices`, `set_voice` | the Soundwave voices — list every name, switch the one the agent speaks and narrates with |
 | `youtube_views` | how the person's videos are doing: per-channel totals, latest uploads, and what changed since the last look |
 | `soundwave_guide` | the built-in user guide — every feature, exact steps and button names (`server/src/lib/brain/core/guide.ts`) |
+| `list_emails`, `read_email`, `draft_email`, `draft_email_reply` | reads the connected mailbox and saves unsent drafts (id-and-body verified) |
+| `send_email`, `send_reply` | sends what the person asked for — guarded by the switch, the daily cap and a no-duplicates rule (below) |
+| `find_contact`, `list_calendar`, `search_drive` | the rest of the Google account, read-only: a name → address, the next days of the calendar, a file on Drive |
 | Google Search | live answers — only with a key that has billing (not on the free tier) |
 
 Default model: **Gemini 3.8 Flash** (thinking level *low*, for snappy spoken
@@ -331,6 +334,40 @@ press Connect. Uploads from unaudited projects stay private until YouTube's
 API audit, and "Testing" consent screens expire the sign-in after 7 days
 (publish the app to avoid it). The agent explains all of this on request.
 
+## Email, contacts, calendar and Drive (desktop)
+
+One sign-in in **Settings → Email → Connect Google** covers the whole account:
+Gmail (read, draft, send), contacts, Calendar and Drive. Gmail is the required
+part; the other three are offered on Google's screen and can be refused — the
+Email tab then shows them as not granted and the readers that need them simply
+aren't offered to the model. Code: `server/src/lib/gmail.ts` (the connection,
+MIME, recipients, the sending policy and the record of what was sent) and
+`server/src/lib/googleWorkspace.ts` (People, Calendar and Drive, read-only).
+
+Sending is a first-class capability, not a hidden one — **and it stays on the
+person's leash**:
+
+- it happens only when the person asks for it in their own words
+  (`send_email` / `send_reply`); the instruction inside the model's prompt says
+  so, and email content is marked untrusted everywhere, so a message asking the
+  agent to send something is never a user instruction;
+- **Settings → Email** carries the switch and the daily cap (on, 25/day by
+  default). When either says no, the send is refused with the reason, and the
+  agent saves a draft instead of retrying;
+- addresses are never invented: what the person gave, or `find_contact`
+  (`people:searchContacts`), and if that finds nothing the agent asks;
+- the exact same message to the same person inside five minutes is refused
+  (`DUPLICATE_SEND`) — models and retries double-send;
+- a draft the agent saved can be sent later with "send it", but only while
+  Gmail still has it exactly as it was (fingerprint checked), otherwise the
+  review card is required;
+- every send is recorded (`<dataDir>/gmail/sent.json`, hashed body, no plain
+  text of the message) and listed in the Email tab with who, what and when —
+  and it appears in the chat with the recipient and subject, so "sent" is never
+  just a claim;
+- drafting and sending share `POST /api/v1/email/drafts/:id/send`, which still
+  demands a fresh reviewed fingerprint when the person presses Send themselves.
+
 ## Get the phone app (Android)
 
 CI builds **`SoundwaveCompanion-*.apk`** (the `soundwave-companion-apk`
@@ -534,7 +571,10 @@ cd frontend && npm run build     # production build
 | POST | `/api/v1/ghost/execute` | — | run a macro (`macroId`), a saved `workflow`, or an `instruction` — really: every step's output is what happened on this PC |
 | POST | `/api/v1/creator/jump-cut` | — | auto-edit jump cut silence removal with FFmpeg |
 | POST | `/api/v1/creator/screen-frame` | — | screen recording framing with rounded corners & shadow |
-| GET/PATCH | `/api/v1/user/me` | ✓ | profile + password change |
+| GET | `/api/v1/email/status` | local app only | Google connection, the permissions it has, the sending switch, calls left today |
+| GET/PUT | `/api/v1/email/policy` | local app only | "let the agent send" + daily cap (1–200), with the last sends (`sent`), newest first |
+| POST | `/api/v1/email/drafts/:id/send` | local app only | sends a draft with `confirmSend` + the reviewed `fingerprint` (a person's own action; not capped) |
+| GET | `/api/v1/user/me` | ✓ | profile + password change |
 | GET | `/api/v1/user/usage` | ✓ | quota snapshot |
 | DELETE | `/api/v1/user/account` | ✓ | account deletion (30-day window) |
 | GET | `/api/v1/user/export-data` | ✓ | GDPR data export |
@@ -639,6 +679,10 @@ OAuth identity; new OAuth users are created email-verified with no password.
 | Memory | not the desktop app (`MEMORY=1` turns it on) | no notes/summary in the agent's instruction; hosted servers never keep a shared memory |
 | Weather (Open-Meteo) | unreachable / no city | Morning Setup leaves the weather out and says why (`OPEN_METEO_GEOCODING_URL` / `OPEN_METEO_FORECAST_URL` point tests at a stand-in) |
 | YouTube | not linked | Morning Setup skips the channel numbers; posting buttons ask you to link it (`GOOGLE_OAUTH_*_URL` / `YOUTUBE_API_BASE` point tests at stand-ins) |
+| Trends (free scout) | YouTube and the Google Trends feed unreachable | the digest keeps the last good findings and says why it couldn't look (the Shorts readers have test seams; `GOOGLE_TRENDS_FEED_URL` points tests at a stand-in) |
+| Google account (email) | not connected | the email tools aren't offered to the model; `gmail_status` says to connect in Settings → Email (`GMAIL_API_BASE` / `PEOPLE_API_BASE` / `CALENDAR_API_BASE` / `DRIVE_API_BASE` point tests at stand-ins) |
+| Google sending | switch off / daily cap reached | the send is refused with the reason, the agent saves a draft instead and says where the setting is |
+| Contacts, Calendar, Drive | that permission not granted | the reader says so and the tool isn't offered; Gmail itself keeps working (a token refresh picks up a permission granted later, no reconnect needed) |
 
 ### On-device narration (Kokoro)
 

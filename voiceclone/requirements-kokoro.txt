@@ -11,6 +11,13 @@ misaki
 numpy
 num2words
 python-multipart
+# loguru — MIT. `kokoro` declares it and kokoro/model.py imports it at module
+# level; because Kokoro is installed with --no-deps (see the note at the top of
+# voiceclone/requirements.txt), pip never brings it in, and the service used to
+# die with "ModuleNotFoundError: No module named 'loguru'" only after setup had
+# reported success. Listed here explicitly; voiceclone/preflight.py fails the
+# setup if it (or anything else the service imports) is ever missing again.
+loguru>=0.7.2,<1
 spacy
 # Use the Windows certificate store (antivirus HTTPS scanning, company proxies)
 # for model downloads, like the browser does. MIT.

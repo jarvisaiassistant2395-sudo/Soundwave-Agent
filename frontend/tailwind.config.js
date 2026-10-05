@@ -4,14 +4,17 @@ export default {
   theme: {
     extend: {
       colors: {
-        navy: "#0C0D12",
-        panel: "#13141C",
+        // Soundwave is a black app: backgrounds are true black, surfaces sit a
+        // few values above it, and the only colour in the chrome is accent and
+        // status. Everything is read on OLED-friendly black by design.
+        navy: "#000000",
+        panel: "#0A0A0C",
         surface: {
-          DEFAULT: "#13141C",
-          subtle: "#0E1017",
-          elevated: "#191B26",
-          hover: "#202330",
-          border: "rgba(255, 255, 255, 0.08)",
+          DEFAULT: "#0A0A0C",
+          subtle: "#050506",
+          elevated: "#111114",
+          hover: "#191A20",
+          border: "rgba(255, 255, 255, 0.09)",
         },
         accent: {
           DEFAULT: "#2563EB",
@@ -63,8 +66,8 @@ export default {
         input: "8px",
       },
       boxShadow: {
-        card: "0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3)",
-        elevated: "0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08)",
+        card: "0 1px 3px 0 rgba(0, 0, 0, 0.6), 0 1px 2px -1px rgba(0, 0, 0, 0.6)",
+        elevated: "0 10px 30px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)",
         glow: "0 0 0 1px rgba(37, 99, 235, 0.3), 0 4px 20px -4px rgba(37, 99, 235, 0.3)",
       },
       keyframes: {

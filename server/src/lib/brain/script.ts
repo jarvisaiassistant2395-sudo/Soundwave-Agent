@@ -93,13 +93,24 @@ export async function writeShortScript(
   // What the scout last found on the web (lib/trends.ts): current formats and
   // hooks. Stale is still better than none — the brief shows its age.
   const digest = loadTrendDigest();
-  const trendOpts = digest?.findings.length ? { trends: digest.findings, trendsAt: digest.researchedAt } : {};
+  const trendOpts: { trends?: string[]; trendsAt?: number; trendIdeas?: string[] } = digest?.findings.length
+    ? {
+        trends: digest.findings,
+        trendsAt: digest.researchedAt,
+        ...(digest.ideas?.length ? { trendIdeas: digest.ideas } : {}),
+      }
+    : {};
 
   for (const model of models) {
     const write = (instruction: string) =>
       generateContent({
         apiKey: brain.apiKey,
         model,
+        purpose: "script",
+        // The same topic, length and trends digest want the same script: a
+        // second "Generate" click is free, and a retry after a crash doesn't
+        // write a different video.
+        cache: true,
         request: request(instruction, topic, brief, model, opts.thinking ?? "low"),
         signal: opts.signal,
         timeoutMs: 45_000,

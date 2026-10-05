@@ -186,7 +186,7 @@ export function VoiceClonePanel() {
   const engineName = status?.engine === "chatterbox" ? "Chatterbox" : status?.engine === "moss" ? "MOSS-TTS-Nano" : "Local voice model";
 
   return (
-    <section className="rounded-2xl border border-violet-900/60 bg-[#0A0E1A] p-5 sm:p-6" aria-labelledby="voice-clone-heading">
+    <section className="rounded-2xl border border-violet-900/60 bg-[#08090B] p-5 sm:p-6" aria-labelledby="voice-clone-heading">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="rounded-xl border border-violet-500/20 bg-violet-950/40 p-2.5 text-violet-300"><AudioLines className="h-5 w-5" /></div>
@@ -222,16 +222,16 @@ export function VoiceClonePanel() {
           <form onSubmit={(event) => void createProfile(event)} className="space-y-4">
             <div>
               <label htmlFor="voice-clone-name" className="mb-1.5 block text-sm font-medium text-gray-200">Voice name</label>
-              <input id="voice-clone-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} placeholder="e.g. My narration voice" className="w-full rounded-xl border border-gray-700 bg-[#080D17] px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none" />
+              <input id="voice-clone-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} placeholder="e.g. My narration voice" className="w-full rounded-xl border border-gray-700 bg-[#050506] px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none" />
             </div>
             <div>
               <label htmlFor="voice-clone-reference" className="mb-1.5 block text-sm font-medium text-gray-200">Reference audio ({limits.min}–{limits.max} seconds)</label>
-              <input id="voice-clone-reference" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a,.webm" required onChange={(event) => void chooseFile(event.target.files?.[0] ?? null)} className="block w-full rounded-xl border border-gray-700 bg-[#080D17] p-2 text-sm text-gray-300 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-900/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-violet-100" />
+              <input id="voice-clone-reference" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a,.webm" required onChange={(event) => void chooseFile(event.target.files?.[0] ?? null)} className="block w-full rounded-xl border border-gray-700 bg-[#050506] p-2 text-sm text-gray-300 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-900/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-violet-100" />
               <p className="mt-1 text-xs text-gray-500">Up to 25 MB. Use one clean speaker, minimal background noise, and an audio clip you are allowed to use.</p>
             </div>
             <div>
               <label htmlFor="voice-clone-reftext" className="mb-1.5 block text-sm font-medium text-gray-200">What is said in the reference? <span className="font-normal text-gray-500">(optional)</span></label>
-              <textarea id="voice-clone-reftext" value={refText} onChange={(event) => setRefText(event.target.value)} maxLength={2000} rows={2} placeholder="Optional transcript for the reference clip" className="w-full resize-y rounded-xl border border-gray-700 bg-[#080D17] px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none" />
+              <textarea id="voice-clone-reftext" value={refText} onChange={(event) => setRefText(event.target.value)} maxLength={2000} rows={2} placeholder="Optional transcript for the reference clip" className="w-full resize-y rounded-xl border border-gray-700 bg-[#050506] px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none" />
             </div>
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-900/50 bg-amber-950/15 p-3 text-sm text-amber-100">
               <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} className="mt-0.5 h-4 w-4 accent-violet-500" />

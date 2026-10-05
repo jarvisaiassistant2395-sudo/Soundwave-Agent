@@ -33,7 +33,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # licensed: Chatterbox MIT, Kokoro-82M Apache-2.0 (code and weights).
 RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('ResembleAI/chatterbox'); snapshot_download('hexgrad/Kokoro-82M')"
 
-COPY server.py kokoro_engine.py selftest.py .
+COPY server.py kokoro_engine.py preflight.py selftest.py .
+
+# Import-level check: the whole service, exactly as uvicorn imports it.
+RUN python preflight.py
 
 # The service's own licence position: no GPL code is installed or imported. Runs
 # the real checks (mock engines, no downloads) and fails the build if that ever

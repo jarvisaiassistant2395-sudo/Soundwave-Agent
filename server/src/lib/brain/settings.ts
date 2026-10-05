@@ -8,6 +8,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../../config.js";
+import { cacheSize } from "./cache.js";
+import { geminiUsageReport } from "./usage.js";
 import { bareModelId, describeGeminiError, GeminiError, modelLabel } from "./gemini.js";
 
 import type { ThinkingLevel } from "./core/gemini.js";
@@ -189,6 +191,9 @@ export function brainStatus(opts: { includeKeyHint: boolean }) {
     lastLatencyMs: health.lastLatencyMs,
     lastError: health.lastError,
     updatedAt: s.updatedAt ?? null,
+    // How much Gemini this PC used today, and how much it avoided (free paths
+    // + cached answers). Shown in Settings → Brain.
+    usage: { ...geminiUsageReport(), cachedAnswers: cacheSize() },
   };
 }
 

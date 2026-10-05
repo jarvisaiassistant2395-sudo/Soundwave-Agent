@@ -33,7 +33,7 @@ export function Wave({ className, strokeWidth = 6 }: { className?: string; strok
 export function Logo({ size = 40, glow = false }: { size?: number; glow?: boolean }) {
   return (
     <div
-      className={cn("relative flex shrink-0 items-center justify-center rounded-[28%] border border-white/10 bg-[#080b1e]", glow && "shadow-[0_0_60px_-8px_rgba(99,102,241,0.7)]")}
+      className={cn("relative flex shrink-0 items-center justify-center rounded-[28%] border border-white/10 bg-[#08090B]", glow && "shadow-[0_0_60px_-8px_rgba(99,102,241,0.7)]")}
       style={{ width: size, height: size }}
     >
       <Wave className="w-[74%]" strokeWidth={size > 60 ? 6 : 8} />

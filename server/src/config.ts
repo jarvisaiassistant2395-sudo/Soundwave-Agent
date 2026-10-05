@@ -119,6 +119,16 @@ export const config = {
   // account" signs in through the browser). Tests use stand-ins.
   youtubeApiBase: str("YOUTUBE_API_BASE", "https://www.googleapis.com").replace(/\/+$/, ""),
   gmailApiBase: str("GMAIL_API_BASE", "https://gmail.googleapis.com").replace(/\/+$/, ""),
+  // The rest of the Google account the person granted when connecting Gmail:
+  // contacts (to resolve a name to an address before sending), Calendar (what's
+  // coming up) and Drive (find a file by name). Same OAuth client and token as
+  // Gmail. Tests use stand-ins.
+  peopleApiBase: str("PEOPLE_API_BASE", "https://people.googleapis.com").replace(/\/+$/, ""),
+  // Google Trends' keyless daily RSS (lib/googleTrends.ts). Tests point it at a
+  // stand-in so no test ever waits on the internet.
+  googleTrendsFeedUrl: str("GOOGLE_TRENDS_FEED_URL", "https://trends.google.com/trending/rss"),
+  calendarApiBase: str("CALENDAR_API_BASE", "https://www.googleapis.com/calendar").replace(/\/+$/, ""),
+  driveApiBase: str("DRIVE_API_BASE", "https://www.googleapis.com/drive").replace(/\/+$/, ""),
   googleOAuthAuthUrl: str("GOOGLE_OAUTH_AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
   googleOAuthTokenUrl: str("GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"),
   // Local page reader (the Scrapling sidecar, ../scrapling): pages that answer a

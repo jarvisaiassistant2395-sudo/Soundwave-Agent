@@ -255,6 +255,7 @@ async function summarize(messages: ChatMessage[]): Promise<boolean> {
   for (const model of [...new Set([FALLBACK_MODEL, brain.model])]) {
     try {
       const resp = await generateContent({
+        purpose: "memory",
         apiKey: brain.apiKey,
         model,
         timeoutMs: 40_000,
