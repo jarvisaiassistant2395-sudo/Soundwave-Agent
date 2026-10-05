@@ -38,7 +38,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write: branch builds publish the APK to the rolling "companion-build" pre-release.
+  contents: write
 
 concurrency:
   group: android-companion-${{ github.ref }}
@@ -50,6 +51,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      debug_artifact: ${{ steps.debug_upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
 
@@ -160,7 +162,10 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "::notice title=Soundwave phone app::SoundwaveCompanion-$version.apk ($size) — $pkg, Android ${min}+ (target API $target), permissions: $perms"
 
+      # Artifacts share the repo's Actions storage quota; when it is full the
+      # upload fails, but the APK still goes out through the release below.
       - name: Upload the APK
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: soundwave-companion-apk
@@ -169,6 +174,8 @@ jobs:
           if-no-files-found: error
 
       - name: Upload the debug APK (for the emulator test)
+        id: debug_upload
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: companion-debug-apk
@@ -176,8 +183,28 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+      # Publishes the signed APK to a rolling pre-release (releases don't count
+      # against the Actions artifact quota). Recreated on every branch build so it
+      # always points at the latest commit.
+      - name: Publish the APK to the "companion-build" pre-release (branch builds)
+        if: startsWith(github.ref, 'refs/heads/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag=companion-build
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          git push origin ":refs/tags/$tag" 2>/dev/null || true
+          gh release create "$tag" dist/SoundwaveCompanion-*.apk \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Soundwave phone app $VERSION (latest build)" \
+            --notes "Built from ${GITHUB_REF_NAME} @ ${GITHUB_SHA::7}. Test build — uninstall an older test build first unless it was signed with the permanent key."
+          echo "::notice title=APK published::${{ github.server_url }}/${{ github.repository }}/releases/tag/$tag"
+
   emulator-e2e:
     needs: apk
+    if: needs.apk.outputs.debug_artifact != ''
     runs-on: ubuntu-latest
     # The flow keeps growing (boot, install, and a full morning/afternoon on the
     # phone: settings, chat, briefing, alarm, wake word, push-to-talk). At 45
@@ -310,5 +337,3 @@ jobs:
           path: mobile/e2e-shots
           retention-days: 3
           if-no-files-found: ignore
-
-# Push-triggered build of the latest app (manual dispatch unavailable to the bot token).

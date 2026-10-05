@@ -274,7 +274,10 @@ jobs:
         working-directory: desktop
         run: node verify-runtime.mjs
 
+      # Artifacts share the repo's Actions storage quota; when it is full the
+      # upload fails, but the installers still go out through the release below.
       - name: Upload installer artifacts
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: soundwave-ai-windows
@@ -297,6 +300,7 @@ jobs:
 
       - name: Upload end-to-end screenshots
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: desktop-e2e-screenshots
@@ -318,4 +322,21 @@ jobs:
             gh release upload $env:GITHUB_REF_NAME $exes --clobber
           }
 
-# Push-triggered build of the latest app (manual dispatch unavailable to the bot token).
+      # Branch builds: a rolling pre-release (doesn't count against the Actions
+      # artifact quota), recreated each time so it always holds the latest build.
+      - name: Publish installers to the "desktop-build" pre-release (branch builds)
+        if: startsWith(github.ref, 'refs/heads/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "desktop-build"
+          $exes = (Get-ChildItem desktop/release/*.exe).FullName
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          git push origin ":refs/tags/$tag" 2>$null
+          $global:LASTEXITCODE = 0
+          $short = $env:GITHUB_SHA.Substring(0, 7)
+          gh release create $tag $exes --target $env:GITHUB_SHA --prerelease --title "Soundwave AI desktop $version (latest build)" --notes "Built from $env:GITHUB_REF_NAME @ $short. Windows installer (setup) and portable exe."
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          Write-Host "::notice title=Desktop published::$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$tag"
