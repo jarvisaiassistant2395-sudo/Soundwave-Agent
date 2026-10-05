@@ -1,15 +1,18 @@
 // ── The trend scout: what is actually going viral on Shorts right now ───────
 // Virality moves. The script engine (brain/core/viral.ts) is the floor — the
-// shapes and rules that keep working — and this is the ceiling: every few days,
-// while Soundwave AI runs, the agent searches what is working on Shorts right
-// now (Gemini 2.5 Flash + Google Search, the models with free grounding) and
-// writes a short digest into the data folder. Every script is then written with
-// that digest in hand, and the agent can answer "what's trending?" from it
-// without spending a search.
+// shapes and rules that keep working — and this is the ceiling: twice a day,
+// while Soundwave AI runs, the scout reads this week's most popular Shorts
+// straight from YouTube's search (./shortsTrends.ts — free, no key, no Gemini)
+// and writes a short digest into the data folder. Every script is then written
+// with that digest in hand, and the agent can answer "what's trending?" from it.
 //
-// Honest failure: without a key, without search, or when the answer is junk,
-// nothing is invented and nothing is wiped — the previous digest stays, with
-// its age on it, and the scripts fall back to the standing research.
+// Gemini + Google Search is only a fallback, and only when someone presses
+// "search again" and YouTube couldn't be read: background refreshes never
+// spend AI quota.
+//
+// Honest failure: when nothing usable comes back, nothing is invented and
+// nothing is wiped — the previous digest stays, with its age on it, and the
+// scripts fall back to the standing research.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -17,9 +20,10 @@ import { config } from "../config.js";
 import { GeminiError, generateContent, visibleText } from "./brain/gemini.js";
 import { RESEARCH_MODELS } from "./brain/core/research.js";
 import { activeBrain } from "./brain/settings.js";
+import { scanTrendingShorts, type TrendingShort } from "./shortsTrends.js";
 
-/** A digest is good for this many days before the scout looks again. */
-export const TREND_REFRESH_DAYS = 3;
+/** A digest is good for this many days before the scout looks again (12 hours: the YouTube scan is free). */
+export const TREND_REFRESH_DAYS = 0.5;
 const DAY_MS = 86_400_000;
 const MAX_FINDINGS = 8;
 const MIN_FINDINGS = 3;
@@ -31,10 +35,16 @@ export interface TrendDigest {
   researchedAt: number;
   /** What is working right now — one specific, current observation per line. */
   findings: string[];
-  /** Where it was seen (page titles from the search). */
+  /** Where it was seen (page titles from the search, or "YouTube search"). */
   sources: string[];
-  via: "search";
+  /** "youtube": read from YouTube's own Shorts search (free). "search": Gemini + Google Search. */
+  via: "youtube" | "search";
+  /** The most-viewed Shorts of the week (YouTube scans only). */
+  top?: TopShort[];
 }
+
+/** What the app shows and the agent can cite for one popular Short. */
+export type TopShort = Pick<TrendingShort, "id" | "title" | "url" | "views" | "channel" | "ageHours" | "seconds" | "query">;
 
 export type TrendRefresh =
   | { ok: true; digest: TrendDigest }
@@ -49,10 +59,12 @@ export interface TrendStatus {
   due: boolean;
   /** True while a refresh is running right now. */
   refreshing: boolean;
-  /** No Gemini key: the scout can't search (Settings → Brain). */
+  /** Always false now: the YouTube scan needs no key. Kept for older app pages. */
   needsKey: boolean;
   findings: string[];
   sources: string[];
+  via: TrendDigest["via"] | null;
+  top: TopShort[];
 }
 
 function fileFor(): string {
@@ -69,7 +81,21 @@ export function loadTrendDigest(): TrendDigest | null {
     const findings = (Array.isArray(raw.findings) ? raw.findings : []).map((f) => clean(f)).filter((f) => f.length >= 12).slice(0, MAX_FINDINGS);
     if (findings.length < MIN_FINDINGS) return null;
     const sources = (Array.isArray(raw.sources) ? raw.sources : []).map((s) => clean(s, 120)).filter(Boolean).slice(0, 6);
-    return { researchedAt: raw.researchedAt, findings, sources, via: "search" };
+    const via = raw.via === "youtube" ? "youtube" : "search";
+    const top = (Array.isArray(raw.top) ? raw.top : [])
+      .filter((t): t is TopShort => Boolean(t) && typeof t.id === "string" && typeof t.title === "string" && typeof t.views === "number")
+      .slice(0, 20)
+      .map((t) => ({
+        id: t.id,
+        title: clean(t.title, 140),
+        url: typeof t.url === "string" && t.url.startsWith("https://www.youtube.com/") ? t.url : `https://www.youtube.com/shorts/${t.id}`,
+        views: t.views,
+        query: clean(t.query, 60),
+        ...(typeof t.channel === "string" ? { channel: clean(t.channel, 80) } : {}),
+        ...(typeof t.ageHours === "number" ? { ageHours: t.ageHours } : {}),
+        ...(typeof t.seconds === "number" ? { seconds: t.seconds } : {}),
+      }));
+    return { researchedAt: raw.researchedAt, findings, sources, via, ...(top.length ? { top } : {}) };
   } catch {
     return null;
   }
@@ -104,9 +130,11 @@ export function trendsStatus(now = new Date()): TrendStatus {
     ageDays: digest ? +trendAgeDays(digest, now).toFixed(1) : null,
     due: trendsDue(now, digest),
     refreshing: refreshing !== null,
-    needsKey: !activeBrain(),
+    needsKey: false,
     findings: digest?.findings ?? [],
     sources: digest?.sources ?? [],
+    via: digest?.via ?? null,
+    top: digest?.top ?? [],
   };
 }
 
@@ -163,8 +191,34 @@ let refreshing: Promise<TrendRefresh> | null = null;
 export function refreshTrends(opts: { reason?: "schedule" | "manual" | "startup"; signal?: AbortSignal; now?: Date } = {}): Promise<TrendRefresh> {
   if (refreshing) return refreshing;
   refreshing = (async (): Promise<TrendRefresh> => {
+    // 1. Free: this week's popular Shorts, straight from YouTube's search.
+    let youtubeDetail = "";
+    try {
+      const scan = await scanTrendingShorts({ signal: opts.signal });
+      if (scan.findings.length >= MIN_FINDINGS) {
+        const digest: TrendDigest = {
+          researchedAt: Date.now(),
+          findings: scan.findings.slice(0, MAX_FINDINGS),
+          sources: [`YouTube search — ${scan.shorts.length} popular Shorts from this week`],
+          via: "youtube",
+          top: scan.shorts.slice(0, 20).map(({ velocity: _velocity, ...t }) => t),
+        };
+        saveTrendDigest(digest);
+        console.log(`[trends] refreshed from YouTube (${opts.reason ?? "manual"}): ${digest.findings.length} findings from ${scan.shorts.length} Shorts, no Gemini used`);
+        return { ok: true, digest };
+      }
+      youtubeDetail = `YouTube returned too little to read trends from (${scan.shorts.length} Shorts)`;
+    } catch (err) {
+      if (opts.signal?.aborted) return { ok: false, reason: "failed", detail: "cancelled" };
+      youtubeDetail = `YouTube search: ${(err as Error).message}`;
+    }
+    console.warn(`[trends] ${youtubeDetail}`);
+
+    // 2. Gemini + Google Search only when a person asked for it. Background
+    //    refreshes never spend AI quota; the previous digest stays instead.
+    if ((opts.reason ?? "manual") !== "manual") return { ok: false, reason: "failed", detail: youtubeDetail };
     const brain = activeBrain();
-    if (!brain) return { ok: false, reason: "no-key" };
+    if (!brain) return { ok: false, reason: "failed", detail: youtubeDetail };
     let lastDetail = "";
     for (const model of RESEARCH_MODELS) {
       try {
@@ -208,22 +262,28 @@ export function refreshTrends(opts: { reason?: "schedule" | "manual" | "startup"
   return refreshing;
 }
 
-/**
- * Background searches only against Google's own API. A custom GEMINI_API_BASE
- * is a stand-in (the desktop E2E and the phone emulator run one) or a proxy —
- * asking it for live trend research would be noise, not information. The
- * manual refresh (the Hub button, POST /agent/trends/refresh) always works.
- */
-function googleApiInUse(): boolean {
-  return /^https:\/\/generativelanguage\.googleapis\.com\b/.test(config.geminiApiBase);
-}
+/** After a background scan fails, wait this long before trying again (don't hammer YouTube). */
+const FAILURE_BACKOFF_MS = 3 * 60 * 60_000;
+let lastBackgroundFailure = 0;
 
-/** Desktop app: keep the digest fresh while Soundwave AI runs (checked every 30 minutes). */
+/**
+ * Desktop app: keep the digest fresh while Soundwave AI runs (checked every 30
+ * minutes, refreshed every 12 hours). Free — YouTube search only, never Gemini.
+ * TRENDS_SCAN=0 turns the background scan off (the manual button still works).
+ */
 export function initTrendScout(): () => void {
-  if (!googleApiInUse()) return () => undefined;
+  if (process.env.TRENDS_SCAN === "0") return () => undefined;
   const tick = (reason: "startup" | "schedule") => {
-    if (refreshing || !activeBrain() || !trendsDue()) return;
-    void refreshTrends({ reason }).catch((err) => console.warn(`[trends] refresh failed: ${(err as Error).message}`));
+    if (refreshing || !trendsDue()) return;
+    if (Date.now() - lastBackgroundFailure < FAILURE_BACKOFF_MS) return;
+    void refreshTrends({ reason })
+      .then((result) => {
+        if (!result.ok) lastBackgroundFailure = Date.now();
+      })
+      .catch((err) => {
+        lastBackgroundFailure = Date.now();
+        console.warn(`[trends] refresh failed: ${(err as Error).message}`);
+      });
   };
   const timer = setInterval(() => tick("schedule"), CHECK_INTERVAL_MS);
   timer.unref?.();
@@ -238,6 +298,7 @@ export function initTrendScout(): () => void {
 /** Tests: forget the digest and any run in flight. */
 export function resetTrendsForTests(): void {
   refreshing = null;
+  lastBackgroundFailure = 0;
   try {
     fs.rmSync(fileFor(), { force: true });
   } catch {

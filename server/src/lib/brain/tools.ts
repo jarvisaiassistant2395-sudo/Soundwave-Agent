@@ -700,7 +700,7 @@ AGENT_TOOLS.push(
     declaration: {
       name: "whats_trending",
       description:
-        "What is actually working on YouTube Shorts right now: the app's trend scout searches the web every few days and this returns its latest digest — current formats, hook styles, topic areas and platform changes, with when it was researched and where it was seen. Use it when the user asks what's trending or viral, why a short underperformed, or what to make next. The scripts the app writes already follow this digest; say how old it is when you use it.",
+        "What is actually working on YouTube Shorts right now: twice a day the app reads this week's most popular Shorts from YouTube's own search (free, no AI quota) and this returns the digest — fastest climbers, hook shapes that are landing, rising hashtags and topics, typical length, the hottest niche — plus the top Shorts themselves (title, views, channel, link). Use it when the user asks what's trending or viral, why a short underperformed, or what to make next. The scripts the app writes already follow this digest; say how old it is when you use it.",
       parameters: { type: "OBJECT", properties: {} },
     },
     available: (ctx) => ctx.desktop,
@@ -709,9 +709,7 @@ AGENT_TOOLS.push(
       if (!status.available) {
         return {
           ok: false,
-          reason: status.needsKey
-            ? "I haven't researched what's going viral yet — I need a Gemini API key (Settings → Brain) to search. Until then I write from the standing research."
-            : "The trend search hasn't come back with anything usable yet. I'll look again in the background.",
+          reason: "I haven't been able to read this week's popular Shorts from YouTube yet. I'll try again in the background; until then I write from the standing research.",
         };
       }
       return {
@@ -721,8 +719,10 @@ AGENT_TOOLS.push(
         stale: status.due,
         findings: status.findings,
         sources: status.sources,
+        via: status.via === "youtube" ? "YouTube's own Shorts search (this week, by popularity)" : "web search",
+        topShorts: status.top.slice(0, 8).map((t) => ({ title: t.title, views: t.views, channel: t.channel, url: t.url, niche: t.query })),
         note: status.due
-          ? `This research is ${status.ageDays === 0 ? "from today" : `${status.ageDays} days old`} — I look again every few days; it will refresh by itself.`
+          ? `This research is ${status.ageDays === 0 ? "from today" : `${status.ageDays} days old`} — it refreshes by itself twice a day.`
           : "Fresh research — the newest scripts are written to this.",
       };
     },

@@ -1,9 +1,10 @@
-// The trend scout (lib/trends.ts): the agent searches what is actually going
-// viral on Shorts every few days, writes a digest, and every script is written
-// with it in hand. The search is a fake Gemini on loopback (the real one is
-// Gemini 2.5 Flash + Google Search — the models with free grounding), so what
-// is checked here is the behaviour: fresh findings land, junk never wipes a
-// good digest, no key means no pretending, and the scriptwriter sees the notes.
+// The trend scout (lib/trends.ts): twice a day it reads this week's popular
+// Shorts from YouTube's search (lib/shortsTrends.ts, free, no Gemini), writes a
+// digest, and every script is written with it in hand. When YouTube can't be
+// read and a person presses refresh, it falls back to Gemini + Google Search
+// (a fake Gemini on loopback here). Checked: YouTube findings land without any
+// model call, background refreshes never spend Gemini quota, junk never wipes
+// a good digest, and the scriptwriter sees the notes.
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -19,6 +20,12 @@ const trends = await import("../src/lib/trends.js");
 const viral = await import("../src/lib/brain/core/viral.js");
 const { writeShortScript } = await import("../src/lib/brain/script.js");
 const { toolsFor } = await import("../src/lib/brain/tools.js");
+const shortsTrends = await import("../src/lib/shortsTrends.js");
+
+/** YouTube unreachable: the default here, so the Gemini fallback can be tested. */
+const youtubeDown = async () => {
+  throw new Error("getaddrinfo ENOTFOUND www.youtube.com");
+};
 
 const KEY = "AIzaSyTREND-test-key-000wxyz";
 
@@ -61,25 +68,28 @@ beforeAll(async () => {
 afterAll(async () => {
   // Don't hand a researched digest to the next test file (one DATA_DIR for all).
   trends.resetTrendsForTests();
+  shortsTrends.setShortsSearchForTests(null);
   await fake.close();
 });
 
 beforeEach(() => {
   fake.reset();
   trends.resetTrendsForTests();
+  shortsTrends.setShortsSearchForTests(youtubeDown);
   settings.resetBrainSettingsForTests();
 });
 
-describe("the trend scout", () => {
-  it("searches with Google Search and saves what came back", async () => {
+describe("the trend scout's Gemini fallback (YouTube unreachable)", () => {
+  it("searches with Google Search when a person asks, and saves what came back", async () => {
     settings.saveBrainSettings({ apiKey: KEY });
     fake.gemini.push(answerWithSources);
 
-    const result = await trends.refreshTrends({ reason: "schedule" });
+    const result = await trends.refreshTrends({ reason: "manual" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.digest.findings).toEqual(FINDINGS);
     expect(result.digest.sources).toEqual(["tubebuddy.com", "vidIQ blog"]);
+    expect(result.digest.via).toBe("search");
 
     // It really asked a search model for the current state of Shorts.
     const call = fake.generateCalls()[0]!;
@@ -95,20 +105,30 @@ describe("the trend scout", () => {
     expect(status.due).toBe(false);
   });
 
-  it("can't be left behind: nothing yet is due, and a digest goes stale after three days", () => {
+  it("background refreshes never spend Gemini quota", async () => {
+    settings.saveBrainSettings({ apiKey: KEY });
+    fake.gemini.push(text(ANSWER));
+    for (const reason of ["schedule", "startup"] as const) {
+      const result = await trends.refreshTrends({ reason });
+      expect(result.ok).toBe(false);
+    }
+    expect(fake.generateCalls()).toHaveLength(0);
+  });
+
+  it("can't be left behind: nothing yet is due, and a digest goes stale after twelve hours", () => {
     expect(trends.trendsDue()).toBe(true); // nothing researched yet
     const file = path.join(config.dataDir, "trends.json");
     const wrote = (daysAgo: number) => {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, JSON.stringify({ researchedAt: Date.now() - daysAgo * 86_400_000, findings: FINDINGS, sources: [] }), "utf8");
     };
-    wrote(1);
-    expect(trends.trendsStatus()).toMatchObject({ available: true, due: false, ageDays: 1 });
-    wrote(2);
+    wrote(0.1);
+    expect(trends.trendsStatus()).toMatchObject({ available: true, due: false, ageDays: 0.1 });
+    wrote(0.4);
     expect(trends.trendsStatus().due).toBe(false); // still inside the window
-    wrote(4);
+    wrote(0.6);
     expect(trends.trendsStatus().due).toBe(true); // the scout looks again
-    expect(trends.TREND_REFRESH_DAYS).toBe(3);
+    expect(trends.TREND_REFRESH_DAYS).toBe(0.5);
   });
 
   it("keeps a good digest when the next search fails or answers junk", async () => {
@@ -125,11 +145,12 @@ describe("the trend scout", () => {
     expect(trends.trendsStatus().findings).toEqual(FINDINGS);
   });
 
-  it("without a Gemini key it says so and doesn't change anything", async () => {
+  it("without YouTube or a Gemini key it says why and doesn't change anything", async () => {
     const result = await trends.refreshTrends();
-    expect(result).toMatchObject({ ok: false, reason: "no-key" });
+    expect(result).toMatchObject({ ok: false, reason: "failed" });
+    expect(String((result as { detail?: string }).detail)).toMatch(/YouTube/);
     expect(fake.generateCalls()).toHaveLength(0);
-    expect(trends.trendsStatus()).toMatchObject({ available: false, needsKey: true, due: true });
+    expect(trends.trendsStatus()).toMatchObject({ available: false, needsKey: false, due: true });
   });
 
   it("runs one search at a time", async () => {
@@ -224,7 +245,7 @@ describe("the agent can answer what's trending", () => {
     );
     const result = await tool!.run({}, {} as never);
     expect(result).toMatchObject({ ok: false });
-    expect(String(result.reason)).toMatch(/Gemini API key/);
+    expect(String(result.reason)).toMatch(/popular Shorts from YouTube/);
   });
 });
 
@@ -253,6 +274,6 @@ describe("the API the app shows", () => {
     const noKey = await request(app).post("/api/v1/agent/trends/refresh");
     expect(noKey.status).toBe(200);
     expect(noKey.body.ok).toBe(false);
-    expect(String(noKey.body.reason)).toMatch(/Settings → Brain/);
+    expect(String(noKey.body.reason)).toMatch(/couldn't read this week's popular Shorts/);
   });
 });

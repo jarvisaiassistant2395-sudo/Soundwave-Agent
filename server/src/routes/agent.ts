@@ -459,17 +459,14 @@ router.get("/trends", (_req, res) => {
   res.json({ trends: trendsStatus(), refreshDays: TREND_REFRESH_DAYS });
 });
 
-// POST /trends/refresh — look again now (the Agent Hub button). Without a
-// Gemini key there is nothing to search with, and the answer says so instead
-// of pretending: the previous digest (if any) stays.
+// POST /trends/refresh — look again now (the Agent Hub button). Reads YouTube's
+// Shorts search (free); only if that fails does it fall back to Gemini search.
+// On failure the answer says so and the previous digest (if any) stays.
 router.post("/trends/refresh", async (req, res, next) => {
   try {
     const result = await refreshTrends({ reason: "manual", signal: (req as express.Request & { signal?: AbortSignal }).signal });
     if (!result.ok) {
-      const reason =
-        result.reason === "no-key"
-          ? "Add a Gemini API key in Settings → Brain and I can search what's going viral right now."
-          : `I couldn't finish the trend search just now${result.detail ? ` (${result.detail})` : ""}. The research I already have stays in use.`;
+      const reason = `I couldn't read this week's popular Shorts just now${result.detail ? ` (${result.detail})` : ""}. The trends I already have stay in use.`;
       return res.json({ ok: false, reason, trends: trendsStatus() });
     }
     res.json({ ok: true, trends: trendsStatus() });

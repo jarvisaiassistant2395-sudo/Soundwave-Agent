@@ -136,7 +136,13 @@ export interface TrendStatus {
   needsKey: boolean;
   findings: string[];
   sources: string[];
+  /** "youtube": read free from YouTube's Shorts search; "search": Gemini web search. */
+  via?: "youtube" | "search" | null;
+  top?: Array<{ id: string; title: string; url: string; views: number; channel?: string; query?: string }>;
 }
+
+const compactViews = (n: number): string =>
+  n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
 
 export interface OrbitalStatus {
   channelUrl: string;
@@ -2387,8 +2393,8 @@ export function AgentHub() {
               </div>
             </div>
 
-            {/* What's viral right now: the agent re-searches the web every few days
-                and writes the scripts to it; this is where it can be checked/forced. */}
+            {/* What's viral right now: read free from YouTube's Shorts search twice a
+                day (no Gemini); the scripts are written to it. Checked/forced here. */}
             <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-300">
@@ -2397,10 +2403,10 @@ export function AgentHub() {
                 </span>
                 <button
                   onClick={refreshTrends}
-                  disabled={trendRefreshing || trendStatus?.refreshing || trendStatus?.needsKey}
+                  disabled={trendRefreshing || trendStatus?.refreshing}
                   className="flex h-6 w-6 items-center justify-center rounded-md border border-[#172A4A] text-gray-300 transition-colors hover:border-cyan-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
-                  title={trendStatus?.needsKey ? "Needs a Gemini API key (Settings → Brain)" : "Search again now"}
-                  aria-label="Search again now"
+                  title="Check YouTube again now (free)"
+                  aria-label="Check YouTube again now"
                 >
                   <RefreshCw className={`h-3 w-3 ${trendRefreshing || trendStatus?.refreshing ? "animate-spin" : ""}`} />
                 </button>
@@ -2409,6 +2415,7 @@ export function AgentHub() {
                 <>
                   <p className="text-[10px] text-gray-400">
                     {trendStatus.ageDays === 0 ? "today" : trendStatus.ageDays === 1 ? "yesterday" : `${trendStatus.ageDays}d ago`}
+                    {trendStatus.via === "youtube" ? " · from YouTube, no AI used" : ""}
                     {trendStatus.due ? " · refreshing" : ""}
                   </p>
                   <ul className="space-y-0.5">
@@ -2418,11 +2425,20 @@ export function AgentHub() {
                       </li>
                     ))}
                   </ul>
+                  {Boolean(trendStatus.top?.length) && (
+                    <ul className="space-y-0.5 border-t border-[#172A4A] pt-1">
+                      {trendStatus.top!.slice(0, 3).map((t) => (
+                        <li key={t.id} className="text-[10px] leading-snug line-clamp-1">
+                          <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 hover:text-cyan-200" title={`${t.title}${t.channel ? ` — ${t.channel}` : ""}`}>
+                            ▶ {compactViews(t.views)} · {t.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </>
               ) : (
-                <p className="text-[10px] text-gray-500">
-                  {trendStatus?.needsKey ? "Needs a Gemini key." : "Not researched yet — happens by itself every few days."}
-                </p>
+                <p className="text-[10px] text-gray-500">Not checked yet — reads YouTube's popular Shorts by itself twice a day.</p>
               )}
               {trendNote && <p className="text-[10px] text-amber-400/80 leading-normal">{trendNote}</p>}
             </div>

@@ -415,6 +415,19 @@ mislabeling that flag ("own key" → "kit from the PC") and now prints the PC's
 brain state (key set / NO KEY, and whether it comes from the environment) — the
 one line that would have explained this failure a run earlier.
 
+1.6.6 stops spending Gemini quota on trends. The trend scout used to ask
+Gemini + Google Search every three days; now `server/src/lib/shortsTrends.ts`
+reads this week's popular Shorts straight from YouTube's search through
+YouTube.js (MIT, no API key, no quota) — "#shorts", "viral shorts" and one query
+per niche, both as under-3-minute videos and as Shorts, sorted by popularity —
+and turns them into findings without a model: fastest climbers (views per hour
+since upload), hook shapes that are landing (POV, questions, numbers…), rising
+hashtags, topics across several channels, typical length. It runs twice a day
+and works with no Gemini key. Gemini search is only a fallback when YouTube
+can't be read *and* a person presses refresh; background refreshes never call
+it. `.github/workflows/shorts-trends-smoke.yml` runs a real scan weekly and on
+changes, because YouTube changes its layout now and then.
+
 1.6.5 ships the font captions are drawn in. Every caption asked for "DejaVu
 Sans" — a font Soundwave does not ship and Windows does not have — so libass
 substituted whatever each machine happened to own: the same short looked
