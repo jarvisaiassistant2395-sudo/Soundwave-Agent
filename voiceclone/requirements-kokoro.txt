@@ -12,6 +12,9 @@ numpy
 num2words
 python-multipart
 spacy
+# Use the Windows certificate store (antivirus HTTPS scanning, company proxies)
+# for model downloads, like the browser does. MIT.
+truststore>=0.9
 transformers==4.57.1
 onnxruntime>=1.20.0,<2
 sentencepiece>=0.1.99,<1

@@ -7,10 +7,11 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const https = require("node:https");
+const tls = require("node:tls");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-const SETUP_REVISION = 2;
+const SETUP_REVISION = 3;
 // The managed stack now includes CPU MOSS-TTS-Nano cloning as well as Kokoro.
 // A runtime revision forces a restart so older Kokoro-only services are not
 // mistaken for a complete offline-ready install.
@@ -191,19 +192,63 @@ function cleanIncompleteDownloads(root) {
   }
 }
 
-function describeSetupFailure(error, logTail = "") {
+// Lines that are noise for a diagnosis: pip reports transient retries that it
+// then recovers from, and the service prints progress. Matching the whole log
+// once turned any failure into "needs an internet connection" because an
+// earlier, recovered "Retrying ... timed out" warning was still in the tail.
+const RECOVERED_NOISE = /Retrying \(Retry\(|^\s*WARNING:|^\s*Downloading |^\s*Requirement already satisfied|^\s*Collecting |^\s*Using cached /i;
+
+/** The last lines that look like the actual failure (a traceback's final line, pip's ERROR:). */
+function failureLines(logTail = "", max = 6) {
+  const lines = String(logTail).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const picked = [];
+  for (let i = lines.length - 1; i >= 0 && picked.length < max; i--) {
+    const line = lines[i];
+    if (RECOVERED_NOISE.test(line)) continue;
+    if (/error|exception|failed|refused|denied|timed out|timeout|unreachable|certificate|ssl|proxy|errno|winerror/i.test(line)) picked.unshift(line);
+  }
+  return picked.join("\n");
+}
+
+const TLS_BLOCKED = /CERTIFICATE_VERIFY_FAILED|SSLCertVerificationError|certificate verify failed|self[- ]signed certificate|unable to get local issuer certificate|UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT|CERT_HAS_EXPIRED|ERR_TLS_CERT|\bSSLError\b|\bEPROTO\b|wrong version number/i;
+// Error codes as whole words: case-insensitively, "ModuleNotFoundError"
+// contains "eNotFound" and was being reported as no internet.
+const NO_CONNECTION = /\b(?:ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH)\b|network is unreachable|getaddrinfo failed|(?:temporary )?failure in name resolution|nameresolutionerror|failed to establish a new connection|max retries exceeded|newconnectionerror|connectionreseterror|remotedisconnected|connection (?:aborted|broken|reset)|proxyerror|could not fetch url|no route to host|download timed out|read timed out|connecttimeout|winerror 100(?:51|54|60|61)/i;
+
+function hostIn(text) {
+  const m = /(?:https?:\/\/|host='?|getaddrinfo \w+ )([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i.exec(text);
+  return m ? m[1] : "";
+}
+
+function oneLine(text, max = 220) {
+  return String(text ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function describeSetupFailure(error, logTail = "", logPath = "") {
   const summary = `${error?.code ?? ""} ${error?.message ?? error ?? ""}`;
-  const evidence = `${summary}\n${logTail}`;
+  const fromLog = failureLines(logTail);
+  const evidence = `${summary}\n${fromLog}`;
+  const where = logPath ? ` Details: ${logPath}` : " Details are in the local voice setup log (kokoro.log in Soundwave's app data).";
+  const detail = oneLine(fromLog.split("\n").pop() || error?.message || "");
+  const because = detail ? ` (${detail})` : "";
+  const kept = "Completed runtime, packages, and model files are kept.";
   if (/LOCAL_VOICE_INSUFFICIENT_DISK_SPACE|KOKORO_INSUFFICIENT_DISK_SPACE|ENOSPC|no space left on device|disk quota exceeded|not enough (?:free )?disk space|WinError 112|insufficient disk space/i.test(evidence)) {
     return /Soundwave's local voice setup needs about/i.test(summary)
       ? String(error.message)
-      : "There isn't enough free disk space to finish local voice setup. Free up space and choose Retry; completed runtime, packages, and model files are kept.";
+      : `There isn't enough free disk space to finish local voice setup. Free up space and choose Retry; ${kept.toLowerCase()}`;
   }
-  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|network is unreachable|no internet|offline mode|outgoing traffic.{0,40}disabled|(?:temporary )?failure in name resolution|nameresolutionerror|failed to establish a new connection|max retries exceeded|connectionerror|connectionreseterror|newconnectionerror|connecttimeout|readtimeout|sslcertverificationerror|proxyerror|httpsconnectionpool|could not fetch url|couldn't connect|unable to connect|no route to host|timed out|socket timeout|winerror 100(?:51|54|60|61)/i.test(evidence)) {
-    return "Local voice setup needs an internet connection to download missing setup files. Connect to the internet, then choose Retry; completed runtime, packages, and model files are kept.";
+  if (TLS_BLOCKED.test(evidence)) {
+    const host = hostIn(evidence);
+    return `Local voice setup reached ${host || "the download server"}, but a secure connection was blocked${because}. This is usually antivirus web/HTTPS scanning, a VPN, or a proxy intercepting downloads — not your internet connection. Allow Soundwave (or pause HTTPS scanning) and choose Retry. ${kept}${where}`;
   }
-  const detail = String(error?.message ?? "").replace(/[\r\n]+/g, " ").slice(0, 180);
-  return `Local voice setup couldn't finish${detail ? ` (${detail})` : ""}. Completed runtime, packages, and downloads are kept. Choose Retry to continue; if it fails again, check the local voice setup log in Soundwave's app data.`;
+  if (NO_CONNECTION.test(evidence)) {
+    const host = hostIn(evidence);
+    return `Local voice setup couldn't download from ${host || "a setup server"}${because}. If your internet is working, a firewall, antivirus, VPN, or proxy may be blocking it, or the server was briefly unavailable. Choose Retry. ${kept}${where}`;
+  }
+  if (/timed out during local voice setup/i.test(summary)) {
+    return `A local voice setup step took too long and was stopped${because}. Choose Retry to continue where it left off. ${kept}${where}`;
+  }
+  return `Local voice setup couldn't finish${because}. Choose Retry to continue. ${kept}${where}`;
 }
 
 function delay(ms) {
@@ -231,7 +276,46 @@ function fetchJson(url, token, timeoutMs = REQUEST_TIMEOUT_MS, signal) {
     });
 }
 
-function downloadHttps(url, destination, { sha256, gitSha1, expectedBytes, maxBytes, label = "download", onProgress, signal } = {}) {
+// Antivirus HTTPS scanning and company proxies re-sign traffic with a root
+// they install in the Windows certificate store. Trust that store as well as
+// Node's bundled roots, so downloads work wherever the browser works.
+let httpsAgent;
+function downloadAgent() {
+  if (httpsAgent !== undefined) return httpsAgent;
+  httpsAgent = null;
+  try {
+    if (typeof tls.getCACertificates === "function") {
+      const ca = [...new Set([...tls.getCACertificates("default"), ...tls.getCACertificates("system")])];
+      httpsAgent = new https.Agent({ ca, keepAlive: false });
+    }
+  } catch {
+    httpsAgent = null; // older runtime: Node's bundled roots
+  }
+  return httpsAgent;
+}
+
+/** A failure worth retrying (connection trouble), not a bad file or a cancel. */
+function retryableDownloadError(error) {
+  const text = `${error?.code ?? ""} ${error?.message ?? ""}`;
+  if (/cancelled|checksum|larger than expected|bytes; expected|insecure|must use HTTPS|Too many redirects|ENOSPC|EACCES|EPERM/i.test(text)) return false;
+  if (/HTTP (?:4(?:0[0-9]|1[0-9]))\b/.test(text) && !/HTTP 408|HTTP 429/.test(text)) return false;
+  return true;
+}
+
+async function downloadHttps(url, destination, options = {}) {
+  const attempts = options.attempts ?? 4;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await downloadHttpsOnce(url, destination, options);
+    } catch (error) {
+      if (attempt >= attempts || options.signal?.aborted || !retryableDownloadError(error)) throw error;
+      await delay(Math.min(15_000, 2_000 * attempt * attempt));
+      if (options.signal?.aborted) throw error;
+    }
+  }
+}
+
+function downloadHttpsOnce(url, destination, { sha256, gitSha1, expectedBytes, maxBytes, label = "download", onProgress, signal } = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let activeRequest = null;
@@ -274,7 +358,7 @@ function downloadHttps(url, destination, { sha256, gitSha1, expectedBytes, maxBy
       if (parsed.protocol !== "https:") return finish(new Error("Downloads must use HTTPS."));
       if (redirects > 5) return finish(new Error(`Too many redirects while downloading ${label}.`));
 
-      const req = https.get(parsed, { headers: { "User-Agent": "SoundwaveAI-Desktop" }, timeout: 30_000 }, (res) => {
+      const req = https.get(parsed, { headers: { "User-Agent": "SoundwaveAI-Desktop" }, timeout: 60_000, ...(downloadAgent() ? { agent: downloadAgent() } : {}) }, (res) => {
         if (settled) {
           res.destroy();
           return;
@@ -329,8 +413,12 @@ function downloadHttps(url, destination, { sha256, gitSha1, expectedBytes, maxBy
         res.pipe(output);
       });
       activeRequest = req;
-      req.on("timeout", () => req.destroy(new Error(`The ${label} download timed out.`)));
-      req.on("error", finish);
+      req.on("timeout", () => req.destroy(new Error(`The ${label} download timed out (${parsed.hostname}).`)));
+      req.on("error", (error) => {
+        // Name the server: "ECONNRESET" alone doesn't say what was blocked.
+        if (error && !String(error.message).includes(parsed.hostname)) error.message = `${error.message} (https://${parsed.hostname})`;
+        finish(error);
+      });
     };
 
     if (signal?.aborted) return onAbort();
@@ -672,7 +760,9 @@ function createKokoroManager({
     if (!fs.existsSync(venvPython)) {
       await runCommand(pythonExe, ["-m", "venv", venvDir], { cwd: runtimeDir, env: pipEnv, timeoutMs: 2 * 60_000 });
     }
-    const common = ["-m", "pip", "install", "--disable-pip-version-check", "--progress-bar", "off"];
+    // pip retries flaky connections itself (and, from pip 24.2, trusts the
+    // Windows certificate store). Generous timeouts for slow links.
+    const common = ["-m", "pip", "install", "--disable-pip-version-check", "--progress-bar", "off", "--retries", "10", "--timeout", "60"];
     const packageSteps = 6;
     let completedPackageSteps = 0;
     const runPackageStep = async (label, executable, args, options = {}) => {
@@ -694,13 +784,20 @@ function createKokoroManager({
     // Installing the package without its optional [en] extra is deliberate:
     // that extra brings GPL phonemizer/espeak-ng, which Soundwave never uses.
     await runPackageStep("Kokoro's speech engine", venvPython, [...common, "--no-deps", "kokoro"], { cwd: resourcesDir, env: pipEnv });
-    await runPackageStep("English pronunciation data", venvPython, ["-m", "spacy", "download", "en_core_web_sm"], { cwd: resourcesDir, env: pipEnv });
+    // spaCy looks up the model with requests (certifi roots only); truststore
+    // makes it trust the Windows store too, like pip and the browser do.
+    await runPackageStep(
+      "English pronunciation data",
+      venvPython,
+      ["-c", "import truststore; truststore.inject_into_ssl(); from spacy.cli import download; download('en_core_web_sm', False, False, '--retries', '10', '--timeout', '60')"],
+      { cwd: resourcesDir, env: pipEnv },
+    );
     await runPackageStep(
       "runtime verification",
       venvPython,
       [
         "-c",
-        "import sys, fastapi, huggingface_hub, misaki, numpy, onnxruntime, sentencepiece, spacy, torch, torchaudio, transformers, uvicorn; from kokoro.model import KModel; forbidden={'phonemizer','espeakng_loader','misaki.espeak'} & set(sys.modules); assert not forbidden, forbidden; assert torch.__version__.split('+')[0] == '2.7.0'; assert torchaudio.__version__.split('+')[0] == '2.7.0'; print('Kokoro + MOSS CPU runtime verified')",
+        "import sys, truststore, fastapi, huggingface_hub, misaki, numpy, onnxruntime, sentencepiece, spacy, torch, torchaudio, transformers, uvicorn; from kokoro.model import KModel; forbidden={'phonemizer','espeakng_loader','misaki.espeak'} & set(sys.modules); assert not forbidden, forbidden; assert torch.__version__.split('+')[0] == '2.7.0'; assert torchaudio.__version__.split('+')[0] == '2.7.0'; print('Kokoro + MOSS CPU runtime verified')",
       ],
       { cwd: resourcesDir, env: pipEnv, timeoutMs: 2 * 60_000 },
     );
@@ -775,7 +872,7 @@ function createKokoroManager({
       if (stopped || cancelled) return;
       if (state.phase === "ready") {
         fs.rmSync(assetsMarker, { force: true });
-        writeState("failed", describeSetupFailure(error, readLogSince(serviceLogOffset)));
+        writeState("failed", describeSetupFailure(error, readLogSince(serviceLogOffset), logFile));
       }
       fs.rmSync(runtimeFile, { force: true });
     };
@@ -859,7 +956,7 @@ function createKokoroManager({
       }
       console.error("[soundwave-desktop] local voice setup failed:", error.message);
       fs.rmSync(assetsMarker, { force: true });
-      writeState("failed", describeSetupFailure(error, readLogSince(setupLogOffset)));
+      writeState("failed", describeSetupFailure(error, readLogSince(setupLogOffset), logFile));
       if (serviceProcess) {
         try {
           serviceProcess.kill();
@@ -901,7 +998,7 @@ function createKokoroManager({
       cleanIncompleteDownloads(cacheDir);
     } catch (error) {
       cancelled = false;
-      writeState("failed", describeSetupFailure(error));
+      writeState("failed", describeSetupFailure(error, "", logFile));
       return false;
     }
 

@@ -147,6 +147,7 @@ const PYTHON = [
   { name: "num2words", licence: "LGPL-2.1", notBundled: true, note: "Used by misaki to speak digits. LGPL-2.1 is acceptable here for three reasons, all of them checkable: nothing is bundled (see above), the module is unmodified, and a pure-Python module is trivially replaceable, so our own code's licence is unaffected. The audit still refuses an LGPL *npm* dependency in our trees." },
   { name: "transformers", licence: "Apache-2.0", notBundled: true },
   { name: "huggingface-hub", licence: "Apache-2.0", notBundled: true },
+  { name: "truststore", licence: "MIT", notBundled: true, note: "Lets the local voice service, spaCy's model download, and pip trust the Windows certificate store (antivirus HTTPS scanning, company proxies)." },
   { name: "FastAPI", licence: "MIT", notBundled: true },
   { name: "Uvicorn", licence: "BSD-3-Clause", notBundled: true },
   { name: "python-multipart", licence: "Apache-2.0", notBundled: true },

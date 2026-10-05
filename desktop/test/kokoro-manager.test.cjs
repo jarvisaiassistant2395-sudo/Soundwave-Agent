@@ -67,7 +67,7 @@ test("the Python download honors a cancellation signal without leaving a partial
 });
 
 test("setup blockers distinguish network and disk-space failures", () => {
-  assert.match(describeSetupFailure(new Error("getaddrinfo ENOTFOUND huggingface.co")), /internet connection/);
+  assert.match(describeSetupFailure(new Error("getaddrinfo ENOTFOUND huggingface.co")), /couldn't download from huggingface\.co/);
   assert.match(describeSetupFailure(new Error("write failed: ENOSPC")), /free disk space/);
   assert.match(describeSetupFailure(new Error("pip exited with code 1"), "OSError: [Errno 28] No space left on device"), /free disk space/);
 
@@ -80,6 +80,31 @@ test("setup blockers distinguish network and disk-space failures", () => {
   } finally {
     fs.statfsSync = originalStatfs;
   }
+});
+
+test("a recovered pip retry in the log is not reported as no internet", () => {
+  const log = [
+    "WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError(\"HTTPSConnectionPool(host='pypi.org', port=443): Read timed out. (read timeout=15)\")': /simple/torch/",
+    "Successfully installed torch-2.7.0",
+    "Traceback (most recent call last):",
+    "ModuleNotFoundError: No module named 'kokoro'",
+  ].join("\n");
+  const message = describeSetupFailure(new Error("python.exe exited with code 1."), log, "C:\\Users\\me\\AppData\\Roaming\\Soundwave AI\\kokoro\\kokoro.log");
+  assert.doesNotMatch(message, /internet|couldn't download/i);
+  assert.match(message, /No module named 'kokoro'/);
+  assert.match(message, /kokoro\.log/);
+});
+
+test("antivirus or proxy certificate interception is named, not blamed on the connection", () => {
+  const log = "requests.exceptions.SSLError: HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /hexgrad/Kokoro-82M (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate')))";
+  const message = describeSetupFailure(new Error("Kokoro service exited (1)."), log);
+  assert.match(message, /huggingface\.co/);
+  assert.match(message, /antivirus|proxy/i);
+  assert.match(describeSetupFailure(new Error("self-signed certificate in certificate chain (https://huggingface.co)")), /secure connection was blocked/);
+});
+
+test("a step that ran too long says so", () => {
+  assert.match(describeSetupFailure(new Error("python.exe timed out during local voice setup.")), /took too long/);
 });
 
 test("repair cleanup removes only incomplete cache downloads", () => {

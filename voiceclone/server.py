@@ -66,6 +66,16 @@ import uuid
 import wave
 from pathlib import Path
 
+# Trust the operating system's certificate store for model downloads (Hugging
+# Face via requests otherwise only trusts certifi's bundle, which fails behind
+# antivirus HTTPS scanning or a company proxy even though the internet works).
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except Exception:  # optional: older installs without truststore keep certifi
+    pass
+
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
