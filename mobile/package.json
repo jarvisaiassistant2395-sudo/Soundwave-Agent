@@ -1,7 +1,7 @@
 {
   "name": "soundwave-companion",
   "private": true,
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Soundwave AI phone companion: chat with the agent running on your PC.",
   "type": "module",
   "scripts": {

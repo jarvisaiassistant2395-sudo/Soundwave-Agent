@@ -93,7 +93,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             exit={{ opacity: 0, scale: 0.96, y: 12 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            <div className="flex shrink-0 items-center justify-between gap-4 px-5 py-3.5 border-b border-gray-800 bg-[#080E1C]/80">
+            <div className="flex shrink-0 items-center justify-between gap-4 px-5 py-3.5 border-b border-gray-800 bg-[#111111]/80">
               <div className="min-w-0">
                 {title && <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">{title}</h2>}
                 {description && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
@@ -107,7 +107,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 overscroll-contain">{children}</div>
-            {footer && <div className="shrink-0 flex justify-end gap-3 border-t border-gray-800 bg-[#080E1C]/60 px-5 py-3.5">{footer}</div>}
+            {footer && <div className="shrink-0 flex justify-end gap-3 border-t border-gray-800 bg-[#111111]/60 px-5 py-3.5">{footer}</div>}
           </motion.div>
         </div>
       )}

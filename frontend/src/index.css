@@ -15,7 +15,7 @@ body,
 
 body {
   @apply bg-navy text-gray-100 font-sans antialiased;
-  background-color: #0c0d12;
+  background-color: #000000;
   color: #f3f4f6;
   font-size: 14px;
   line-height: 1.5;
@@ -36,7 +36,7 @@ body {
 :focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 2px #0c0d12,
+    0 0 0 2px #000000,
     0 0 0 4px #2563eb;
   border-radius: 6px;
 }
@@ -44,7 +44,7 @@ body {
 /* ── Custom dark scrollbars ──────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #272a37 transparent;
+  scrollbar-color: #262626 transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
@@ -54,11 +54,11 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: #272a37;
+  background: #262626;
   border-radius: 9999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #373b4d;
+  background: #363636;
 }
 
 /* ── Scroll hint: fade the bottom edge of a scroll box with more below ── */
@@ -84,7 +84,7 @@ html.sw-overlay #root {
   width: 100%;
   height: 4px;
   border-radius: 9999px;
-  background: #1e202c;
+  background: #1c1c1c;
   cursor: pointer;
   outline-offset: 4px;
 }
@@ -95,7 +95,7 @@ html.sw-overlay #root {
   height: 14px;
   border-radius: 9999px;
   background: #2563eb;
-  border: 2px solid #0c0d12;
+  border: 2px solid #000000;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   transition: transform 0.15s ease-in-out;
 }
@@ -107,7 +107,7 @@ html.sw-overlay #root {
   height: 14px;
   border-radius: 9999px;
   background: #2563eb;
-  border: 2px solid #0c0d12;
+  border: 2px solid #000000;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
@@ -139,7 +139,7 @@ html.sw-overlay #root {
 
 /* ── Premium SaaS Surfaces ────────────────────────────────────────────── */
 .surface-card {
-  background-color: #13141c;
+  background-color: #0a0a0a;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
   transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
@@ -150,7 +150,7 @@ html.sw-overlay #root {
 }
 
 .surface-elevated {
-  background-color: #191b26;
+  background-color: #121212;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
 }
@@ -161,7 +161,7 @@ html.sw-overlay #root {
 
 /* Backward compatibility aliases */
 .cyber-panel {
-  background-color: #13141c;
+  background-color: #0a0a0a;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
 }

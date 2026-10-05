@@ -258,7 +258,7 @@ export function VoiceOverlay() {
   return (
     <div className="fixed inset-0 flex items-end justify-center p-2.5 select-none">
       <div
-        className={`flex w-full items-center gap-3 rounded-2xl border bg-[#081022]/95 px-3 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-colors ${
+        className={`flex w-full items-center gap-3 rounded-2xl border bg-[#141414]/95 px-3 py-2.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl transition-colors ${
           stage === "error" ? "border-amber-500/40" : listening ? "border-emerald-400/40" : "border-cyan-500/25"
         }`}
         role="status"

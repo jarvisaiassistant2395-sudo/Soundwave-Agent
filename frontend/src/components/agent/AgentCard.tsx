@@ -66,8 +66,8 @@ export function AgentCard({
   return (
     <div
       className={cn(
-        "group relative flex flex-col justify-between rounded-xl border border-white/[0.07] bg-[#13141C] p-5 transition-all duration-150 hover:border-white/[0.14] hover:bg-[#161822]",
-        active && "border-blue-500/40 bg-[#161824] shadow-sm",
+        "group relative flex flex-col justify-between rounded-xl border border-white/[0.07] bg-[#0A0A0A] p-5 transition-all duration-150 hover:border-white/[0.14] hover:bg-[#141414]",
+        active && "border-blue-500/40 bg-[#161616] shadow-sm",
         className,
       )}
     >

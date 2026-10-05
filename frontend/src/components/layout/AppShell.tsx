@@ -128,7 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
    * nothing else — the same buttons, reachable, with the labels as tooltips.
    */
   const renderSidebar = (rail: boolean) => (
-    <div className="flex h-full flex-col bg-[#0F1017] text-gray-300 select-none" data-testid="sidebar" data-collapsed={rail ? "true" : "false"}>
+    <div className="flex h-full flex-col bg-[#0E0E0E] text-gray-300 select-none" data-testid="sidebar" data-collapsed={rail ? "true" : "false"}>
       {/* Workspace Brand Switcher */}
       <div className={cn("flex h-14 items-center border-b border-white/[0.06]", rail ? "justify-center px-1" : "justify-between px-3.5")}>
         <NavLink to="/agent" className="flex items-center gap-2.5 group" title="Soundwave AI — Command Center">
@@ -167,7 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {rail && (
         <div className="flex justify-center pt-2">
           <button
-            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.1] bg-[#16171F] text-gray-400 transition-colors hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.1] bg-[#131313] text-gray-400 transition-colors hover:text-white"
             onClick={toggleCollapsed}
             aria-label="Expand the sidebar"
             aria-expanded={!collapsed}
@@ -274,14 +274,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div
       className={cn(
-        "min-h-screen bg-[#0C0D12] text-gray-100 flex flex-col",
+        "min-h-screen bg-[#000000] text-gray-100 flex flex-col",
         isCommandCenter && "lg:h-screen lg:min-h-0 lg:overflow-hidden",
       )}
     >
       {/* Desktop sidebar — 15rem, or the 4rem rail when minimized */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-20 hidden border-r border-white/[0.06] bg-[#0F1017] transition-[width] duration-200 lg:block",
+          "fixed inset-y-0 left-0 z-20 hidden border-r border-white/[0.06] bg-[#0E0E0E] transition-[width] duration-200 lg:block",
           collapsed ? "w-16" : "w-60",
         )}
         data-testid="desktop-sidebar"
@@ -302,7 +302,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               onClick={() => setMobileOpen(false)}
             />
             <motion.aside
-              className="fixed inset-y-0 left-0 z-30 w-64 bg-[#0F1017] border-r border-white/[0.08] lg:hidden"
+              className="fixed inset-y-0 left-0 z-30 w-64 bg-[#0E0E0E] border-r border-white/[0.08] lg:hidden"
               initial={{ x: -260 }}
               animate={{ x: 0 }}
               exit={{ x: -260 }}
@@ -317,7 +317,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Main column */}
       <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60", isCommandCenter && "lg:min-h-0")}>
         {/* Header Bar */}
-        <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#0C0D12]/90 backdrop-blur-md">
+        <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#000000]/90 backdrop-blur-md">
           <div className="flex h-full items-center justify-between px-4 sm:px-6">
             {/* Left: Mobile trigger & Breadcrumbs */}
             <div className="flex items-center gap-3">

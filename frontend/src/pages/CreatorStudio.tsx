@@ -372,7 +372,7 @@ export function CreatorStudio() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12">
       {/* ── TOP BANNER ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#13141C] px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#0A0A0A] px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-blue-400">
             <Video className="h-5 w-5" />
@@ -424,7 +424,7 @@ export function CreatorStudio() {
         {/* LEFT COLUMN: RECORDER & PREVIEW (7 COLS) */}
         <div className="space-y-6 lg:col-span-7">
           {activeTab === "record" ? (
-            <div className="rounded-xl border border-white/[0.08] bg-[#13141C] p-6 space-y-4">
+            <div className="rounded-xl border border-white/[0.08] bg-[#0A0A0A] p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -549,7 +549,7 @@ export function CreatorStudio() {
 
           {/* ── SILENCE DETECTION & TIMELINE VISUALIZER ────────────────────── */}
           {analysis && (
-            <div className="rounded-xl border border-white/[0.08] bg-[#13141C] p-6 space-y-4">
+            <div className="rounded-xl border border-white/[0.08] bg-[#0A0A0A] p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -691,7 +691,7 @@ export function CreatorStudio() {
 
         {/* RIGHT COLUMN: SCREEN STUDIO AUTO-ZOOM & FRAMING (5 COLS) */}
         <div className="space-y-6 lg:col-span-5">
-          <div className="rounded-xl border border-white/[0.08] bg-[#13141C] p-6 space-y-4">
+          <div className="rounded-xl border border-white/[0.08] bg-[#0A0A0A] p-6 space-y-4">
             <div>
               <h2 className="text-sm font-semibold text-white flex items-center gap-2">
                 <ZoomIn className="h-4 w-4 text-purple-400" />
@@ -872,7 +872,7 @@ export function CreatorStudio() {
 
           {/* ── COMPLETED POLISHED VIDEO PREVIEW ────────────────────────── */}
           {completedVideoUrl && (
-            <div className="rounded-xl border border-emerald-500/30 bg-[#13141C] p-6 space-y-4">
+            <div className="rounded-xl border border-emerald-500/30 bg-[#0A0A0A] p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5 text-emerald-400" />

@@ -20,7 +20,7 @@ export function LogoMark({ className }: { className?: string }) {
           <stop offset="1" stopColor="#8B5CF6" />
         </linearGradient>
       </defs>
-      <rect x="2" y="2" width="44" height="44" rx="11" fill="#0A0F1C" />
+      <rect x="2" y="2" width="44" height="44" rx="11" fill="#000000" />
       <rect x="2" y="2" width="44" height="44" rx="11" fill="none" stroke="url(#sw-logo-g)" strokeWidth="2" />
       <g stroke="url(#sw-logo-g)" strokeWidth="3" strokeLinecap="round">
         <path d="M9 20v8" />

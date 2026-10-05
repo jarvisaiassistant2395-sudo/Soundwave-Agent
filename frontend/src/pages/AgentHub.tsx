@@ -1580,9 +1580,9 @@ export function AgentHub() {
   return (
     // lg+: exactly the window's height — nothing on the page scrolls except the
     // left column's cards and the conversation. The middle (orb + dock) is fixed.
-    <div className="flex flex-col gap-3 bg-[#070B14] text-gray-100 select-none font-sans p-3 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
+    <div className="flex flex-col gap-3 bg-[#0C0C0C] text-gray-100 select-none font-sans p-3 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
       {/* ── 1. TOP HUD STATUS BAR ─────────────────────────────────────── */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-xl border border-[#14233D] bg-[#0A1224]/80 backdrop-blur-md">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-xl border border-[#252525] bg-[#0A0A0A]/80 backdrop-blur-md">
         {/* Left: Assistant Title & Online Status */}
         <div className="flex items-center gap-3">
           <span className="text-sm sm:text-base font-extrabold tracking-[0.25em] text-cyan-400 font-mono">
@@ -1596,7 +1596,7 @@ export function AgentHub() {
         </div>
 
         {/* Center: Time & Date Capsule */}
-        <div className="flex items-center gap-2 rounded-full border border-[#172A4A] bg-[#0C172E] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
+        <div className="flex items-center gap-2 rounded-full border border-[#2C2C2C] bg-[#0F0F0F] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
           <Clock className="h-3.5 w-3.5 text-cyan-400" />
           <span className="text-white font-semibold">{currentTimeStr || "2:52:27 PM"}</span>
           <span className="hidden text-gray-500 xl:inline">|</span>
@@ -1606,7 +1606,7 @@ export function AgentHub() {
         {/* Right: Voice Capsule, Orbital Background Capsule & Settings Gear Button */}
         <div className="flex items-center gap-2">
           {/* Soundwave voice (replies + shorts) */}
-          <div className="flex items-center gap-1.5 rounded-full border border-[#172A4A] bg-[#0C172E] px-2.5 py-1 text-xs text-gray-300 font-mono">
+          <div className="flex items-center gap-1.5 rounded-full border border-[#2C2C2C] bg-[#0F0F0F] px-2.5 py-1 text-xs text-gray-300 font-mono">
             <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
             <select
               value={selectedVoice}
@@ -1616,12 +1616,12 @@ export function AgentHub() {
               aria-label="Agent voice"
             >
               {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
-                <option disabled value="__kokoro_status" className="bg-[#0A1224] text-gray-400">
+                <option disabled value="__kokoro_status" className="bg-[#0A0A0A] text-gray-400">
                   {localVoiceSetupLabel(localVoiceStatus.setup)}
                 </option>
               )}
               {voiceChoices.map((v) => (
-                <option key={v.id} value={v.id} className="bg-[#0A1224] text-white">
+                <option key={v.id} value={v.id} className="bg-[#0A0A0A] text-white">
                   {agentVoiceLabel(v.id)}
                 </option>
               ))}
@@ -1634,7 +1634,7 @@ export function AgentHub() {
               setOrbitalHistoryOpen(true);
               fetchOrbitalStatus();
             }}
-            className="flex items-center gap-1.5 rounded-full border border-[#172A4A] bg-[#0C172E] px-3 py-1 text-xs text-gray-300 font-mono hover:border-cyan-500/40 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-full border border-[#2C2C2C] bg-[#0F0F0F] px-3 py-1 text-xs text-gray-300 font-mono hover:border-cyan-500/40 transition-colors cursor-pointer"
             title="Orbital NCG videos the agent hasn't used yet"
           >
             <Youtube className="h-3.5 w-3.5 text-red-500" />
@@ -1643,7 +1643,7 @@ export function AgentHub() {
 
           <button
             onClick={() => setSettingsOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#172A4A] bg-[#0C172E] text-gray-300 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#2C2C2C] bg-[#0F0F0F] text-gray-300 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer"
             title="Assistant Settings"
             aria-label="Settings"
           >
@@ -1663,8 +1663,8 @@ export function AgentHub() {
           }`}
         >
           {/* Card 1: System Stats */}
-          <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-3 font-mono">
-            <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+          <div className="rounded-xl border border-[#252525] bg-[#0A0A0A] p-3.5 space-y-3 font-mono">
+            <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Cpu className="h-3.5 w-3.5 text-cyan-400" />
                 System
@@ -1680,15 +1680,15 @@ export function AgentHub() {
 
             {/* 3 Metric Tiles */}
             <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-1.5">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-1.5">
                 <span className="text-[10px] text-gray-400 block">CPU</span>
                 <span className="text-xs font-bold text-white">{stats.cpuUsage != null ? `${stats.cpuUsage}%` : "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-1.5">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-1.5">
                 <span className="text-[10px] text-gray-400 block">Memory</span>
                 <span className="text-xs font-bold text-white">{stats.memoryPercent != null ? `${stats.memoryPercent}%` : "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-1.5">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-1.5">
                 <span className="text-[10px] text-gray-400 block">Disk</span>
                 <span className="block text-xs font-bold leading-tight text-white">
                   {stats.diskUsedGB != null ? (
@@ -1705,8 +1705,8 @@ export function AgentHub() {
           </div>
 
           {/* Card 2: Orbital NCG Background Source */}
-          <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-2.5 font-mono">
-            <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+          <div className="rounded-xl border border-[#252525] bg-[#0A0A0A] p-3.5 space-y-2.5 font-mono">
+            <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Film className="h-3.5 w-3.5 text-cyan-400" />
                 Backgrounds
@@ -1752,7 +1752,7 @@ export function AgentHub() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-2 space-y-0.5" title="Last imported background">
+            <div className="rounded-lg border border-[#252525] bg-[#050505] p-2 space-y-0.5" title="Last imported background">
               {orbitalStatus?.lastUsed ? (
                 <a
                   href={orbitalStatus.lastUsed.url}
@@ -1782,8 +1782,8 @@ export function AgentHub() {
           </div>
 
           {/* YouTube Shorts Studio & Automation Card */}
-          <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-2.5 font-mono">
-            <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+          <div className="rounded-xl border border-[#252525] bg-[#0A0A0A] p-3.5 space-y-2.5 font-mono">
+            <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Youtube className="h-3.5 w-3.5 text-red-500" />
                 YouTube
@@ -1849,7 +1849,7 @@ export function AgentHub() {
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-[#14233D] bg-[#070D18] text-gray-300 transition-all hover:border-cyan-400 hover:text-white cursor-pointer"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-[#252525] bg-[#050505] text-gray-300 transition-all hover:border-cyan-400 hover:text-white cursor-pointer"
                 title="YouTube setup"
                 aria-label="YouTube setup"
               >
@@ -1868,14 +1868,14 @@ export function AgentHub() {
 
           {/* Persistent Latest Rendered Video Card */}
           {completedVideoUrl && (
-            <div className="rounded-xl border border-cyan-500/40 bg-[#0A1224] p-3.5 space-y-2.5 font-mono shadow-lg shadow-cyan-950/30">
-              <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+            <div className="rounded-xl border border-cyan-500/40 bg-[#0A0A0A] p-3.5 space-y-2.5 font-mono shadow-lg shadow-cyan-950/30">
+              <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
                 <span className="flex items-center gap-1.5 font-semibold text-cyan-300">
                   <Film className="h-3.5 w-3.5 text-cyan-400" />
                   Latest short
                 </span>
               </div>
-              <div className="relative aspect-[9/16] max-h-44 w-full rounded-lg border border-[#14233D] bg-black overflow-hidden flex items-center justify-center mx-auto">
+              <div className="relative aspect-[9/16] max-h-44 w-full rounded-lg border border-[#252525] bg-black overflow-hidden flex items-center justify-center mx-auto">
                 <video
                   src={completedVideoUrl}
                   controls
@@ -1888,7 +1888,7 @@ export function AgentHub() {
                   href={lastBackground.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
+                  className="flex items-center gap-1.5 rounded-md border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
                   title={`Imported via the YouTube link importer: ${lastBackground.url}`}
                 >
                   <Youtube className="h-3 w-3 shrink-0 text-red-500" />
@@ -1936,8 +1936,8 @@ export function AgentHub() {
           )}
 
           {/* Card 4: System Uptime & Automation */}
-          <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-2.5 font-mono">
-            <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+          <div className="rounded-xl border border-[#252525] bg-[#0A0A0A] p-3.5 space-y-2.5 font-mono">
+            <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
               <span className="flex items-center gap-1.5 font-semibold text-gray-200">
                 <Activity className="h-3.5 w-3.5 text-cyan-400" />
                 Uptime
@@ -1946,11 +1946,11 @@ export function AgentHub() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-1.5">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-1.5">
                 <span className="text-[10px] text-gray-400 block">Session</span>
                 <span className="text-xs font-bold text-white">{sessionCount}</span>
               </div>
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-1.5">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-1.5">
                 <span className="text-[10px] text-gray-400 block">Commands</span>
                 <span className="text-xs font-bold text-white">{commandsCount}</span>
               </div>
@@ -1962,7 +1962,7 @@ export function AgentHub() {
                 <span>Load</span>
                 <span>{stats.loadPercent != null ? `${stats.loadPercent}%` : "—"}</span>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#070D18]">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#050505]">
                 <div
                   className="h-full bg-gradient-to-r from-cyan-400 to-blue-500"
                   style={{ width: `${stats.loadPercent ?? 0}%` }}
@@ -1992,7 +1992,7 @@ export function AgentHub() {
 
             {/* Dynamic Status Capsule */}
             <div className="mt-3">
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#172A4A] bg-[#0C172E] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#2C2C2C] bg-[#0F0F0F] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
                 <span className={`h-2 w-2 rounded-full animate-pulse ${isMicActive ? "bg-emerald-400" : micPhase === "transcribing" ? "bg-cyan-400" : "bg-emerald-400"}`} />
                 {micPhase === "starting"
                   ? "Starting mic…"
@@ -2017,7 +2017,7 @@ export function AgentHub() {
           <div className="flex shrink-0 items-center gap-3 pt-4">
             <button
               onClick={() => setGeneratorModalOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#172A4A] bg-[#0C172E] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer shadow-md shadow-cyan-950/20"
+              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#2C2C2C] bg-[#0F0F0F] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer shadow-md shadow-cyan-950/20"
               title="1-Click Viral Short Generator"
             >
               <Film className="h-5 w-5" />
@@ -2041,8 +2041,8 @@ export function AgentHub() {
                   : micPhase === "transcribing"
                   ? "border-cyan-400/60 bg-cyan-500/10 text-cyan-300"
                   : voiceInputStatus && !voiceInputStatus.available
-                  ? "border-[#172A4A] bg-[#0C172E] text-gray-500 hover:border-amber-500/40"
-                  : "border-[#172A4A] bg-[#0C172E] text-gray-300 hover:border-cyan-500/50 hover:text-white"
+                  ? "border-[#2C2C2C] bg-[#0F0F0F] text-gray-500 hover:border-amber-500/40"
+                  : "border-[#2C2C2C] bg-[#0F0F0F] text-gray-300 hover:border-cyan-500/50 hover:text-white"
               }`}
               style={isMicActive ? { boxShadow: `0 0 0 ${2 + Math.round(capture.level * 10)}px rgba(52, 211, 153, 0.22)` } : undefined}
               title={
@@ -2068,7 +2068,7 @@ export function AgentHub() {
 
             <button
               onClick={() => setMacrosModalOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#172A4A] bg-[#0C172E] text-purple-400 hover:border-purple-500/50 hover:text-white transition-all cursor-pointer"
+              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#2C2C2C] bg-[#0F0F0F] text-purple-400 hover:border-purple-500/50 hover:text-white transition-all cursor-pointer"
               title="Ghost Operator Macro Automations"
             >
               <Workflow className="h-5 w-5" />
@@ -2076,7 +2076,7 @@ export function AgentHub() {
 
             <button
               onClick={() => setSettingsOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#172A4A] bg-[#0C172E] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer"
+              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#2C2C2C] bg-[#0F0F0F] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer"
               title="Orb States & Assistant Settings"
             >
               <SettingsIcon className="h-5 w-5" />
@@ -2085,9 +2085,9 @@ export function AgentHub() {
         </div>
 
         {/* ── RIGHT COLUMN: CONVERSATION STREAM & INPUT (3.5 cols) ─────── */}
-        <div className="lg:col-span-4 rounded-xl border border-[#14233D] bg-[#0A1224] p-4 flex flex-col h-[640px] lg:h-auto lg:min-h-0 font-mono">
+        <div className="lg:col-span-4 rounded-xl border border-[#252525] bg-[#0A0A0A] p-4 flex flex-col h-[640px] lg:h-auto lg:min-h-0 font-mono">
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between border-b border-[#14233D] pb-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-[#252525] pb-3">
             <h3 className="text-sm font-semibold text-white">Chat</h3>
             <div className="flex items-center gap-2">
               <button
@@ -2105,7 +2105,7 @@ export function AgentHub() {
                   void clearSharedConversation([cleared]);
                   toast.info("Log Cleared", "Message buffer reset.");
                 }}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#172A4A] bg-[#070D18] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#2C2C2C] bg-[#050505] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
                 title="Clear the conversation"
                 aria-label="Clear the conversation"
               >
@@ -2114,7 +2114,7 @@ export function AgentHub() {
 
               <button
                 onClick={handleExtractConversation}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#172A4A] bg-[#070D18] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#2C2C2C] bg-[#050505] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
                 title="Export the conversation as a .txt"
                 aria-label="Export the conversation"
               >
@@ -2130,8 +2130,8 @@ export function AgentHub() {
                 key={msg.id}
                 className={`rounded-xl p-3 leading-relaxed transition-all ${
                   msg.sender === "user"
-                    ? "bg-[#0A1F38] border border-cyan-800/40 text-cyan-100 ml-6"
-                    : "bg-[#070F1E] border border-[#172A4A] text-gray-200 mr-2"
+                    ? "bg-[#222222] border border-cyan-800/40 text-cyan-100 ml-6"
+                    : "bg-[#121212] border border-[#2C2C2C] text-gray-200 mr-2"
                 }`}
               >
                 <div className="whitespace-pre-line text-xs">{msg.text}</div>
@@ -2139,15 +2139,15 @@ export function AgentHub() {
 
                 {/* Inline Video Player & Download Button */}
                 {Boolean(msg.videoUrl || msg.downloadUrl) && (
-                  <div className="mt-2.5 rounded-lg border border-cyan-500/30 bg-[#040814] p-2.5 space-y-2 font-mono">
-                    <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-[#14233D] pb-1">
+                  <div className="mt-2.5 rounded-lg border border-cyan-500/30 bg-[#0c0c0c] p-2.5 space-y-2 font-mono">
+                    <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-[#252525] pb-1">
                       <span className="flex items-center gap-1.5">
                         <Film className="h-3.5 w-3.5 text-cyan-400" />
                         Short
                       </span>
                     </div>
 
-                    <div className="relative rounded-lg overflow-hidden border border-[#172A4A] bg-black max-h-52 flex justify-center items-center">
+                    <div className="relative rounded-lg overflow-hidden border border-[#2C2C2C] bg-black max-h-52 flex justify-center items-center">
                       <video
                         src={msg.videoUrl || msg.downloadUrl}
                         controls
@@ -2161,7 +2161,7 @@ export function AgentHub() {
                         href={msg.background.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
+                        className="flex items-center gap-1.5 rounded-md border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
                         title={`Imported via the YouTube link importer: ${msg.background.url}`}
                       >
                         <Youtube className="h-3 w-3 shrink-0 text-red-500" />
@@ -2243,10 +2243,10 @@ export function AgentHub() {
           </div>
 
           {/* Command Prompt Input Bar */}
-          <div className="shrink-0 pt-2 border-t border-[#14233D] space-y-2">
+          <div className="shrink-0 pt-2 border-t border-[#252525] space-y-2">
             {/* Live short progress (Generate button or chat request) */}
             {isGenerating && (
-              <div className="rounded-lg border border-cyan-500/30 bg-[#070D18] px-2.5 py-1.5 space-y-1 font-mono">
+              <div className="rounded-lg border border-cyan-500/30 bg-[#050505] px-2.5 py-1.5 space-y-1 font-mono">
                 <div className="flex items-center justify-between gap-2 text-[10px]">
                   <span className="truncate text-gray-300" title={currentStep}>
                     🎬 {currentStep}
@@ -2273,13 +2273,13 @@ export function AgentHub() {
                 disabled={isRunningMorning}
                 data-testid="morning-chip"
                 title="Opens your morning websites and apps and gives you today's briefing (Settings → Morning Setup)"
-                className="shrink-0 rounded-md border border-[#172A4A] bg-[#070D18] px-2 py-0.5 hover:text-cyan-300 transition-colors disabled:opacity-60"
+                className="shrink-0 rounded-md border border-[#2C2C2C] bg-[#050505] px-2 py-0.5 hover:text-cyan-300 transition-colors disabled:opacity-60"
               >
                 <Sunrise className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setGeneratorModalOpen(true)}
-                className="shrink-0 rounded-md border border-[#172A4A] bg-[#070D18] p-1.5 hover:text-cyan-300 transition-colors cursor-pointer"
+                className="shrink-0 rounded-md border border-[#2C2C2C] bg-[#050505] p-1.5 hover:text-cyan-300 transition-colors cursor-pointer"
                 title="Make a short"
                 aria-label="Make a short"
               >
@@ -2293,11 +2293,11 @@ export function AgentHub() {
                 placeholder="Message…"
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
-                className="flex-1 rounded-xl border border-[#172A4A] bg-[#070D18] px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none transition-colors"
+                className="flex-1 rounded-xl border border-[#2C2C2C] bg-[#050505] px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none transition-colors"
               />
               <button
                 type="submit"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-[#070B14] font-bold shadow-lg shadow-cyan-500/30 transition-all cursor-pointer"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-[#0C0C0C] font-bold shadow-lg shadow-cyan-500/30 transition-all cursor-pointer"
                 title="Send"
               >
                 <Send className="h-4 w-4" />
@@ -2341,7 +2341,7 @@ export function AgentHub() {
                 placeholder="e.g. Why Intelligent People Procrastinate More"
                 value={customTopic}
                 onChange={(e) => setCustomTopic(e.target.value)}
-                className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none"
+                className="w-full rounded-lg border border-[#2C2C2C] bg-[#050505] px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
 
@@ -2352,7 +2352,7 @@ export function AgentHub() {
                 <select
                   value={selectedVoice}
                   onChange={(e) => handleVoiceChange(e.target.value)}
-                  className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full rounded-lg border border-[#2C2C2C] bg-[#050505] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
                   {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
                     <option disabled value="__kokoro_status">
@@ -2372,7 +2372,7 @@ export function AgentHub() {
                 <select
                   value={resolution}
                   onChange={(e) => pickResolution(e.target.value as "720p" | "1080p")}
-                  className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full rounded-lg border border-[#2C2C2C] bg-[#050505] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
                   <option value="1080p">1080p · 60fps</option>
                   <option value="720p">720p · 60fps</option>
@@ -2384,7 +2384,7 @@ export function AgentHub() {
                 <select
                   value={seconds}
                   onChange={(e) => pickSeconds(Number(e.target.value))}
-                  className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full rounded-lg border border-[#2C2C2C] bg-[#050505] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
                   <option value={30}>30s</option>
                   <option value={60}>60s</option>
@@ -2395,7 +2395,7 @@ export function AgentHub() {
 
             {/* What's viral right now: read free from YouTube's Shorts search twice a
                 day (no Gemini); the scripts are written to it. Checked/forced here. */}
-            <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-1.5">
+            <div className="rounded-lg border border-[#2C2C2C] bg-[#050505] p-2.5 space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-300">
                   <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
@@ -2404,7 +2404,7 @@ export function AgentHub() {
                 <button
                   onClick={refreshTrends}
                   disabled={trendRefreshing || trendStatus?.refreshing}
-                  className="flex h-6 w-6 items-center justify-center rounded-md border border-[#172A4A] text-gray-300 transition-colors hover:border-cyan-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                  className="flex h-6 w-6 items-center justify-center rounded-md border border-[#2C2C2C] text-gray-300 transition-colors hover:border-cyan-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
                   title="Check YouTube again now (free)"
                   aria-label="Check YouTube again now"
                 >
@@ -2426,7 +2426,7 @@ export function AgentHub() {
                     ))}
                   </ul>
                   {Boolean(trendStatus.top?.length) && (
-                    <ul className="space-y-0.5 border-t border-[#172A4A] pt-1">
+                    <ul className="space-y-0.5 border-t border-[#2C2C2C] pt-1">
                       {trendStatus.top!.slice(0, 3).map((t) => (
                         <li key={t.id} className="text-[10px] leading-snug line-clamp-1">
                           <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 hover:text-cyan-200" title={`${t.title}${t.channel ? ` — ${t.channel}` : ""}`}>
@@ -2444,7 +2444,7 @@ export function AgentHub() {
             </div>
 
             {/* Background Footage Source: Orbital NCG via the YouTube link importer */}
-            <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 space-y-2">
+            <div className="rounded-lg border border-[#2C2C2C] bg-[#050505] p-2.5 space-y-2">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-semibold text-gray-300" title="From youtube.com/@OrbitalNCG, never reused">Background</span>
                 <span className="font-bold text-cyan-400">
@@ -2496,14 +2496,14 @@ export function AgentHub() {
                     type="checkbox"
                     checked={ytAutoPublish}
                     onChange={(e) => setYtAutoPublish(e.target.checked)}
-                    className="rounded border-[#172A4A] bg-[#070D18] text-red-600 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                    className="rounded border-[#2C2C2C] bg-[#050505] text-red-600 focus:ring-0 cursor-pointer h-3.5 w-3.5"
                   />
                   <span>Post after rendering</span>
                 </label>
                 <select
                   value={ytPrivacy}
                   onChange={(e) => setYtPrivacy(e.target.value as any)}
-                  className="rounded border border-[#172A4A] bg-[#070D18] px-2 py-0.5 text-[10px] text-white focus:outline-none"
+                  className="rounded border border-[#2C2C2C] bg-[#050505] px-2 py-0.5 text-[10px] text-white focus:outline-none"
                 >
                   <option value="public">Public</option>
                   <option value="unlisted">Unlisted</option>
@@ -2528,7 +2528,7 @@ export function AgentHub() {
 
             {/* Progress Bar */}
             {isGenerating && (
-              <div className="space-y-1 rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5">
+              <div className="space-y-1 rounded-lg border border-[#2C2C2C] bg-[#050505] p-2.5">
                 <div className="flex justify-between text-[11px] text-gray-300">
                   <span>{currentStep}</span>
                   <span className="text-cyan-400 font-bold">{progressPercent}%</span>
@@ -2544,7 +2544,7 @@ export function AgentHub() {
 
             {/* Video & Script Preview */}
             {(completedVideoUrl || generatedScript) && (
-              <div className="rounded-lg border border-cyan-500/30 bg-[#070D18] p-3 space-y-2">
+              <div className="rounded-lg border border-cyan-500/30 bg-[#050505] p-3 space-y-2">
                 {completedVideoUrl && (
                   <video
                     src={completedVideoUrl}
@@ -2554,7 +2554,7 @@ export function AgentHub() {
                   />
                 )}
                 {generatedScript && (
-                  <div className="text-[10px] text-gray-300 bg-[#050B14] p-2 rounded border border-[#172A4A] max-h-24 overflow-y-auto whitespace-pre-wrap">
+                  <div className="text-[10px] text-gray-300 bg-[#0C0C0C] p-2 rounded border border-[#2C2C2C] max-h-24 overflow-y-auto whitespace-pre-wrap">
                     {generatedScript}
                   </div>
                 )}
@@ -2599,7 +2599,7 @@ export function AgentHub() {
               </div>
             )}
 
-            <div className="pt-3 border-t border-[#172A4A] flex justify-end gap-2">
+            <div className="pt-3 border-t border-[#2C2C2C] flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setGeneratorModalOpen(false)}>
                 Close
               </Button>
@@ -2633,7 +2633,7 @@ export function AgentHub() {
               {macrosList.map((m) => (
                 <div
                   key={m.id}
-                  className="rounded-lg border border-[#172A4A] bg-[#070D18] p-3 flex items-center justify-between"
+                  className="rounded-lg border border-[#2C2C2C] bg-[#050505] p-3 flex items-center justify-between"
                 >
                   <div>
                     <h4 className="text-xs font-bold text-white">{m.name}</h4>
@@ -2648,7 +2648,7 @@ export function AgentHub() {
                       setMacrosModalOpen(false);
                     }}
                     disabled={isRunningMacro}
-                    className="flex items-center gap-1 rounded-lg border border-cyan-400/40 bg-cyan-500/20 px-3 py-1.5 text-xs font-bold text-cyan-300 transition-all hover:bg-cyan-500 hover:text-[#070B14] cursor-pointer"
+                    className="flex items-center gap-1 rounded-lg border border-cyan-400/40 bg-cyan-500/20 px-3 py-1.5 text-xs font-bold text-cyan-300 transition-all hover:bg-cyan-500 hover:text-[#0C0C0C] cursor-pointer"
                   >
                     <Play className="h-3 w-3" />
                     Run
@@ -2657,7 +2657,7 @@ export function AgentHub() {
               ))}
             </div>
 
-            <div className="pt-2 border-t border-[#172A4A] flex justify-end">
+            <div className="pt-2 border-t border-[#2C2C2C] flex justify-end">
               <Button variant="outline" size="sm" onClick={() => setMacrosModalOpen(false)}>
                 Close
               </Button>
@@ -2683,14 +2683,14 @@ export function AgentHub() {
         >
           <div className="space-y-4 font-mono text-xs">
             {/* Settings Tab Navigation */}
-            <div className="flex border-b border-[#172A4A] pb-2 gap-2">
+            <div className="flex border-b border-[#2C2C2C] pb-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSettingsTab("general")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "general"
                     ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A1224] border border-[#14233D]"
+                    : "text-gray-400 hover:text-white bg-[#0A0A0A] border border-[#252525]"
                 }`}
               >
                 <SettingsIcon className="h-3.5 w-3.5" />
@@ -2703,7 +2703,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "memory"
                     ? "bg-violet-500/20 text-violet-300 border border-violet-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A1224] border border-[#14233D]"
+                    : "text-gray-400 hover:text-white bg-[#0A0A0A] border border-[#252525]"
                 }`}
               >
                 <Brain className="h-3.5 w-3.5 text-violet-400" />
@@ -2716,7 +2716,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "youtube"
                     ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A1224] border border-[#14233D]"
+                    : "text-gray-400 hover:text-white bg-[#0A0A0A] border border-[#252525]"
                 }`}
               >
                 <Youtube className="h-3.5 w-3.5 text-red-500" />
@@ -2729,7 +2729,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "email"
                     ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A1224] border border-[#14233D]"
+                    : "text-gray-400 hover:text-white bg-[#0A0A0A] border border-[#252525]"
                 }`}
               >
                 <Mail className="h-3.5 w-3.5" />
@@ -2741,7 +2741,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "orb"
                     ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A1224] border border-[#14233D]"
+                    : "text-gray-400 hover:text-white bg-[#0A0A0A] border border-[#252525]"
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5 text-purple-400" />
@@ -2758,12 +2758,12 @@ export function AgentHub() {
                     type="text"
                     value={assistantName}
                     onChange={(e) => setAssistantName(e.target.value)}
-                    className="w-full rounded-lg border border-[#172A4A] bg-[#070D18] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                    className="w-full rounded-lg border border-[#2C2C2C] bg-[#050505] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
 
                 {/* Voice Talent Selection */}
-                <div className="space-y-2 p-3 rounded-lg border border-[#172A4A] bg-[#070D18]">
+                <div className="space-y-2 p-3 rounded-lg border border-[#2C2C2C] bg-[#050505]">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-white">Voice</p>
                     <button
@@ -2774,7 +2774,7 @@ export function AgentHub() {
                           selectedVoice,
                         )
                       }
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-400 transition-all hover:bg-cyan-500 hover:text-[#070B14] cursor-pointer"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-cyan-400 transition-all hover:bg-cyan-500 hover:text-[#0C0C0C] cursor-pointer"
                       title="Hear this voice"
                       aria-label="Hear this voice"
                     >
@@ -2785,7 +2785,7 @@ export function AgentHub() {
                   <select
                     value={selectedVoice}
                     onChange={(e) => handleVoiceChange(e.target.value)}
-                    className="w-full rounded-lg border border-[#172A4A] bg-[#0C172E] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                    className="w-full rounded-lg border border-[#2C2C2C] bg-[#0F0F0F] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                   >
                     {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
                       <option disabled value="__kokoro_status">
@@ -2800,13 +2800,13 @@ export function AgentHub() {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between p-2.5 rounded-lg border border-[#172A4A] bg-[#070D18]">
+                <div className="flex items-center justify-between p-2.5 rounded-lg border border-[#2C2C2C] bg-[#050505]">
                   <p className="text-xs font-bold text-white">Speak replies</p>
                   <button
                     type="button"
                     onClick={() => setVoiceFeedback(!voiceFeedback)}
                     className={`rounded-full px-2.5 py-0.5 text-xs font-bold transition-colors cursor-pointer ${
-                      voiceFeedback ? "bg-cyan-500 text-[#070B14]" : "bg-gray-800 text-gray-400"
+                      voiceFeedback ? "bg-cyan-500 text-[#0C0C0C]" : "bg-gray-800 text-gray-400"
                     }`}
                   >
                     {voiceFeedback ? "On" : "Off"}
@@ -2814,7 +2814,7 @@ export function AgentHub() {
                 </div>
 
                 {/* Voice input (local speech recognition) */}
-                <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg border border-[#172A4A] bg-[#070D18]">
+                <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg border border-[#2C2C2C] bg-[#050505]">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-white">Voice input</p>
                     <p className="text-[10px] text-gray-400">
@@ -2828,7 +2828,7 @@ export function AgentHub() {
                   <Link
                     to="/settings/voice"
                     onClick={() => setSettingsOpen(false)}
-                    className="shrink-0 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-bold text-cyan-400 hover:bg-cyan-500 hover:text-[#070B14] transition-all"
+                    className="shrink-0 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-bold text-cyan-400 hover:bg-cyan-500 hover:text-[#0C0C0C] transition-all"
                   >
                     Options
                   </Link>
@@ -2847,7 +2847,7 @@ export function AgentHub() {
                   <div className="flex items-center justify-between">
                     <label className="text-gray-300 font-semibold">Notes ({memoryState?.notes.length ?? 0}/{memoryState?.maxNotes ?? 60})</label>
                   </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1 border border-[#172A4A] rounded-lg p-2 bg-[#070D18]">
+                  <div className="max-h-48 overflow-y-auto space-y-1 border border-[#2C2C2C] rounded-lg p-2 bg-[#050505]">
                     {!memoryState || memoryState.notes.length === 0 ? (
                       <p className="p-1 text-[11px] text-gray-500">No notes yet.</p>
                     ) : (
@@ -2888,7 +2888,7 @@ export function AgentHub() {
                         }
                       }}
                       data-testid="memory-input"
-                      className="flex-1 rounded-lg border border-[#172A4A] bg-[#070D18] px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-violet-400 focus:outline-none"
+                      className="flex-1 rounded-lg border border-[#2C2C2C] bg-[#050505] px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-violet-400 focus:outline-none"
                     />
                     <Button
                       variant="outline"
@@ -2907,7 +2907,7 @@ export function AgentHub() {
 
                 <div className="space-y-1.5" data-testid="memory-briefing">
                   <label className="font-semibold text-gray-300">Briefing</label>
-                  <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 text-[11px] text-gray-300">
+                  <div className="rounded-lg border border-[#2C2C2C] bg-[#050505] p-2.5 text-[11px] text-gray-300">
                     {memoryState?.briefing ? (
                       <>
                         <span className="text-amber-200">
@@ -2927,7 +2927,7 @@ export function AgentHub() {
 
                 <div className="space-y-1.5">
                   <label className="font-semibold text-gray-300">Summary</label>
-                  <div className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap" data-testid="memory-summary">
+                  <div className="rounded-lg border border-[#2C2C2C] bg-[#050505] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap" data-testid="memory-summary">
                     {memoryState?.summary ? (
                       <>
                         {memoryState.summary.text}
@@ -2939,7 +2939,7 @@ export function AgentHub() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-1.5 border-t border-[#172A4A]/60 pt-1">
+                <div className="flex items-center justify-end gap-1.5 border-t border-[#2C2C2C]/60 pt-1">
                   {memoryState?.summary && (
                     <IconButton
                       label="Forget the summary"
@@ -2965,7 +2965,7 @@ export function AgentHub() {
             {/* TAB: Gmail — read and draft, with an explicit send confirmation */}
             {settingsTab === "email" && (
               <div className="space-y-3.5 animate-fadeIn">
-                <div className="rounded-lg border border-cyan-500/30 bg-[#070D18] p-3 space-y-3">
+                <div className="rounded-lg border border-cyan-500/30 bg-[#050505] p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-white">
                       <Mail className="h-4 w-4 text-cyan-300" />
@@ -2980,7 +2980,7 @@ export function AgentHub() {
                   ) : (
                     <p className="text-[11px] text-gray-400">Connect the Gmail account you want Soundwave to read. It uses the Google OAuth client configured in YouTube settings.</p>
                   )}
-                  <div className="rounded-md border border-[#172A4A] bg-[#0A1224] p-2.5 text-[10px] leading-relaxed text-gray-300">
+                  <div className="rounded-md border border-[#2C2C2C] bg-[#0A0A0A] p-2.5 text-[10px] leading-relaxed text-gray-300">
                     Soundwave can read inbox messages and save replies as <b className="text-cyan-200">unsent Gmail drafts</b>. Google's compose permission includes API-level send access, but the agent has no send tool in chat. Soundwave sends only after you review the exact recipient and message in a draft card and confirm with <b className="text-white">Send this email</b>. When you ask Soundwave to read or draft a message, that message content is sent to the Gemini provider configured in Settings → Brain. Email contents are treated as untrusted instructions.
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2991,7 +2991,7 @@ export function AgentHub() {
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => void handleDisconnectGmail()}>Disconnect Gmail</Button>
                     )}
-                    <button type="button" onClick={() => void fetchGmailStatus()} className="rounded-lg border border-[#172A4A] px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
+                    <button type="button" onClick={() => void fetchGmailStatus()} className="rounded-lg border border-[#2C2C2C] px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
                   </div>
                   <p className="text-[9px] leading-relaxed text-gray-500">
                     Google may require the Gmail API to be enabled in that OAuth project. If sign-in is blocked, enable it in <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline">Google Cloud</a> and add this account as a test user. Disconnecting removes Soundwave's saved sign-in; drafts already in Gmail stay there.
@@ -3003,7 +3003,7 @@ export function AgentHub() {
             {/* TAB 2: YouTube & Shorts — connecting, then auto-publish */}
             {settingsTab === "youtube" && (
               <div className="space-y-3.5 animate-fadeIn">
-                <div className="p-3 rounded-lg border border-red-500/30 bg-[#070D18] space-y-2.5">
+                <div className="p-3 rounded-lg border border-red-500/30 bg-[#050505] space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Youtube className="h-4 w-4 text-red-500" />
@@ -3089,7 +3089,7 @@ export function AgentHub() {
                             value={ytClientPaste}
                             onChange={(e) => setYtClientPaste(e.target.value)}
                             placeholder="Paste the client_secret_….json you downloaded — or the Client ID and the secret together"
-                            className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
+                            className="w-full rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
                           />
                           <div className="flex flex-wrap items-center gap-2">
                             <button
@@ -3122,7 +3122,7 @@ export function AgentHub() {
                           value={ytClientPaste}
                           onChange={(e) => setYtClientPaste(e.target.value)}
                           placeholder="Your own client: paste the client_secret_….json — or the Client ID and secret together"
-                          className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
+                          className="w-full rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
                         />
                       )}
                       <ol className="list-decimal space-y-1 pl-4" data-testid="yt-steps">
@@ -3155,7 +3155,7 @@ export function AgentHub() {
                           placeholder="1//04..."
                           value={ytRefreshToken}
                           onChange={(e) => setYtRefreshToken(e.target.value)}
-                          className="w-full rounded border border-[#172A4A] bg-[#0A1224] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
+                          className="w-full rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
                         />
                         <p className="mt-1 text-gray-500">Needs a “Web application” client with https://developers.google.com/oauthplayground as redirect URI and the scopes youtube.upload + youtube.readonly.</p>
                       </div>
@@ -3187,7 +3187,7 @@ export function AgentHub() {
                         type="checkbox"
                         checked={ytAutoPublish}
                         onChange={(e) => setYtAutoPublish(e.target.checked)}
-                        className="rounded border-[#172A4A] bg-[#070D18] text-red-600 focus:ring-0 cursor-pointer"
+                        className="rounded border-[#2C2C2C] bg-[#050505] text-red-600 focus:ring-0 cursor-pointer"
                       />
                       <span>Auto-post after rendering</span>
                     </label>
@@ -3197,7 +3197,7 @@ export function AgentHub() {
                       <select
                         value={ytPrivacy}
                         onChange={(e) => setYtPrivacy(e.target.value as any)}
-                        className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1 text-[10px] text-white focus:outline-none"
+                        className="rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2 py-1 text-[10px] text-white focus:outline-none"
                       >
                         <option value="public">Public</option>
                         <option value="unlisted">Unlisted</option>
@@ -3206,12 +3206,12 @@ export function AgentHub() {
                     </div>
                   </div>
 
-                  <div className="flex justify-end items-center gap-2 pt-2 border-t border-[#172A4A]/60">
+                  <div className="flex justify-end items-center gap-2 pt-2 border-t border-[#2C2C2C]/60">
                     <button
                       type="button"
                       onClick={handleTestYt}
                       disabled={isTestingYt}
-                      className="rounded border border-[#172A4A] bg-[#0A1224] hover:bg-[#111E3A] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                      className="rounded border border-[#2C2C2C] bg-[#0A0A0A] hover:bg-[#232323] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
                     >
                       {isTestingYt ? "Testing…" : "Test"}
                     </button>
@@ -3227,7 +3227,7 @@ export function AgentHub() {
                 </div>
 
                 {/* Channels: where regular Shorts are published */}
-                <div className="p-3 rounded-lg border border-[#14233D] bg-[#070D18] space-y-2" data-testid="yt-channels">
+                <div className="p-3 rounded-lg border border-[#252525] bg-[#050505] space-y-2" data-testid="yt-channels">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Workflow className="h-4 w-4 text-cyan-400" />
@@ -3244,7 +3244,7 @@ export function AgentHub() {
                   </p>
 
                   {ytChannels.length === 0 ? (
-                    <p className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1.5 text-[10px] text-gray-500">
+                    <p className="rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2 py-1.5 text-[10px] text-gray-500">
                       Connect YouTube above — each sign-in adds one channel. (Soundwave can't create a channel for you.)
                     </p>
                   ) : (
@@ -3273,7 +3273,7 @@ export function AgentHub() {
             {/* TAB 3: Thinking Orb Visualizer */}
             {settingsTab === "orb" && (
               <div className="space-y-3 animate-fadeIn">
-                <div className="p-3 rounded-lg border border-[#172A4A] bg-[#070D18] space-y-2">
+                <div className="p-3 rounded-lg border border-[#2C2C2C] bg-[#050505] space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-white">Orb</p>
                     <span
@@ -3298,7 +3298,7 @@ export function AgentHub() {
                         className={`rounded-lg border px-2.5 py-2 text-left font-mono text-[11px] transition-all cursor-pointer ${
                           orbMode === st.id
                             ? "border-cyan-400 bg-cyan-500/20 font-bold text-cyan-200 shadow-sm shadow-cyan-500/30"
-                            : "border-[#14233D] bg-[#0A1224] text-gray-400 hover:border-[#1F3660] hover:text-white"
+                            : "border-[#252525] bg-[#0A0A0A] text-gray-400 hover:border-[#3A3A3A] hover:text-white"
                         }`}
                       >
                         <div className="font-semibold">{st.label}</div>
@@ -3358,15 +3358,15 @@ export function AgentHub() {
             </p>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-2">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-2">
                 <span className="text-[10px] text-gray-400 block">On channel</span>
                 <span className="text-sm font-bold text-white">{orbitalStatus?.catalogSize ?? "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-2">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-2">
                 <span className="text-[10px] text-gray-400 block">Not used yet</span>
                 <span className="text-sm font-bold text-cyan-300">{orbitalStatus?.available ?? "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#14233D] bg-[#070D18] p-2">
+              <div className="rounded-lg border border-[#252525] bg-[#050505] p-2">
                 <span className="text-[10px] text-gray-400 block">Used</span>
                 <span className="text-sm font-bold text-emerald-400">{orbitalStatus?.usedCount ?? 0}</span>
               </div>
@@ -3380,13 +3380,13 @@ export function AgentHub() {
             <div className="space-y-1.5">
               <h4 className="text-[11px] font-bold text-gray-200">Used ({orbitalStatus?.usedCount ?? 0})</h4>
               {!orbitalStatus || orbitalStatus.used.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-[#14233D] bg-[#070D18] p-3 text-center text-[11px] text-gray-500">
+                <p className="rounded-lg border border-dashed border-[#252525] bg-[#050505] p-3 text-center text-[11px] text-gray-500">
                   Nothing used yet.
                 </p>
               ) : (
                 <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.used.map((u) => (
-                    <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#14233D] bg-[#070D18] px-2.5 py-1.5">
+                    <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#252525] bg-[#050505] px-2.5 py-1.5">
                       <div className="min-w-0">
                         <span className="block truncate text-[11px] text-white" title={u.title}>
                           {u.title}
@@ -3416,7 +3416,7 @@ export function AgentHub() {
                 <h4 className="text-[11px] font-bold text-amber-300">Skipped ({orbitalStatus.skipped.length})</h4>
                 <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.skipped.map((sk) => (
-                    <div key={sk.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#070D18] px-2.5 py-1.5">
+                    <div key={sk.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#050505] px-2.5 py-1.5">
                       <div className="min-w-0">
                         <span className="block truncate text-[11px] text-white" title={sk.title}>
                           {sk.title}
@@ -3483,7 +3483,7 @@ function ChannelRow({
       : "Off — open this channel and say what to publish here (one sentence is enough), then turn Autopilot on";
 
   return (
-    <div className="rounded-lg border border-[#172A4A] bg-[#0A1224] p-2 space-y-1.5" data-testid={`yt-channel-${channel.id}`}>
+    <div className="rounded-lg border border-[#2C2C2C] bg-[#0A0A0A] p-2 space-y-1.5" data-testid={`yt-channel-${channel.id}`}>
       <div className="flex items-center justify-between gap-1.5">
         <button
           type="button"
@@ -3513,7 +3513,7 @@ function ChannelRow({
       )}
 
       {open && (
-        <div className="space-y-1.5 border-t border-[#172A4A]/70 pt-1.5" data-testid={`yt-plan-${channel.id}`}>
+        <div className="space-y-1.5 border-t border-[#2C2C2C]/70 pt-1.5" data-testid={`yt-plan-${channel.id}`}>
           <label className="block text-[9px] text-gray-400">
             What
             <input
@@ -3521,7 +3521,7 @@ function ChannelRow({
               onChange={(e) => setWhat(e.target.value)}
               maxLength={400}
               placeholder='e.g. "space facts" or "history stories"'
-              className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-cyan-500 focus:outline-none"
+              className="mt-0.5 w-full rounded border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-cyan-500 focus:outline-none"
             />
           </label>
           <div className="flex items-center gap-1.5">
@@ -3533,7 +3533,7 @@ function ChannelRow({
                 max={30}
                 value={everyDays}
                 onChange={(e) => setEveryDays(Math.min(30, Math.max(1, Number(e.target.value) || 3)))}
-                className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
+                className="mt-0.5 w-full rounded border border-[#2C2C2C] bg-[#050505] px-1.5 py-1 text-[10px] text-white focus:outline-none"
               />
             </label>
             <label className="w-24 text-[9px] text-gray-400">
@@ -3542,7 +3542,7 @@ function ChannelRow({
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#070D18] px-1.5 py-1 text-[10px] text-white focus:outline-none"
+                className="mt-0.5 w-full rounded border border-[#2C2C2C] bg-[#050505] px-1.5 py-1 text-[10px] text-white focus:outline-none"
               />
             </label>
           </div>
@@ -3550,7 +3550,7 @@ function ChannelRow({
             <button
               type="button"
               onClick={() => onSave(channel.id, { plan: { what, everyDays, time, auto } }, `Saved for “${channel.name}”`)}
-              className="rounded bg-cyan-500 hover:bg-cyan-400 px-2 py-1 text-[10px] font-bold text-[#070B14] transition-all cursor-pointer"
+              className="rounded bg-cyan-500 hover:bg-cyan-400 px-2 py-1 text-[10px] font-bold text-[#0C0C0C] transition-all cursor-pointer"
             >
               Save
             </button>
@@ -3562,7 +3562,7 @@ function ChannelRow({
                 onSave(channel.id, { plan: { what, everyDays, time, auto: next } }, next ? `Autopilot on for “${channel.name}”` : `Autopilot off for “${channel.name}”`);
               }}
               className={`rounded border px-2 py-1 text-[10px] font-bold transition-all cursor-pointer ${
-                auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-[#172A4A] bg-[#070D18] text-gray-300 hover:border-cyan-500/50"
+                auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-[#2C2C2C] bg-[#050505] text-gray-300 hover:border-cyan-500/50"
               }`}
             >
               {auto ? "Autopilot" : "Manual"}
@@ -3571,7 +3571,7 @@ function ChannelRow({
               <button
                 type="button"
                 onClick={() => onDefault(channel.id, channel.name)}
-                className="rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-300 hover:border-cyan-500/50 hover:text-cyan-200 transition-all cursor-pointer"
+                className="rounded border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[10px] text-gray-300 hover:border-cyan-500/50 hover:text-cyan-200 transition-all cursor-pointer"
                 title="Where shorts go when you don't name a channel"
               >
                 Default
@@ -3580,7 +3580,7 @@ function ChannelRow({
             <button
               type="button"
               onClick={() => onRemove(channel.id, channel.name)}
-              className="ml-auto rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[10px] text-gray-400 hover:border-red-500/40 hover:text-red-300 transition-all cursor-pointer"
+              className="ml-auto rounded border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[10px] text-gray-400 hover:border-red-500/40 hover:text-red-300 transition-all cursor-pointer"
               title="Forget this channel and its sign-in"
             >
               <Trash2 className="h-3 w-3" />
@@ -3742,8 +3742,8 @@ function WatchCard() {
   };
 
   return (
-    <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-2 font-mono" data-testid="watch-card">
-      <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+    <div className="rounded-xl border border-[#252525] bg-[#0A0A0A] p-3.5 space-y-2 font-mono" data-testid="watch-card">
+      <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
         <span className="flex items-center gap-1.5 font-semibold text-gray-200">
           <Eye className="h-3.5 w-3.5 text-emerald-400" />
           Watching creators
@@ -3782,13 +3782,13 @@ function WatchCard() {
       )}
 
       {state.watches.length === 0 ? (
-        <p className="rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1.5 text-[10px] text-gray-500">
+        <p className="rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2 py-1.5 text-[10px] text-gray-500">
           Nothing watched yet. Paste a creator's @handle below and every new video they post gets cut into shorts by itself.
         </p>
       ) : (
         <div className="space-y-1.5">
           {state.watches.map((w) => (
-            <div key={w.id} className="rounded-lg border border-[#172A4A] bg-[#070D18] p-2 space-y-1.5" data-testid={`watch-row-${w.id}`}>
+            <div key={w.id} className="rounded-lg border border-[#2C2C2C] bg-[#050505] p-2 space-y-1.5" data-testid={`watch-row-${w.id}`}>
               <div className="flex items-center justify-between gap-1.5">
                 <a
                   href={w.url}
@@ -3853,7 +3853,7 @@ function WatchCard() {
               )}
 
               {editing === w.id && (
-                <div className="space-y-1.5 border-t border-[#172A4A]/70 pt-1.5" data-testid={`watch-plan-${w.id}`}>
+                <div className="space-y-1.5 border-t border-[#2C2C2C]/70 pt-1.5" data-testid={`watch-plan-${w.id}`}>
                   <div className="flex items-center gap-1.5">
                     <label className="w-20 text-[9px] text-gray-400">
                       Shorts
@@ -3864,7 +3864,7 @@ function WatchCard() {
                         value={draftClips}
                         onChange={(e) => setDraftClips(Math.min(state.maxClips, Math.max(1, Number(e.target.value) || 1)))}
                         data-testid={`watch-clips-${w.id}`}
-                        className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#0A1224] px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 focus:outline-none"
+                        className="mt-0.5 w-full rounded border border-[#2C2C2C] bg-[#0A0A0A] px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 focus:outline-none"
                       />
                     </label>
                     <label className="flex-1 text-[9px] text-gray-400">
@@ -3875,7 +3875,7 @@ function WatchCard() {
                         maxLength={300}
                         placeholder='e.g. "the funny bits"'
                         data-testid={`watch-focus-${w.id}`}
-                        className="mt-0.5 w-full rounded border border-[#172A4A] bg-[#0A1224] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
+                        className="mt-0.5 w-full rounded border border-[#2C2C2C] bg-[#0A0A0A] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
                       />
                     </label>
                     <IconButton
@@ -3918,7 +3918,7 @@ function WatchCard() {
           aria-label="A creator's @handle or channel link"
           data-testid="watch-add-input"
           disabled={state.watches.length >= state.max}
-          className="w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/60 focus:outline-none disabled:opacity-50"
+          className="w-full rounded border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/60 focus:outline-none disabled:opacity-50"
         />
         <IconButton
           label="Watch this channel"
@@ -4032,8 +4032,8 @@ function ClipsCard() {
   const line = note ?? (status.busy ? cutting : null);
 
   return (
-    <div className="rounded-xl border border-[#14233D] bg-[#0A1224] p-3.5 space-y-2 font-mono" data-testid="clips-card">
-      <div className="flex items-center justify-between border-b border-[#14233D] pb-1.5 text-xs">
+    <div className="rounded-xl border border-[#252525] bg-[#0A0A0A] p-3.5 space-y-2 font-mono" data-testid="clips-card">
+      <div className="flex items-center justify-between border-b border-[#252525] pb-1.5 text-xs">
         <span className="flex items-center gap-1.5 font-semibold text-gray-200">
           <Scissors className="h-3.5 w-3.5 text-fuchsia-400" />
           Shorts from a video
@@ -4053,7 +4053,7 @@ function ClipsCard() {
           if (e.key === "Enter") void cut();
         }}
         placeholder="YouTube link or video file path"
-        className="w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
+        className="w-full rounded border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
         data-testid="clips-video"
       />
 
@@ -4063,7 +4063,7 @@ function ClipsCard() {
             value={focus}
             onChange={(e) => setFocus(e.target.value)}
             placeholder="what to look for"
-            className="w-full rounded border border-[#172A4A] bg-[#070D18] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
+            className="w-full rounded border border-[#2C2C2C] bg-[#050505] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
             data-testid="clips-focus"
           />
         </label>
@@ -4072,7 +4072,7 @@ function ClipsCard() {
           onChange={(e) => setCount(Number(e.target.value))}
           title="How many shorts to cut out"
           aria-label="How many shorts to cut out"
-          className="rounded border border-[#172A4A] bg-[#070D18] px-1 py-1 text-[11px] text-gray-300 focus:border-cyan-500/60 focus:outline-none cursor-pointer"
+          className="rounded border border-[#2C2C2C] bg-[#050505] px-1 py-1 text-[11px] text-gray-300 focus:border-cyan-500/60 focus:outline-none cursor-pointer"
           data-testid="clips-count"
         >
           {Array.from({ length: Math.max(1, status.maxCount - 1) }, (_, i) => i + 1).map((n) => (
@@ -4117,7 +4117,7 @@ function NicheButton({
   return (
     <div
       className={`relative flex flex-col rounded-lg border transition-all ${
-        selected ? "border-cyan-400 bg-cyan-500/10" : "border-[#172A4A] bg-[#070D18]"
+        selected ? "border-cyan-400 bg-cyan-500/10" : "border-[#2C2C2C] bg-[#050505]"
       }`}
     >
       <button

@@ -1,16 +1,21 @@
+import colors from "tailwindcss/colors";
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        navy: "#0C0D12",
-        panel: "#13141C",
+        // Black-first theme: Tailwind's blue-tinted greys become true neutrals.
+        gray: colors.neutral,
+        slate: colors.neutral,
+        navy: "#000000",
+        panel: "#0A0A0A",
         surface: {
-          DEFAULT: "#13141C",
-          subtle: "#0E1017",
-          elevated: "#191B26",
-          hover: "#202330",
+          DEFAULT: "#0A0A0A",
+          subtle: "#050505",
+          elevated: "#121212",
+          hover: "#1a1a1a",
           border: "rgba(255, 255, 255, 0.08)",
         },
         accent: {

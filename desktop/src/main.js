@@ -232,7 +232,7 @@ function createMainWindow() {
     minWidth: 1024,
     minHeight: 640,
     show: false,
-    backgroundColor: "#0a0e17",
+    backgroundColor: "#000000",
     title: "Soundwave AI",
     autoHideMenuBar: true,
     icon: ICON_PNG,
