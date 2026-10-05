@@ -317,3 +317,5 @@ jobs:
           } else {
             gh release upload $env:GITHUB_REF_NAME $exes --clobber
           }
+
+# Push-triggered build of the latest app (manual dispatch unavailable to the bot token).

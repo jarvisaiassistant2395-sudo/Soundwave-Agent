@@ -310,3 +310,5 @@ jobs:
           path: mobile/e2e-shots
           retention-days: 3
           if-no-files-found: ignore
+
+# Push-triggered build of the latest app (manual dispatch unavailable to the bot token).
