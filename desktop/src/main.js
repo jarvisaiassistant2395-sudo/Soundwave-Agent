@@ -772,8 +772,8 @@ async function main() {
   const { appUrl, port: appPort } = await applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp: true });
 
   // The packaged Windows app owns a hidden CPU-only voice sidecar: Kokoro
-  // narration plus MOSS-TTS-Nano cloning. Setup starts on first local-voice
-  // use and runs invisibly; an explicitly configured service is never replaced. Keep its
+  // narration plus MOSS-TTS-Nano cloning. Setup starts automatically a few
+  // seconds after launch and runs invisibly; an explicitly configured service is never replaced. Keep its
   // port distinct from the app API's already-allocated loopback port.
   try {
     kokoroManager = await createManagedKokoro({
@@ -809,6 +809,16 @@ async function main() {
   appOrigin = new URL(appUrl).origin;
   restrictPermissions();
   registerIpc();
+
+  // Set up the on-device voices (Kokoro narration + voice cloning) right away
+  // in the background — including the first launch straight after the
+  // installer — instead of waiting for someone to find the voice page. Nobody
+  // has to press anything; failures retry by themselves.
+  if (kokoroManager) {
+    setTimeout(() => {
+      if (kokoroManager) void kokoroManager.start();
+    }, 4_000).unref?.();
+  }
 
   // The agent's hands on this PC (server/src/lib/brain/pc.ts): it opens web
   // pages in the default browser, Start menu shortcuts, and — for the Ghost

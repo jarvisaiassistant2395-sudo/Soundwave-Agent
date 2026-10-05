@@ -472,6 +472,11 @@ function createKokoroManager({
   let setupLogOffset = 0;
   let runtime = null;
   let reusedProcessId = null;
+  // Automatic retries after a failure (a dropped connection, a server
+  // hiccup): people shouldn't have to babysit setup. Reset on success.
+  const AUTO_RETRY_DELAYS_MS = [20_000, 90_000, 5 * 60_000];
+  let autoRetries = 0;
+  let autoRetryTimer = null;
   let state = { phase: "checking", message: "Soundwave is preparing the on-device narration and voice-cloning engines in the background." };
 
   function writeState(phase, message, progress, progressLabel, extras = {}) {
@@ -757,13 +762,22 @@ function createKokoroManager({
     assertFreeSpace(runtimeDir, MIN_PACKAGE_SETUP_FREE_BYTES, "Kokoro narration, MOSS cloning, and their Python packages");
     writeState("installing-packages", "Preparing Soundwave's private on-device voice environment.", undefined, "Isolated Python environment");
     fs.mkdirSync(runtimeDir, { recursive: true });
-    const pipEnv = managedPythonEnv({ PIP_CACHE_DIR: path.join(cacheDir, "pip"), PIP_DISABLE_PIP_VERSION_CHECK: "1" });
+    // Retry settings go through pip's environment (PIP_RETRIES / PIP_TIMEOUT) so
+    // every pip run gets them, including the one spaCy starts for its model.
+    // (Passed as arguments to spaCy's download they reached pip as a package
+    // name: "No matching distribution found for 10".)
+    const pipEnv = managedPythonEnv({
+      PIP_CACHE_DIR: path.join(cacheDir, "pip"),
+      PIP_DISABLE_PIP_VERSION_CHECK: "1",
+      PIP_RETRIES: "10",
+      PIP_TIMEOUT: "60",
+    });
     if (!fs.existsSync(venvPython)) {
       await runCommand(pythonExe, ["-m", "venv", venvDir], { cwd: runtimeDir, env: pipEnv, timeoutMs: 2 * 60_000 });
     }
-    // pip retries flaky connections itself (and, from pip 24.2, trusts the
-    // Windows certificate store). Generous timeouts for slow links.
-    const common = ["-m", "pip", "install", "--disable-pip-version-check", "--progress-bar", "off", "--retries", "10", "--timeout", "60"];
+    // pip retries flaky connections itself (PIP_RETRIES above) and, from pip
+    // 24.2, trusts the Windows certificate store.
+    const common = ["-m", "pip", "install", "--disable-pip-version-check", "--progress-bar", "off"];
     const packageSteps = 6;
     let completedPackageSteps = 0;
     const runPackageStep = async (label, executable, args, options = {}) => {
@@ -790,7 +804,7 @@ function createKokoroManager({
     await runPackageStep(
       "English pronunciation data",
       venvPython,
-      ["-c", "import truststore; truststore.inject_into_ssl(); from spacy.cli import download; download('en_core_web_sm', False, False, '--retries', '10', '--timeout', '60')"],
+      ["-c", "import truststore; truststore.inject_into_ssl(); from spacy.cli import download; download('en_core_web_sm')"],
       { cwd: resourcesDir, env: pipEnv },
     );
     await runPackageStep(
@@ -915,6 +929,24 @@ function createKokoroManager({
     throw new Error("The local voice engines did not finish loading before the startup timeout.");
   }
 
+  function scheduleAutoRetry(reason) {
+    if (stopped || cancelled || autoRetryTimer) return false;
+    if (/disk space/i.test(reason)) return false; // retrying can't fix a full disk
+    const wait = AUTO_RETRY_DELAYS_MS[autoRetries];
+    if (wait === undefined) return false;
+    autoRetries++;
+    autoRetryTimer = setTimeout(() => {
+      autoRetryTimer = null;
+      if (!stopped && !cancelled) void retrySetup();
+    }, wait);
+    autoRetryTimer.unref?.();
+    return wait;
+  }
+
+  function waitLabel(ms) {
+    return ms >= 60_000 ? `${Math.round(ms / 60_000)} minute${ms >= 120_000 ? "s" : ""}` : `${Math.round(ms / 1000)} seconds`;
+  }
+
   async function runSetupAttempt() {
     if (runtime?.alreadyRunning) {
       writeState("ready", "On-device narration and voice cloning are ready.");
@@ -954,8 +986,11 @@ function createKokoroManager({
       if (!stopped && !cancelled) {
         atomicWriteJson(assetsMarker, { revision: RUNTIME_REVISION, readyAt: new Date().toISOString() });
         if (cloneError) {
-          writeState("ready", `Kokoro narration voices are ready. Voice cloning isn't yet: ${cloneError}`, undefined, undefined, { cloneError });
+          const wait = scheduleAutoRetry(cloneError);
+          const next = wait ? ` Soundwave will try cloning again by itself in ${waitLabel(wait)}.` : "";
+          writeState("ready", `Kokoro narration voices are ready. Voice cloning isn't yet: ${cloneError}${next}`, undefined, undefined, { cloneError });
         } else {
+          autoRetries = 0;
           writeState("ready", "On-device narration and voice cloning are ready.");
         }
       }
@@ -981,7 +1016,9 @@ function createKokoroManager({
       }
       console.error("[soundwave-desktop] local voice setup failed:", error.message);
       fs.rmSync(assetsMarker, { force: true });
-      writeState("failed", describeSetupFailure(error, readLogSince(setupLogOffset), logFile));
+      const reason = describeSetupFailure(error, readLogSince(setupLogOffset), logFile);
+      const wait = scheduleAutoRetry(reason);
+      writeState("failed", wait ? `${reason} Soundwave will try again by itself in ${waitLabel(wait)} — you don't need to do anything.` : reason);
       if (serviceProcess) {
         try {
           serviceProcess.kill();
@@ -1012,6 +1049,10 @@ function createKokoroManager({
   }
 
   async function retrySetup() {
+    if (autoRetryTimer) {
+      clearTimeout(autoRetryTimer);
+      autoRetryTimer = null;
+    }
     const retryable = () => ["failed", "cancelled"].includes(state.phase) || (state.phase === "ready" && Boolean(state.cloneError));
     if (stopped || !retryable()) return false;
     if (setupPromise) await setupPromise.catch(() => {});
@@ -1084,6 +1125,8 @@ function createKokoroManager({
   function stop() {
     if (stopped) return;
     stopped = true;
+    if (autoRetryTimer) clearTimeout(autoRetryTimer);
+    autoRetryTimer = null;
     setupAbortController.abort();
     if (activeProcess) {
       try {

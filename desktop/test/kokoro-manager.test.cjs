@@ -557,3 +557,111 @@ test("a cloning model that fails to load is reported without blocking Kokoro", a
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("package installs pass pip's retry settings through the environment, never as stray arguments", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-pip-args-"));
+  const resourcesDir = path.join(dir, "resources");
+  const runtimeDir = path.join(dir, "user-data", "kokoro");
+  const venvPython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+  const originalFetch = global.fetch;
+  const commands = [];
+  let manager;
+  try {
+    fs.mkdirSync(resourcesDir, { recursive: true });
+    fs.mkdirSync(path.dirname(venvPython), { recursive: true });
+    fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
+    fs.writeFileSync(venvPython, "test venv");
+    global.fetch = async () => ({ ok: true, json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }) });
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir,
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48133,
+      prepareVoiceAssets: async () => {},
+      spawnProcess: (_executable, args, options) => {
+        commands.push({ args, env: options.env });
+        const child = new EventEmitter();
+        child.pid = 54600 + commands.length;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => true;
+        child.unref = () => {};
+        if (!args.includes("uvicorn")) setImmediate(() => { child.exitCode = 0; child.emit("exit", 0, null); });
+        return child;
+      },
+    });
+    await manager.start();
+    assert.equal(manager.state().phase, "ready", manager.state().message);
+    const installs = commands.filter((c) => c.args.includes("install") || c.args.some((a) => String(a).includes("spacy.cli")));
+    assert.ok(installs.length >= 4, "the package steps ran");
+    for (const { args, env } of installs) {
+      assert.ok(!args.includes("10") && !args.includes("--retries"), `no stray retry arguments: ${args.join(" ")}`);
+      assert.equal(env.PIP_RETRIES, "10");
+      assert.equal(env.PIP_TIMEOUT, "60");
+    }
+    const spacy = installs.find((c) => c.args.some((a) => String(a).includes("spacy.cli")));
+    assert.match(spacy.args.join(" "), /download\('en_core_web_sm'\)/);
+  } finally {
+    global.fetch = originalFetch;
+    manager?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failed setup retries by itself", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-kokoro-auto-retry-"));
+  const resourcesDir = path.join(dir, "resources");
+  const runtimeDir = path.join(dir, "user-data", "kokoro");
+  const venvPython = path.join(runtimeDir, "venv", "Scripts", "python.exe");
+  const originalFetch = global.fetch;
+  const originalSetTimeout = global.setTimeout;
+  let manager;
+  let services = 0;
+  try {
+    // Fire long timers (the automatic retry) almost immediately.
+    global.setTimeout = (fn, ms, ...rest) => originalSetTimeout(fn, ms >= 20_000 ? 10 : ms, ...rest);
+    fs.mkdirSync(resourcesDir, { recursive: true });
+    fs.mkdirSync(path.dirname(venvPython), { recursive: true });
+    fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
+    fs.writeFileSync(venvPython, "test venv");
+    fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
+    global.fetch = async () => (services >= 2
+      ? { ok: true, json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }) }
+      : { ok: false, status: 503 });
+    manager = await createManagedKokoro({
+      ...packagedWindows,
+      resourcesDir,
+      userDataDir: path.join(dir, "user-data"),
+      getFreePort: async () => 48134,
+      prepareVoiceAssets: async () => {},
+      spawnProcess: (_executable, args) => {
+        const child = new EventEmitter();
+        child.pid = 54700;
+        child.exitCode = null;
+        child.signalCode = null;
+        child.kill = () => true;
+        child.unref = () => {};
+        if (args.includes("uvicorn")) {
+          services++;
+          if (services === 1) setImmediate(() => { child.exitCode = 1; child.emit("exit", 1, null); });
+        } else setImmediate(() => { child.exitCode = 0; child.emit("exit", 0, null); });
+        return child;
+      },
+    });
+    await manager.start();
+    assert.equal(manager.state().phase, "failed");
+    assert.match(manager.state().message, /try again by itself/);
+    for (let i = 0; i < 100 && manager.state().phase !== "ready"; i++) await new Promise((r) => originalSetTimeout(r, 20));
+    assert.equal(manager.state().phase, "ready");
+    assert.equal(services, 2);
+  } finally {
+    global.setTimeout = originalSetTimeout;
+    global.fetch = originalFetch;
+    manager?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

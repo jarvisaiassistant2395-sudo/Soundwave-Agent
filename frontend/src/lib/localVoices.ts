@@ -37,7 +37,11 @@ export const EMPTY_LOCAL_VOICES: LocalVoiceStatus = { available: false, engine: 
 
 export function localVoiceSetupLabel(setup?: LocalVoiceSetupStatus): string {
   if (!setup) return "";
-  if (setup.phase === "failed") return "On-device voice setup needs attention — choose Retry";
+  if (setup.phase === "failed") {
+    return /by itself/i.test(setup.message)
+      ? "On-device voice setup hit a snag — trying again automatically"
+      : "On-device voice setup needs attention — choose Retry";
+  }
   if (setup.phase === "cancelled") return "On-device voice setup was cancelled — choose Retry to continue";
   if (setup.phase === "cancelling") return "Cancelling on-device voice setup…";
   if (typeof setup.progress === "number") {
