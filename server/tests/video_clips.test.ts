@@ -493,10 +493,15 @@ describe("clipping on measured interest", () => {
     expect(chatText()).toMatch(/strongest first|measured interest/i);
 
     const jobs = await db.listJobs("measured-2");
-    const interests = jobs.map((j) => (j.settings as { interest?: number }).interest ?? 0);
+    // listJobs answers newest-first (the download list wants that) and the jobs
+    // are created in one loop — which can still straddle a millisecond — so read
+    // them in creation order: videoClips sorts the picks by measured interest,
+    // so the strongest moment's job is the one created first.
+    const byCreation = jobs.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const interests = byCreation.map((j) => (j.settings as { interest?: number }).interest ?? 0);
     expect(interests[0]).toBeGreaterThan(interests[1] ?? 0);
     // Every clip that came from a measured peak carries the reason it exists.
-    expect(jobs.every((j) => typeof (j.settings as { interestReason?: string }).interestReason === "string")).toBe(true);
+    expect(byCreation.every((j) => typeof (j.settings as { interestReason?: string }).interestReason === "string")).toBe(true);
   });
 
   it("changes nothing when YouTube publishes no replay data", async () => {
