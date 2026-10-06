@@ -670,6 +670,19 @@ function registerIpc() {
   });
   ipcMain.handle("soundwave:cancel-kokoro-setup", (event) => (trusted(event) ? Boolean(kokoroManager?.cancelSetup()) : false));
   ipcMain.handle("soundwave:retry-kokoro-setup", (event) => (trusted(event) ? (kokoroManager?.retrySetup() ?? false) : false));
+  // Sign-in: open the Google page in the person's own browser (never an
+  // embedded window — Google blocks those). http(s) only.
+  ipcMain.handle("soundwave:open-external", async (event, url) => {
+    if (!trusted(event)) return false;
+    try {
+      const parsed = new URL(String(url));
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+      await shell.openExternal(parsed.toString());
+      return true;
+    } catch {
+      return false;
+    }
+  });
   ipcMain.handle("soundwave:is-app-focused", (event) => {
     if (!trusted(event)) return false;
     return alive(mainWindow) && mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized();

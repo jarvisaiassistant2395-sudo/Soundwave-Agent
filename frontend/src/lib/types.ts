@@ -15,11 +15,11 @@ export type Plan = "FREE" | "PRO" | "ENTERPRISE";
 
 export interface UserProfile {
   id: string;
+  /** The Google account this app is linked to — the only way in. */
   email: string;
   name: string;
   plan: Plan;
   avatarUrl: string | null;
-  emailVerified: boolean;
 }
 
 export interface QuotaStatus {

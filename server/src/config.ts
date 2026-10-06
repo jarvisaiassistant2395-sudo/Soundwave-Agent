@@ -33,8 +33,6 @@ export const config = {
     .filter(Boolean),
   emailFrom: str("EMAIL_FROM", "Soundwave AI <no-reply@soundwave.ai>"),
   resendApiKey: str("RESEND_API_KEY", ""),
-  googleClientId: str("GOOGLE_CLIENT_ID", ""),
-  googleClientSecret: str("GOOGLE_CLIENT_SECRET", ""),
   stripeSecretKey: str("STRIPE_SECRET_KEY", ""),
   stripeWebhookSecret: str("STRIPE_WEBHOOK_SECRET", ""),
   ffmpegPath: str("FFMPEG_PATH", ""),
@@ -144,6 +142,9 @@ export const config = {
   // resort — it sends the page's address to a service on the internet, so the
   // local sidecar above gets the first try.
   jinaReaderUrl: str("JINA_READER_URL", "https://r.jina.ai"),
+  // Where the account behind a Google sign-in is read when Google's token
+  // response carried no ID token (lib/googleSignIn.ts).
+  googleUserinfoUrl: str("GOOGLE_USERINFO_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
 } as const;
 
 // Everything optional at runtime is intentionally absent here so lean (free)

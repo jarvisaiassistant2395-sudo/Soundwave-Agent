@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { createApp } from "../src/app.js";
 import { config } from "../src/config.js";
 import { JsonStore, setStoreForTests } from "../src/lib/store.js";
+import { createUserSession, signAccessToken } from "../src/lib/auth.js";
 
 let app: ReturnType<typeof createApp>;
 let cookie = "";
@@ -19,56 +20,35 @@ beforeAll(async () => {
   await store.init();
   setStoreForTests(store);
   app = createApp();
+  // The session a signed-in Google account has (how it is obtained end to end
+  // is google_signin.test.ts; here we just need one to exercise the API with).
+  const user = await store.createUser({ email: "flow@example.com", name: "Test User" });
+  const bundle = await createUserSession(store, user.id, "127.0.0.1", "vitest");
+  cookie = `access_token=${signAccessToken(user.id)}; refresh_token=${encodeURIComponent(bundle.refreshToken)}; csrf_token=test-csrf`;
 });
 
-describe("auth flow", () => {
-  it("signs up a user and returns session cookies", async () => {
-    const res = await request(app)
-      .post("/api/v1/auth/signup")
-      .send({ name: "Test User", email: "flow@example.com", password: "Str0ng!Pass1" });
-    expect(res.status).toBe(201);
-    expect(res.body.user.email).toBe("flow@example.com");
-    expect(res.body.user.plan).toBe("FREE");
-    const setCookie = (res.headers["set-cookie"] ?? []) as string[];
-    expect(setCookie.some((c) => c.startsWith("access_token="))).toBe(true);
-    expect(setCookie.some((c) => c.startsWith("refresh_token="))).toBe(true);
-    expect(setCookie.some((c) => c.startsWith("csrf_token="))).toBe(true);
-    cookie = setCookie.map((c) => c.split(";")[0]).join("; ");
-  });
-
-  it("rejects duplicate signup", async () => {
-    const res = await request(app)
-      .post("/api/v1/auth/signup")
-      .send({ name: "Test User", email: "flow@example.com", password: "Str0ng!Pass1" });
-    expect(res.status).toBe(409);
-  });
-
-  it("rejects weak passwords", async () => {
-    const res = await request(app)
-      .post("/api/v1/auth/signup")
-      .send({ name: "X", email: "weak@example.com", password: "password" });
-    expect(res.status).toBe(400);
-  });
-
-  it("returns the session for an authenticated cookie", async () => {
+describe("the account", () => {
+  it("returns the session for a signed-in cookie", async () => {
     const res = await request(app).get("/api/v1/auth/session").set("Cookie", cookie);
     expect(res.status).toBe(200);
     expect(res.body.email).toBe("flow@example.com");
+    // A Google account: no password, no email-verification state to report.
+    expect(res.body.passwordHash).toBeUndefined();
+    expect(res.body.emailVerified).toBeUndefined();
   });
 
-  it("signs in with valid credentials", async () => {
-    const res = await request(app)
-      .post("/api/v1/auth/signin")
-      .send({ email: "flow@example.com", password: "Str0ng!Pass1" });
-    expect(res.status).toBe(200);
+  it("has no password sign-in, sign-up or reset left", async () => {
+    const gone = ["/api/v1/auth/signin", "/api/v1/auth/signup", "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password", "/api/v1/auth/verify-email", "/api/v1/auth/resend-verification"];
+    for (const path of gone) {
+      const res = await request(app).post(path).send({ email: "flow@example.com", password: "Str0ng!Pass1" });
+      expect([404, 400], `${path} should be gone`).toContain(res.status);
+      expect(res.status).toBe(404);
+    }
   });
 
-  it("returns generic error for unknown email", async () => {
-    const res = await request(app)
-      .post("/api/v1/auth/signin")
-      .send({ email: "nobody@example.com", password: "whatever1" });
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe("INVALID_CREDENTIALS");
+  it("has no password change or password-guarded deletion left", async () => {
+    const change = await request(app).put("/api/v1/user/password").set("Cookie", cookie).set("X-CSRF-Token", csrfFromCookies(cookie)).send({ currentPassword: "x", newPassword: "Yy1!aaaa" });
+    expect(change.status).toBe(404);
   });
 });
 

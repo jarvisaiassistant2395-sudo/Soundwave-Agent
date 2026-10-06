@@ -20,7 +20,6 @@ import { Logo } from "../components/Logo";
 import { Badge } from "../components/ui/Badge";
 import { DEFAULT_VOICES, SAMPLE_SENTENCE } from "../lib/voices";
 import { cn } from "../lib/cn";
-import { useAuth } from "../store/auth";
 
 const FEATURES = [
   {
@@ -102,7 +101,7 @@ function HeroWaveform() {
 function VoicePreviewSection() {
   const [playing, setPlaying] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const { user } = useAuth();
+
 
   const play = (id: string, url: string) => {
     if (playing === id) {
@@ -173,7 +172,7 @@ function VoicePreviewSection() {
       </div>
       <div className="mt-8 text-center">
         <Link
-          to={user ? "/agent" : "/signup"}
+          to="/agent"
           className="inline-flex items-center gap-2 rounded-btn bg-gradient-to-r from-blue-500 to-violet-500 px-6 py-3 font-semibold text-white shadow-glow transition-all duration-200 hover:from-blue-400 hover:to-violet-400"
         >
           Use a Voice <ArrowRight className="h-4 w-4" />
@@ -207,10 +206,10 @@ export function Landing() {
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
-              to="/signup"
+              to="/agent"
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-btn bg-gradient-to-r from-blue-500 to-violet-500 px-7 text-lg font-semibold text-white shadow-glow transition-all duration-200 hover:from-blue-400 hover:to-violet-400 sm:w-auto"
             >
-              Start Creating — Free
+              Open Soundwave
             </Link>
             <a
               href="#voices"
@@ -324,8 +323,8 @@ export function Landing() {
           </div>
           <div className="mx-auto mt-12 grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-3">
             {[
-              { name: "Free", price: "$0", desc: "10K chars / month", highlight: false, cta: "Get Started", to: "/signup" },
-              { name: "Pro", price: "$12", desc: "200K chars / month", highlight: true, cta: "Subscribe Now", to: "/signup" },
+              { name: "Free", price: "$0", desc: "10K chars / month", highlight: false, cta: "Open Soundwave", to: "/agent" },
+              { name: "Pro", price: "$12", desc: "200K chars / month", highlight: true, cta: "Subscribe Now", to: "/agent" },
               { name: "Enterprise", price: "$39", desc: "2M chars / month", highlight: false, cta: "Contact Sales", to: "/pricing" },
             ].map((p) => (
               <div

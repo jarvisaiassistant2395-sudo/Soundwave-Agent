@@ -59,9 +59,9 @@ services:
       STRIPE_PRICE_PRO_ANNUAL: ${STRIPE_PRICE_PRO_ANNUAL:-}
       STRIPE_PRICE_ENTERPRISE_MONTHLY: ${STRIPE_PRICE_ENTERPRISE_MONTHLY:-}
       STRIPE_PRICE_ENTERPRISE_ANNUAL: ${STRIPE_PRICE_ENTERPRISE_ANNUAL:-}
-      # Google OAuth (optional — sign-in button hides when unset).
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Google (the one way into the app; a "Desktop app" OAuth client).
+      SOUNDWAVE_YOUTUBE_CLIENT_ID: ${SOUNDWAVE_YOUTUBE_CLIENT_ID:-}
+      SOUNDWAVE_YOUTUBE_CLIENT_SECRET: ${SOUNDWAVE_YOUTUBE_CLIENT_SECRET:-}
       # Voice cloning sidecar (optional — feature hides when unset).
       VOICECLONE_URL: ${VOICECLONE_URL:-}
       VOICECLONE_TOKEN: ${VOICECLONE_TOKEN:-}

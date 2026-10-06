@@ -70,22 +70,14 @@ export const generalLimiter = rateLimit({
   message: { error: { code: "RATE_LIMITED", message: "Too many requests. Please slow down." } },
 });
 
-export const authSignupLimiter = rateLimit({
+/** Signing in: the app starts a sign-in and then claims it (no passwords). */
+export const authSignInLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: config.isProd ? 5 : 100,
+  limit: config.isProd ? 40 : 400,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => trustIp(req),
-  message: { error: { code: "RATE_LIMITED", message: "Too many sign-up attempts. Try again in 15 minutes." } },
-});
-
-export const authLoginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: config.isProd ? 10 : 200,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  keyGenerator: (req) => trustIp(req),
-  message: { error: { code: "RATE_LIMITED", message: "Too many login attempts. Try again in 15 minutes." } },
+  message: { error: { code: "RATE_LIMITED", message: "Too many sign-in attempts. Try again in 15 minutes." } },
 });
 
 export const usageLimiter = rateLimit({

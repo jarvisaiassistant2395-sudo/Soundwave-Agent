@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword, verifyPassword, signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToken, sha256, randomToken } from "../src/lib/auth.js";
+import { signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToken, sha256, randomToken } from "../src/lib/auth.js";
 import { PLANS, resolutionAllowed } from "../src/lib/plans.js";
 import { buildAss } from "../src/lib/ffmpeg.js";
-
-describe("passwords", () => {
-  it("hashes with bcrypt and verifies", async () => {
-    const hash = await hashPassword("Str0ng!Pass");
-    expect(hash).not.toContain("Str0ng!Pass");
-    expect(await verifyPassword("Str0ng!Pass", hash)).toBe(true);
-    expect(await verifyPassword("wrong", hash)).toBe(false);
-  });
-});
 
 describe("tokens", () => {
   it("round-trips access + refresh tokens", () => {

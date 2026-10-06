@@ -1,15 +1,13 @@
 // ── Profile — the page behind the bottom-left banner ────────────────────────
-// The desktop app has no account to sign into, so this page is built to work
-// either way: a session (hosted/phone setups) supplies the email and plan, and
-// everything else — display name, one-line title, avatar colour — is saved on
-// this PC. It also shows what the workspace is doing right now (shorts made,
+// The app is linked to a Google account on the first launch, so this page shows
+// that account (and its plan) and keeps everything else — display name, one-line
+// title, avatar colour — saved on this PC. It also shows what the workspace is doing right now (shorts made,
 // trends, ideas to make today) so it is a real page, not a placeholder.
 
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  BadgeCheck,
   Brain,
   Clapperboard,
   CreditCard,
@@ -168,12 +166,7 @@ export function Profile() {
                   {user ? (user.plan === "FREE" ? "Free plan" : `${user.plan} plan`) : "This PC"}
                 </Badge>
               </div>
-              <p className="mt-1 text-sm text-gray-400">{title || (user?.email ?? "Local workspace — no account needed")}</p>
-              {user?.emailVerified && (
-                <p className="mt-1 flex items-center gap-1 text-xs text-emerald-400">
-                  <BadgeCheck className="h-3.5 w-3.5" /> Email verified
-                </p>
-              )}
+              <p className="mt-1 text-sm text-gray-400">{title || (user?.email ?? "Local workspace")}</p>
             </div>
           </div>
           {!editing && (
@@ -329,8 +322,8 @@ export function Profile() {
               <dd className="truncate text-gray-200">{displayName}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-gray-500">Email</dt>
-              <dd className="truncate text-gray-200">{user?.email ?? "Not signed in (not required)"}</dd>
+              <dt className="text-gray-500">Google account</dt>
+              <dd className="truncate text-gray-200">{user?.email ?? "Not linked yet"}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-gray-500">Plan</dt>

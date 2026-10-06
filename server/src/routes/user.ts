@@ -6,7 +6,7 @@ import { validate } from "../middleware/validate.js";
 import { requireAuth } from "../middleware/auth.js";
 import { ApiError } from "../middleware/error.js";
 import { getStore } from "../lib/store.js";
-import { hashPassword, publicUser, verifyPassword } from "../lib/auth.js";
+import { publicUser } from "../lib/auth.js";
 import { PLANS } from "../lib/plans.js";
 import { getQuotaFor } from "./tts.js";
 import { config } from "../config.js";
@@ -36,41 +36,16 @@ router.put("/profile", requireAuth, validate({ body: profileSchema }), async (re
   }
 });
 
-const passwordSchema = z.object({
-  currentPassword: z.string().min(1).max(100),
-  newPassword: z
-    .string()
-    .min(8)
-    .max(100)
-    .regex(/[a-z]/)
-    .regex(/[A-Z]/)
-    .regex(/[0-9]/)
-    .regex(/[^A-Za-z0-9]/),
-});
-
-router.put("/password", requireAuth, validate({ body: passwordSchema }), async (req, res, next) => {
-  try {
-    const { currentPassword, newPassword } = req.body as z.infer<typeof passwordSchema>;
-    const store = await getStore();
-    const user = req.user!;
-    if (!user.passwordHash || !(await verifyPassword(currentPassword, user.passwordHash))) {
-      throw new ApiError(400, "INVALID_PASSWORD", "Your current password is incorrect.");
-    }
-    await store.updateUser(user.id, { passwordHash: await hashPassword(newPassword) });
-    res.json({ ok: true });
-  } catch (e) {
-    next(e);
-  }
-});
-
-const deleteSchema = z.object({ password: z.string().min(1).max(100) });
+// Deleting the account asks the person to type their own address: there is no
+// password to check, and the button alone is one click away from a mistake.
+const deleteSchema = z.object({ confirmEmail: z.string().min(3).max(254) });
 router.delete("/account", requireAuth, validate({ body: deleteSchema }), async (req, res, next) => {
   try {
-    const { password } = req.body as z.infer<typeof deleteSchema>;
+    const { confirmEmail } = req.body as z.infer<typeof deleteSchema>;
     const store = await getStore();
     const user = req.user!;
-    if (user.passwordHash && !(await verifyPassword(password, user.passwordHash))) {
-      throw new ApiError(400, "INVALID_PASSWORD", "Your password is incorrect.");
+    if (confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+      throw new ApiError(400, "EMAIL_MISMATCH", "Type your account's address to confirm.");
     }
     await store.deleteUserSoft(user.id);
     res.json({ ok: true, message: "Account scheduled for deletion. You have a 30-day recovery period." });

@@ -125,17 +125,13 @@ function ProfileTab() {
   const { user, setUser, loadSession } = useAuth();
   const [name, setName] = useState(user?.name ?? "");
   const [saving, setSaving] = useState(false);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [pwSaving, setPwSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletePass, setDeletePass] = useState("");
+  const [deleteEmail, setDeleteEmail] = useState("");
 
   const saveProfile = async () => {
     setSaving(true);
     try {
-      const updated = await http.put<{ id: string; name: string; email: string; plan: Plan; avatarUrl: string | null; emailVerified: boolean }>("/user/profile", { name });
+      const updated = await http.put<{ id: string; name: string; email: string; plan: Plan; avatarUrl: string | null }>("/user/profile", { name });
       setUser(updated);
       toast.success("Profile updated");
     } catch (e) {
@@ -145,26 +141,9 @@ function ProfileTab() {
     }
   };
 
-  const changePassword = async () => {
-    if (!next || next !== confirm) {
-      toast.error("Passwords don't match");
-      return;
-    }
-    setPwSaving(true);
-    try {
-      await http.put("/user/password", { currentPassword: current, newPassword: next });
-      setCurrent(""); setNext(""); setConfirm("");
-      toast.success("Password changed", "All other sessions remain active. You can sign out others below.");
-    } catch (e) {
-      toast.error("Change failed", (e as Error).message);
-    } finally {
-      setPwSaving(false);
-    }
-  };
-
   const deleteAccount = async () => {
     try {
-      await http.del("/user/account", { password: deletePass });
+      await http.del("/user/account", { confirmEmail: deleteEmail });
       toast.success("Account deleted", "We'll keep your data for 30 days in case you change your mind.");
       await loadSession();
     } catch (e) {
@@ -196,19 +175,20 @@ function ProfileTab() {
         </div>
         <div className="mt-5 space-y-4">
           <TextField label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
-          <TextField label="Email" value={user?.email ?? ""} disabled hint="Email changes require re-verification." />
+          <TextField
+            label="Google account"
+            value={user?.email ?? ""}
+            disabled
+            hint="This is the Google account Soundwave is linked to on this PC — it is how you sign in, so there is no password to set."
+          />
           <Button onClick={saveProfile} loading={saving}>Save changes</Button>
         </div>
       </Card>
 
-      <Card title="Change password" icon={<ShieldCheck className="h-4 w-4" />}>
+      <Card title="Signed in on" icon={<ShieldCheck className="h-4 w-4" />}>
         <div className="space-y-4">
-          <TextField label="Current password" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-          <TextField label="New password" type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
-          <TextField label="Confirm new password" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
-          <Button onClick={changePassword} loading={pwSaving} variant="outline">Update password</Button>
           <div className="border-t border-gray-800 pt-4">
-            <p className="text-sm text-gray-400">Sign out of all other devices:</p>
+            <p className="text-sm text-gray-400">Sign out everything except this window:</p>
             <Button onClick={signOutOthers} variant="outline" className="mt-2">Sign out all other sessions</Button>
           </div>
         </div>
@@ -221,8 +201,13 @@ function ProfileTab() {
 
       <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete account" description="This action is permanent after the 30-day recovery period.">
         <div className="space-y-4">
-          <TextField label="Confirm with your password" type="password" value={deletePass} onChange={(e) => setDeletePass(e.target.value)} />
-          <Button fullWidth variant="danger" onClick={deleteAccount}>Permanently delete my account</Button>
+          <p className="text-sm text-gray-400">
+            Type <span className="text-gray-200">{user?.email}</span> to confirm.
+          </p>
+          <TextField label="Your Google account" value={deleteEmail} onChange={(e) => setDeleteEmail(e.target.value)} inputMode="email" autoComplete="off" />
+          <Button fullWidth variant="danger" onClick={deleteAccount} disabled={deleteEmail.trim().toLowerCase() !== (user?.email ?? "").toLowerCase()}>
+            Permanently delete my account
+          </Button>
         </div>
       </Modal>
     </>

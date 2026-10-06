@@ -25,7 +25,19 @@ import { beforeEach } from "vitest";
 const dataDir = process.env.DATA_DIR ?? "/tmp/soundwave-test-data";
 
 beforeEach(() => {
-  for (const name of ["gemini-cache.json", "gemini-usage.json", "persona.json", "niches.json", "gemini-chats.json", "notebooks.json", path.join("chat-files", "index.json")]) {
+  for (const name of [
+    "gemini-cache.json",
+    "gemini-usage.json",
+    "persona.json",
+    "niches.json",
+    "gemini-chats.json",
+    "notebooks.json",
+    path.join("chat-files", "index.json"),
+    // A Google OAuth client saved by an earlier file would be picked over the
+    // built-in one (`youtubeService.client()` prefers it), which quietly changed
+    // which app the sign-in tests were signing in with.
+    path.join("youtube", "youtube_config.json"),
+  ]) {
     try {
       fs.rmSync(path.join(dataDir, name), { force: true });
     } catch {

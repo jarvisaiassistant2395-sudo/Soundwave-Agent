@@ -63,6 +63,12 @@ export interface FakeGoogle {
   }>;
   /** Refresh tokens the token endpoint refuses (a channel that needs reconnecting). */
   badRefreshTokens: string[];
+  /**
+   * The Google account a sign-in ends as (lib/googleSignIn.ts reads it from an
+   * ID token). `idToken: false` makes the token endpoint omit the ID token, so
+   * the userinfo fallback is exercised instead.
+   */
+  account: { email: string; name: string; picture?: string; emailVerified: boolean; idToken: boolean; expired?: boolean; wrongAudience?: boolean };
   /** Every video upload: which token started it, metadata, and the bytes sent. */
   uploads: Array<{ initAuth?: string; title?: string; description?: string; bytes: number }>;
   /** Files sent to Gemini's File API (the file-chat tab): what and how big. */
@@ -99,6 +105,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     youtube: { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true },
     accounts: [] as FakeGoogle["accounts"],
     badRefreshTokens: [] as string[],
+    account: { email: "person@gmail.com", name: "Soundwave Person", picture: "https://x.test/me.png", emailVerified: true, idToken: true },
     uploads: [] as FakeGoogle["uploads"],
     geminiUploads: [] as FakeGoogle["geminiUploads"],
     geminiDeleted: [] as string[],
@@ -115,6 +122,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       fake.youtube = { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true };
       fake.accounts.length = 0;
       fake.badRefreshTokens.length = 0;
+      fake.account = { email: "person@gmail.com", name: "Soundwave Person", picture: "https://x.test/me.png", emailVerified: true, idToken: true };
       fake.uploads.length = 0;
       fake.geminiUploads.length = 0;
       fake.geminiDeleted.length = 0;
@@ -188,13 +196,28 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       if (next) return next(seen);
       const form = new URLSearchParams(seen.raw);
       if (form.get("grant_type") === "authorization_code") {
+        // Google answers one code exchange with tokens for whatever scopes were
+        // granted, and (with `openid` among them) an ID token naming the
+        // account. Both flows here read their own fields from one response.
+        const audience = fake.account.wrongAudience ? "someone-else.apps.googleusercontent.com" : (form.get("client_id") ?? "test-client");
+        const claims = {
+          iss: "https://accounts.google.com",
+          aud: audience,
+          exp: Math.floor(Date.now() / 1000) + (fake.account.expired ? -60 : 600),
+          email: fake.account.email,
+          email_verified: fake.account.emailVerified,
+          name: fake.account.name,
+          picture: fake.account.picture,
+        };
+        const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
         return {
           body: {
             access_token: "ya29.fake-access",
             refresh_token: "1//fake-refresh-token",
             expires_in: 3599,
-            scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+            scope: "openid email profile https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
             token_type: "Bearer",
+            ...(fake.account.idToken ? { id_token: `${b64({ alg: "RS256", typ: "JWT" })}.${b64(claims)}.signature` } : {}),
           },
         };
       }
@@ -205,6 +228,18 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       const account = fake.accounts.findIndex((a) => a.refreshToken === asked);
       if (account >= 0) return { body: { access_token: `ya29.account-${account}`, expires_in: 3599, token_type: "Bearer" } };
       return { body: { access_token: "ya29.fake-access-2", expires_in: 3599, token_type: "Bearer" } };
+    }
+    if (p === "/v1/userinfo") {
+      if (seen.headers.authorization !== "Bearer ya29.fake-access") return { status: 401, body: { error: "invalid_token" } };
+      return {
+        body: {
+          sub: "google-account-1",
+          email: fake.account.email,
+          email_verified: fake.account.emailVerified,
+          name: fake.account.name,
+          picture: fake.account.picture,
+        },
+      };
     }
     if (p === "/youtube/v3/channels") {
       const account = accountFor(seen.headers.authorization);
@@ -345,5 +380,6 @@ export function useFakeGoogle(config: Record<string, unknown>, fake: FakeGoogle)
     googleOAuthAuthUrl: `${fake.url}/auth`,
     googleOAuthTokenUrl: `${fake.url}/token`,
     youtubeApiBase: fake.url,
+    googleUserinfoUrl: `${fake.url}/v1/userinfo`,
   });
 }

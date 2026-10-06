@@ -70,7 +70,8 @@ async function tryRefresh(req: Request, res: Response): Promise<StoredUser | nul
   const store = await getStore();
   const session = await store.findSessionById(claims.sid);
   if (!session) return null;
-  if (new Date(session.expiresAt).getTime() < Date.now()) {
+  // null = permanent (the signed-in Google account); otherwise it must be live.
+  if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) {
     await store.deleteSession(session.id);
     return null;
   }
@@ -82,9 +83,10 @@ async function tryRefresh(req: Request, res: Response): Promise<StoredUser | nul
   const user = await store.findUserById(claims.sub);
   if (!user) return null;
 
-  // Rotate: delete old session, issue a new one + fresh tokens.
+  // Rotate: delete old session, issue a new one + fresh tokens (a permanent
+  // session stays permanent).
   await store.deleteSession(session.id);
-  const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", session.deviceInfo);
+  const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", session.deviceInfo, { permanent: session.expiresAt === null });
   setAuthCookies(res, signAccessToken(user.id), bundle.refreshToken, randomToken(16));
   return user;
 }

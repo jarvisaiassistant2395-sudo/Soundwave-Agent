@@ -1,19 +1,12 @@
-import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import type { Response } from "express";
 import { config } from "../config.js";
 import type { DataStore, StoredUser } from "./store.js";
 
-// ── Passwords (bcrypt, cost 12) ─────────────────────────────────────────────
-const BCRYPT_COST = 12;
-
-export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, BCRYPT_COST);
-}
-export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(plain, hash);
-}
+// Sign-in is Google's job (lib/googleSignIn.ts). What lives here is the session
+// the app is given afterwards: tokens, cookies, and what "the user" looks like
+// to the app.
 
 // ── Cryptographic tokens ────────────────────────────────────────────────────
 export function randomToken(bytes = 32): string {
@@ -101,11 +94,18 @@ export interface SessionBundle {
   refreshToken: string;
 }
 
+/**
+ * A session for this PC (and the phone it is paired with). `permanent` (the
+ * default for a signed-in Google account) never expires: Soundwave is the
+ * person's own app on their own machine, and signing out is their decision, not
+ * the clock's. Sessions created any other way still carry an expiry.
+ */
 export async function createUserSession(
   store: DataStore,
   userId: string,
   ip: string,
   deviceInfo: string,
+  opts: { permanent?: boolean } = {},
 ): Promise<SessionBundle> {
   const sessionId = randomToken(16);
   const refreshToken = signRefreshToken(userId, sessionId);
@@ -117,7 +117,7 @@ export async function createUserSession(
     deviceInfo,
     ipAddress: ip,
     lastActiveAt: new Date().toISOString(),
-    expiresAt: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: opts.permanent ? null : new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString(),
   });
   return { sessionId, refreshToken };
 }
@@ -134,6 +134,5 @@ export function publicUser(u: StoredUser) {
     name: u.name,
     plan: u.plan,
     avatarUrl: u.avatarUrl,
-    emailVerified: u.emailVerified,
   };
 }

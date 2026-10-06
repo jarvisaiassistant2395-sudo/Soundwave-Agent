@@ -39,4 +39,8 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
   hideOverlay: () => ipcRenderer.send("soundwave:hide-overlay"),
   setVoiceState: (state, source) => ipcRenderer.send("soundwave:voice-state", { state, source }),
   openMicrophoneSettings: () => ipcRenderer.send("soundwave:open-mic-settings"),
+  // Sign-in (frontend/src/pages/Welcome.tsx): Google refuses to be shown inside
+  // an embedded browser, so the sign-in page is opened in the person's own
+  // browser — where they may already be signed in — and the app waits.
+  openExternal: (url) => ipcRenderer.invoke("soundwave:open-external", url),
 });

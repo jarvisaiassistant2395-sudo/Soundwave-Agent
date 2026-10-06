@@ -91,6 +91,11 @@ export interface SoundwaveDesktop {
    */
   setVoiceState(state: "idle" | "listening" | "working", source?: "voice" | "mic"): void;
   openMicrophoneSettings(): void;
+  /**
+   * Open a web address in the person's own browser (the default one). Used by
+   * sign-in: Google will not sign anyone in inside an embedded window.
+   */
+  openExternal(url: string): Promise<boolean>;
   /** The wake page: pause/resume the microphone (the shell does it while it talks). */
   onWakeControl(callback: (command: "pause" | "resume") => void): () => void;
   /** The wake page: what it is doing, for Settings and the tray. */
@@ -111,6 +116,25 @@ export function getDesktop(): SoundwaveDesktop | null {
   if (typeof window === "undefined") return null;
   const bridge = window.soundwaveDesktop;
   return bridge && bridge.isDesktop ? bridge : null;
+}
+
+/**
+ * Open a web address in the person's own browser. Sign-in has to happen there
+ * (Google refuses embedded windows), so the desktop shell hands the URL to
+ * Windows and a plain browser gets a normal new tab.
+ */
+export async function openInBrowser(url: string): Promise<boolean> {
+  const bridge = getDesktop();
+  if (bridge) {
+    try {
+      return await bridge.openExternal(url);
+    } catch {
+      /* fall through to the browser's own behaviour */
+    }
+  }
+  if (typeof window === "undefined") return false;
+  window.open(url, "_blank", "noopener,noreferrer");
+  return true;
 }
 
 export const DEFAULT_HOTKEY = "Control+Shift+Space";

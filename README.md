@@ -629,16 +629,14 @@ cd frontend && npm run build     # production build
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| POST | `/api/v1/auth/signup` | — | creates user, sets session cookies |
-| POST | `/api/v1/auth/signin` | — | JWT session + refresh rotation |
+| POST | `/api/v1/auth/google/start` | — | begins "Continue with Google" (URL + one-time `loginId`/`secret`) |
+| GET | `/api/v1/auth/google/callback` | — | Google redirects the browser here; finds/creates the account |
+| GET | `/api/v1/auth/google/wait` | — | the app polls whether Google has come back |
+| POST | `/api/v1/auth/google/claim` | — | the app takes the session (sets its cookies) |
+| POST | `/api/v1/auth/dev-session` | local app only | opens the app on a dev build with no Google app |
 | POST | `/api/v1/auth/signout` | ✓ | revokes session |
 | POST | `/api/v1/auth/refresh` | refresh cookie | rotates refresh token |
-| GET | `/api/v1/auth/session` | ✓ | current user + quota |
-| POST | `/api/v1/auth/forgot-password` | — | email (log transport in dev) |
-| POST | `/api/v1/auth/reset-password` | — | tokenized reset |
-| POST | `/api/v1/auth/verify-email` | — | tokenized verify |
-| GET | `/api/v1/auth/oauth/google` | — | starts OAuth (302 to provider) |
-| GET | `/api/v1/auth/oauth/:provider/callback` | — | OAuth callback → sets session |
+| GET | `/api/v1/auth/session` | ✓ | current user + plan |
 | GET | `/api/v1/auth/sessions` | ✓ | list / revoke sessions |
 | GET | `/api/v1/voices` | — | voice metadata + sample URLs |
 | GET | `/voice-samples/:voiceId.mp3` | — | static sample audio |
@@ -678,7 +676,7 @@ cd frontend && npm run build     # production build
 | POST | `/api/v1/email/drafts/:id/send` | local app only | sends a draft with `confirmSend` + the reviewed `fingerprint` (a person's own action; not capped) |
 | GET | `/api/v1/email/scheduled` | local app only | email waiting to go out (`scheduled`, with its moment, full text and how far off) and what recently happened to the finished ones (`history`) |
 | DELETE | `/api/v1/email/scheduled/:id` | local app only | cancels a queued email — it will not be sent (404 when nothing matches) |
-| GET | `/api/v1/user/me` | ✓ | profile + password change |
+| GET | `/api/v1/user/me` | ✓ | profile |
 | GET | `/api/v1/user/usage` | ✓ | quota snapshot |
 | DELETE | `/api/v1/user/account` | ✓ | account deletion (30-day window) |
 | GET | `/api/v1/user/export-data` | ✓ | GDPR data export |
@@ -758,13 +756,27 @@ docker compose up --build
   (billing 501 / logged email / OAuth redirect to a "not configured" notice).
 - Run `prisma migrate deploy` in CI before rolling out schema changes.
 
-### Setting up OAuth sign-in
+### Setting up Google sign-in
 
-1. **Google** — [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → *Create credentials → OAuth client ID* → Web application. Add authorized redirect URI `http://localhost:5173/api/v1/auth/oauth/google/callback`, then set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-2. Restart the server. In production, use your `APP_URL` origin in the redirect URI.
+Soundwave has one account: the Google account it is linked to when the app is
+first opened. There are no passwords — no sign-up form, no reset email, nothing
+to verify.
 
-Users are matched by email — an existing password account is linked to the
-OAuth identity; new OAuth users are created email-verified with no password.
+1. **Google** — [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → *Create credentials → OAuth client ID* → **Desktop app**
+   (the sign-in runs the installed-app loopback flow, so no redirect URI has to
+   be registered — any `http://127.0.0.1:<port>` is allowed). Ship its Client ID
+   and secret as `SOUNDWAVE_YOUTUBE_CLIENT_ID` / `SOUNDWAVE_YOUTUBE_CLIENT_SECRET`
+   (the same client the YouTube features use); a person can also paste their own
+   client in Settings → YouTube & Shorts.
+2. Restart the server. The first launch shows one button — "Continue with Google".
+3. On a development build with no client configured, `POST /api/v1/auth/dev-session`
+   opens the app locally (it answers 404 on a packaged build, and it never
+   answers when a Google client is present).
+
+The sign-in asks only for identity (`openid email profile`); YouTube, Drive or
+Gmail permissions are separate grants, asked for when that feature is first used.
+Sessions on the person's own PC are permanent — signing out is a deliberate act,
+not an expiry.
 
 ### Feature flags & graceful degradation
 

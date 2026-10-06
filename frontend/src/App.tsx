@@ -1,5 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Loader2 } from "lucide-react";
+import { useAuth } from "./store/auth";
+import { Welcome } from "./pages/Welcome";
 import { ToastHost } from "./components/ui/ToastHost";
 import { AppShell } from "./components/layout/AppShell";
 import { Dashboard } from "./pages/Dashboard";
@@ -27,6 +30,38 @@ function ScrollToTop() {
 /** Where the app opens (the desktop app loads "/"): the agent's Command Center. */
 const HOME = "/agent";
 
+function Splash() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#07070A]">
+      <Loader2 className="h-6 w-6 animate-spin text-gray-600" />
+    </div>
+  );
+}
+
+/**
+ * Everything behind the account. Soundwave is linked to a Google account the
+ * first time it is opened (pages/Welcome.tsx) and stays linked from then on, so
+ * this normally resolves instantly; without a session there is nothing to show
+ * but the welcome screen.
+ */
+function Linked({ children }: { children: ReactNode }) {
+  const user = useAuth((s) => s.user);
+  const loading = useAuth((s) => s.loading);
+  useEffect(() => {
+    if (!user) void useAuth.getState().loadSession();
+  }, [user]);
+  if (loading && !user) return <Splash />;
+  if (!user) return <Navigate to="/welcome" replace />;
+  return <>{children}</>;
+}
+
+/** A page of the desktop app: gated, and inside the app's own frame. */
+const shell = (page: ReactNode) => (
+  <Linked>
+    <AppShell>{page}</AppShell>
+  </Linked>
+);
+
 // Soundwave AI — the agent is the one that makes the videos.
 export default function App() {
   return (
@@ -36,8 +71,12 @@ export default function App() {
       {/* Notifications for finished shorts + the desktop shell's voice shortcut. */}
       <BackgroundServices />
       <Routes>
-        {/* Root → the Command Center */}
+        {/* Root → the Command Center (and, if this PC isn't linked yet, to the
+            welcome screen it is gated behind). */}
         <Route path="/" element={<Navigate to={HOME} replace />} />
+        {/* The one screen before the account: "Continue with Google". */}
+        <Route path="/welcome" element={<Welcome />} />
+        {/* The password days are gone — old links keep working. */}
         <Route path="/signin" element={<Navigate to={HOME} replace />} />
         <Route path="/signup" element={<Navigate to={HOME} replace />} />
         <Route path="/pricing" element={<Navigate to={HOME} replace />} />
@@ -59,76 +98,76 @@ export default function App() {
 
         <Route
           path="/agent"
-          element={
+          element={shell(
             <AppShell>
               <AgentHub />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/chat"
-          element={
+          element={shell(
             <AppShell>
               <GeminiChat />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/creator"
-          element={
+          element={shell(
             <AppShell>
               <CreatorStudio />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/dashboard"
-          element={
+          element={shell(
             <AppShell>
               <Dashboard />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/projects"
-          element={
+          element={shell(
             <AppShell>
               <Projects />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/settings/*"
-          element={
+          element={shell(
             <AppShell>
               <Settings />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/help"
-          element={
+          element={shell(
             <AppShell>
               <Help />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         {/* The page behind the bottom-left profile banner. */}
         <Route
           path="/profile"
-          element={
+          element={shell(
             <AppShell>
               <Profile />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route
           path="/voices"
-          element={
+          element={shell(
             <AppShell>
               <VoiceLibrary standalone={false} />
-            </AppShell>
-          }
+            </AppShell>,
+          )}
         />
         <Route path="*" element={<NotFound />} />
       </Routes>

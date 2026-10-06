@@ -46,12 +46,6 @@ enum JobStatus {
 model User {
   id                          String    @id @default(uuid())
   email                       String    @unique
-  emailVerified               Boolean   @default(false)
-  emailVerificationToken      String?
-  emailVerificationExpires    DateTime?
-  passwordHash                String? // null for OAuth-only users
-  passwordResetToken          String?
-  passwordResetExpires        DateTime?
   name                        String
   avatarUrl                   String?
   plan                        Plan      @default(FREE)
@@ -81,7 +75,8 @@ model Session {
   deviceInfo   String
   ipAddress    String
   lastActiveAt DateTime @default(now())
-  expiresAt    DateTime
+  /// null = permanent: a signed-in Google account on the person's own PC.
+  expiresAt    DateTime?
   createdAt    DateTime @default(now())
 
   @@index([userId])

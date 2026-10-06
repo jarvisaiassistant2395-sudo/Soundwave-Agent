@@ -59,20 +59,14 @@ export function Navbar() {
               Command Center
             </button>
           ) : (
-            <>
-              <Link
-                to="/signin"
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:text-white hover:bg-white/[0.04]"
-              >
-                Sign In
-              </Link>
-              <Link
-                to="/signup"
-                className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-500"
-              >
-                Get Started
-              </Link>
-            </>
+            // One way in: the app, which asks for the Google account on its
+            // first launch. There is no sign-up form to send anyone to.
+            <Link
+              to="/agent"
+              className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-500"
+            >
+              Open Soundwave
+            </Link>
           )}
         </div>
 
@@ -119,11 +113,11 @@ export function Navbar() {
                 <button
                   onClick={() => {
                     setOpen(false);
-                    navigate(user ? "/agent" : "/signup");
+                    navigate("/agent");
                   }}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-center text-xs font-medium text-white"
                 >
-                  {user ? "Open Command Center" : "Get Started"}
+                  Open Command Center
                 </button>
               </div>
             </nav>

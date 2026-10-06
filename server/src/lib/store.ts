@@ -12,13 +12,8 @@ import type { Plan } from "./plans.js";
 
 export interface StoredUser {
   id: string;
+  /** The Google account's address — the only way in (lib/googleSignIn.ts). */
   email: string;
-  emailVerified: boolean;
-  emailVerificationToken: string | null;
-  emailVerificationExpires: string | null;
-  passwordHash: string | null;
-  passwordResetToken: string | null;
-  passwordResetExpires: string | null;
   name: string;
   avatarUrl: string | null;
   plan: Plan;
@@ -39,7 +34,8 @@ export interface StoredSession {
   deviceInfo: string;
   ipAddress: string;
   lastActiveAt: string;
-  expiresAt: string;
+  /** null = permanent (a signed-in Google account on this PC). */
+  expiresAt: string | null;
   createdAt: string;
 }
 
@@ -119,9 +115,7 @@ export interface DataStore {
   // users
   findUserByEmail(email: string): Promise<StoredUser | null>;
   findUserById(id: string): Promise<StoredUser | null>;
-  findUserByResetTokenHash(hash: string): Promise<StoredUser | null>;
-  findUserByVerificationTokenHash(hash: string): Promise<StoredUser | null>;
-  createUser(u: Partial<StoredUser> & { email: string; name: string; passwordHash?: string | null }): Promise<StoredUser>;
+  createUser(u: Partial<StoredUser> & { email: string; name: string }): Promise<StoredUser>;
   updateUser(id: string, patch: Partial<StoredUser>): Promise<StoredUser | null>;
   deleteUserSoft(id: string): Promise<void>;
   countUsers(): Promise<number>;
@@ -234,12 +228,6 @@ export class JsonStore implements DataStore {
     const user: StoredUser = {
       id: givenId ?? uuid(),
       email: email.toLowerCase().trim(),
-      emailVerified: false,
-      emailVerificationToken: null,
-      emailVerificationExpires: null,
-      passwordHash: null,
-      passwordResetToken: null,
-      passwordResetExpires: null,
       name,
       avatarUrl: null,
       plan: config.defaultSignupPlan,
@@ -256,12 +244,6 @@ export class JsonStore implements DataStore {
     this.db.users.push(user);
     this.persist();
     return user;
-  }
-  async findUserByResetTokenHash(hash: string): Promise<StoredUser | null> {
-    return this.db.users.find((u) => u.passwordResetToken === hash && !u.deletedAt) ?? null;
-  }
-  async findUserByVerificationTokenHash(hash: string): Promise<StoredUser | null> {
-    return this.db.users.find((u) => u.emailVerificationToken === hash && !u.deletedAt) ?? null;
   }
   async updateUser(id: string, patch: Partial<StoredUser>): Promise<StoredUser | null> {
     const u = this.db.users.find((x) => x.id === id && !x.deletedAt);

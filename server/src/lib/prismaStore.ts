@@ -37,24 +37,11 @@ export class PrismaStore implements DataStore {
     if (!u || u.deletedAt) return null;
     return mapUser(u);
   }
-  async findUserByResetTokenHash(hash: string): Promise<StoredUser | null> {
-    const u = await this.prisma.user.findFirst({ where: { passwordResetToken: hash } });
-    if (!u || u.deletedAt) return null;
-    return mapUser(u);
-  }
-  async findUserByVerificationTokenHash(hash: string): Promise<StoredUser | null> {
-    const u = await this.prisma.user.findFirst({ where: { emailVerificationToken: hash } });
-    if (!u || u.deletedAt) return null;
-    return mapUser(u);
-  }
   async createUser(input: Partial<StoredUser> & { email: string; name: string }): Promise<StoredUser> {
     const u = await this.prisma.user.create({
       data: {
         email: input.email.toLowerCase().trim(),
         name: input.name,
-        passwordHash: input.passwordHash ?? null,
-        emailVerificationToken: input.emailVerificationToken ?? null,
-        emailVerificationExpires: s2d(input.emailVerificationExpires),
         characterResetDate: new Date(),
         plan: input.plan ?? config.defaultSignupPlan,
       },
@@ -67,12 +54,6 @@ export class PrismaStore implements DataStore {
       data: {
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.email !== undefined ? { email: patch.email } : {}),
-        ...(patch.emailVerified !== undefined ? { emailVerified: patch.emailVerified } : {}),
-        ...(patch.emailVerificationToken !== undefined ? { emailVerificationToken: patch.emailVerificationToken } : {}),
-        ...(patch.emailVerificationExpires !== undefined ? { emailVerificationExpires: s2d(patch.emailVerificationExpires) } : {}),
-        ...(patch.passwordHash !== undefined ? { passwordHash: patch.passwordHash } : {}),
-        ...(patch.passwordResetToken !== undefined ? { passwordResetToken: patch.passwordResetToken } : {}),
-        ...(patch.passwordResetExpires !== undefined ? { passwordResetExpires: s2d(patch.passwordResetExpires) } : {}),
         ...(patch.avatarUrl !== undefined ? { avatarUrl: patch.avatarUrl } : {}),
         ...(patch.plan !== undefined ? { plan: patch.plan } : {}),
         ...(patch.stripeCustomerId !== undefined ? { stripeCustomerId: patch.stripeCustomerId } : {}),
@@ -102,7 +83,8 @@ export class PrismaStore implements DataStore {
         deviceInfo: s.deviceInfo,
         ipAddress: s.ipAddress,
         lastActiveAt: new Date(s.lastActiveAt),
-        expiresAt: new Date(s.expiresAt),
+        // A permanent session (Google sign-in on this PC) has no expiry.
+        expiresAt: s.expiresAt ? new Date(s.expiresAt) : null,
       },
     });
     return mapSession(row);
@@ -342,12 +324,6 @@ function mapUser(u: any): StoredUser {
   return {
     id: u.id,
     email: u.email,
-    emailVerified: u.emailVerified,
-    emailVerificationToken: u.emailVerificationToken,
-    emailVerificationExpires: d2s(u.emailVerificationExpires),
-    passwordHash: u.passwordHash,
-    passwordResetToken: u.passwordResetToken,
-    passwordResetExpires: d2s(u.passwordResetExpires),
     name: u.name,
     avatarUrl: u.avatarUrl,
     plan: u.plan,
@@ -369,7 +345,8 @@ function mapSession(s: any): StoredSession {
     deviceInfo: s.deviceInfo,
     ipAddress: s.ipAddress,
     lastActiveAt: d2s(s.lastActiveAt)!,
-    expiresAt: d2s(s.expiresAt)!,
+    // null = permanent (the signed-in Google account on this PC).
+    expiresAt: d2s(s.expiresAt),
     createdAt: d2s(s.createdAt)!,
   };
 }
