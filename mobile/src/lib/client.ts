@@ -9,6 +9,7 @@ import type { KitResult, MemoryOp, MemorySnapshot } from "./offline";
 import {
   aad,
   baseUrlFor,
+  asBufferSource,
   derivePairingKey,
   deriveDeviceKeys,
   frame,
@@ -242,7 +243,7 @@ export async function pairWithPc(link: PairingLink, device: DeviceInfo, opts: { 
     res = await fetchFn(`${found.baseUrl}/companion/v1/pair`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
-      body: await seal(key, request, aad("pair", "c2s", link.pcId)),
+      body: asBufferSource(await seal(key, request, aad("pair", "c2s", link.pcId))),
       signal: t.signal,
     });
   } catch {
@@ -433,7 +434,7 @@ export class CompanionClient {
       res = await this.fetchFn(`${baseUrl}/companion/v1/rpc`, {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream", "X-Soundwave-Device": this.record.deviceId },
-        body,
+        body: asBufferSource(body),
         signal: t.signal,
       });
     } catch (err) {

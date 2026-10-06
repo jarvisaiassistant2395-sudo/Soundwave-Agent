@@ -24,6 +24,22 @@ function subtle(): SubtleCrypto {
   return s;
 }
 
+/**
+ * Says that a Uint8Array is a BufferSource, for WebCrypto and fetch.
+ *
+ * Since TypeScript 5.7 `Uint8Array` is generic over its buffer, so a plain
+ * `Uint8Array` — a parameter's type, or a `subarray()` of one — reads as
+ * `Uint8Array<ArrayBufferLike>` and lib.dom's `BufferSource` no longer accepts
+ * it (the buffer might be shared). This app pins 5.6.3, where the
+ * `Uint8Array<ArrayBuffer>` spelling doesn't exist yet, so the views are
+ * re-typed at the boundary instead of in their declarations: every one of them
+ * is freshly allocated here, or a view of something freshly allocated, and none
+ * is a SharedArrayBuffer. Type-only — nothing changes at runtime.
+ */
+export function asBufferSource(bytes: Uint8Array): BufferSource {
+  return bytes as unknown as BufferSource;
+}
+
 // ── Pairing codes and links ─────────────────────────────────────────────────
 
 /** "abcd-efgh-jkmn" → "ABCDEFGHJKMN" (Crockford base32: I/L → 1, O → 0), or null. */
@@ -120,7 +136,7 @@ export async function derivePairingKey(code: string, pcId: string): Promise<Cryp
 }
 
 export async function deriveDeviceKeys(deviceKey: Uint8Array, deviceId: string): Promise<{ c2s: CryptoKey; s2c: CryptoKey }> {
-  const base = await subtle().importKey("raw", deviceKey, "HKDF", false, ["deriveKey"]);
+  const base = await subtle().importKey("raw", asBufferSource(deviceKey), "HKDF", false, ["deriveKey"]);
   const derive = (dir: string) =>
     subtle().deriveKey(
       { name: "HKDF", hash: "SHA-256", salt: te.encode("soundwave-companion-v1"), info: te.encode(`${dir}|${deviceId}`) },
@@ -141,7 +157,13 @@ export function aad(...parts: string[]): Uint8Array {
 
 export async function seal(key: CryptoKey, plaintext: Uint8Array, additionalData: Uint8Array): Promise<Uint8Array> {
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(IV_BYTES));
-  const body = new Uint8Array(await subtle().encrypt({ name: "AES-GCM", iv, additionalData, tagLength: 128 }, key, plaintext));
+  const body = new Uint8Array(
+    await subtle().encrypt(
+      { name: "AES-GCM", iv: asBufferSource(iv), additionalData: asBufferSource(additionalData), tagLength: 128 },
+      key,
+      asBufferSource(plaintext),
+    ),
+  );
   const out = new Uint8Array(1 + IV_BYTES + body.length);
   out[0] = ENVELOPE_VERSION;
   out.set(iv, 1);
@@ -156,9 +178,14 @@ export async function open(key: CryptoKey, envelope: Uint8Array, additionalData:
   try {
     return new Uint8Array(
       await subtle().decrypt(
-        { name: "AES-GCM", iv: envelope.subarray(1, 1 + IV_BYTES), additionalData, tagLength: 128 },
+        {
+          name: "AES-GCM",
+          iv: asBufferSource(envelope.subarray(1, 1 + IV_BYTES)),
+          additionalData: asBufferSource(additionalData),
+          tagLength: 128,
+        },
         key,
-        envelope.subarray(1 + IV_BYTES),
+        asBufferSource(envelope.subarray(1 + IV_BYTES)),
       ),
     );
   } catch {

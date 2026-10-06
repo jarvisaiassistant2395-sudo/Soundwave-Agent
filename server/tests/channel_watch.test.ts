@@ -162,7 +162,7 @@ describe("the agent's tools", () => {
     await tool("watch_youtube_channel")!.run({ channel: "@MrBeast" }, ctx() as never);
     const listed = await tool("list_watched_channels")!.run({}, ctx() as never);
     expect(listed.count).toBe(1);
-    expect(String(listed.watching[0])).toContain("Watching MrBeast, 3 shorts per new video");
+    expect(String((listed.watching as string[])[0])).toContain("Watching MrBeast, 3 shorts per new video");
 
     const stopped = await tool("stop_watching_channel")!.run({ channel: "all" }, ctx() as never);
     expect(stopped).toMatchObject({ stopped: true, channels: ["MrBeast"] });

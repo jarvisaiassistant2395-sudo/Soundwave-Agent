@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { 
   Sparkles, 
@@ -16,10 +16,7 @@ import {
   Activity, 
   Trash2, 
   Workflow, 
-  Compass, 
   TrendingUp, 
-  Flame, 
-  Eye, 
   Youtube, 
   ExternalLink, 
   Loader2,
@@ -28,13 +25,8 @@ import {
   Brain,
   Link2,
   Sunrise,
-  Search,
-  HeartPulse,
   Trash,
-  Info,
-  Scissors,
   Plus,
-  Check,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { EmailDraftCard } from "../components/agent/EmailDraftCard";
@@ -70,6 +62,7 @@ import {
 } from "../lib/agentChat";
 import { speak, speakLong, stopSpeaking, voiceProblemReason } from "../lib/speech";
 import { HOLD_MS, useVoiceCapture } from "../hooks/useVoiceCapture";
+import { useGmail } from "../hooks/useGmail";
 import { VOICE_PREFS_EVENT, VoiceInputError, fetchVoiceInputStatus, isVoicePrefKey, loadVoicePrefs, saveVoicePrefs, type VoiceInputStatus } from "../lib/voiceInput";
 import { DEFAULT_HOTKEY, getDesktop, hotkeyLabel } from "../lib/desktop";
 import { JOB_STARTED_EVENT, VOICE_COMMAND_EVENT } from "../components/agent/BackgroundServices";
@@ -77,45 +70,14 @@ import { memoryApi, noteAge, type MemoryState } from "../lib/memory";
 import { morningApi } from "../lib/morning";
 import { notifyJobOutcome } from "../lib/notify";
 import { clearSharedConversation, type ChatSyncedDetail } from "../lib/conversationSync";
-import { useBrainStatus, type BrainStatus } from "../lib/brain";
+import { useBrainStatus } from "../lib/brain";
+import { BrainPill } from "../components/agent/BrainPill";
+import { ChannelRow, type YtChannelView } from "../components/agent/ChannelRow";
+import { ClipsCard } from "../components/agent/ClipsCard";
+import { WatchCard } from "../components/agent/WatchCard";
+import { NicheButton, NICHES } from "../components/agent/niches";
 
 export type { ShortBackground };
-
-interface NicheInfo {
-  id: string;
-  name: string;
-  desc: string;
-  iconName: "sparkles" | "compass" | "clock" | "trending" | "cpu" | "flame" | "eye" | "search" | "heart";
-}
-
-// Researched niches (server/src/lib/brain/core/viral.ts is the same list for
-// the script writer and the API): the ones that hold a scrolling audience.
-const NICHES: NicheInfo[] = [
-  { id: "psychology", name: "Psychology & Mind", desc: "Why people act the way they do", iconName: "sparkles" },
-  { id: "facts", name: "Mind-Bending Facts", desc: "Science and scale that sounds fake", iconName: "compass" },
-  { id: "history", name: "Untold History", desc: "Forgotten events, impossible timelines", iconName: "clock" },
-  { id: "finance", name: "Money & Wealth", desc: "Rules of money, traps, quiet math", iconName: "trending" },
-  { id: "ai", name: "AI & Future Tech", desc: "What the tools actually change", iconName: "cpu" },
-  { id: "motivation", name: "Discipline & Mindset", desc: "Habits that survive a bad day", iconName: "flame" },
-  { id: "horror", name: "Unexplained Horror", desc: "True eerie events told straight", iconName: "eye" },
-  { id: "crime", name: "True Crime & Cold Cases", desc: "Cases solved by one detail", iconName: "search" },
-  { id: "health", name: "Body & Mind Hacks", desc: "Evidence-based fixes for energy", iconName: "heart" },
-];
-
-function getNicheIcon(iconName: string) {
-  switch (iconName) {
-    case "sparkles": return <Sparkles className="h-4 w-4 text-cyan-400" />;
-    case "compass": return <Compass className="h-4 w-4 text-emerald-400" />;
-    case "clock": return <Clock className="h-4 w-4 text-amber-400" />;
-    case "trending": return <TrendingUp className="h-4 w-4 text-purple-400" />;
-    case "cpu": return <Cpu className="h-4 w-4 text-cyan-300" />;
-    case "flame": return <Flame className="h-4 w-4 text-rose-400" />;
-    case "search": return <Search className="h-4 w-4 text-orange-400" />;
-    case "eye": return <Eye className="h-4 w-4 text-indigo-400" />;
-    case "heart": return <HeartPulse className="h-4 w-4 text-emerald-400" />;
-    default: return <Sparkles className="h-4 w-4 text-cyan-400" />;
-  }
-}
 
 interface OrbitalUsedEntry {
   id: string;
@@ -127,49 +89,8 @@ interface OrbitalUsedEntry {
   section?: { start: number; end: number } | null;
 }
 
-/** GET /api/v1/agent/orbital — which Orbital NCG videos were used / are left. */
+
 /** GET /api/v1/agent/trends — what the agent last found going viral. */
-/** GET /api/v1/email/policy — the switch and cap behind "the agent can send". */
-export interface GmailSendPolicyView {
-  enabled: boolean;
-  dailyLimit: number;
-  sentToday: number;
-  remaining: number;
-  connected: boolean;
-  scopes: { gmail: boolean; contacts: boolean; calendar: boolean; drive: boolean };
-  sent: Array<{ at: number; to: string; subject: string; source: "agent" | "app" }>;
-}
-
-/** GET /api/v1/email/scheduled — email written now that goes out at a set time. */
-export interface GmailScheduledView {
-  id: string;
-  at: number;
-  /** The words the person used: "at 17:00", "tomorrow at 09:00". */
-  when: string;
-  /** "in 2 hours", or what happened for a finished one. */
-  due: string;
-  atLocal: string;
-  to: string;
-  cc?: string;
-  bcc?: string;
-  subject: string;
-  body: string;
-  status: "scheduled" | "sending" | "sent" | "failed" | "missed" | "cancelled";
-  attempts: number;
-  lastError?: string;
-  sentAt?: number;
-  lateBy?: number;
-}
-
-/** GET /api/v1/email/status — the Google connection and what it may do. */
-export interface GmailStatus {
-  connected: boolean;
-  email: string | null;
-  needsReconnect: boolean;
-  scopes: { gmail: boolean; contacts: boolean; calendar: boolean; drive: boolean };
-  sending: { enabled: boolean; dailyLimit: number; sentToday: number; remaining: number };
-}
-
 export interface TrendStatus {
   available: boolean;
   researchedAt: string | null;
@@ -191,6 +112,7 @@ export interface TrendStatus {
 const compactViews = (n: number): string =>
   n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
 
+/** GET /api/v1/agent/orbital — which Orbital NCG videos were used / are left. */
 export interface OrbitalStatus {
   channelUrl: string;
   channelName: string;
@@ -204,29 +126,6 @@ export interface OrbitalStatus {
   lastUsed: OrbitalUsedEntry | null;
   used: OrbitalUsedEntry[];
   skipped: Array<{ id: string; url: string; title: string; reason: string; skippedAt: string }>;
-}
-
-/** One connected YouTube channel and what the agent is told to publish there. */
-export interface YtChannelView {
-  id: string;
-  name: string;
-  channelId: string | null;
-  default: boolean;
-  privacy: "public" | "unlisted" | "private";
-  autoPublish: boolean;
-  addedAt: number;
-  lastUploadAt: number | null;
-  lastVideoUrl: string | null;
-  plan: {
-    what: string;
-    auto: boolean;
-    everyDays: number;
-    time: string;
-    lastRunAt: number | null;
-    runs: number;
-    lastError: string | null;
-    due: boolean;
-  };
 }
 
 /** GET /api/v1/youtube/channels — who posts where, and why nothing runs right now. */
@@ -429,19 +328,24 @@ export function AgentHub() {
   const [isRunningMorning, setIsRunningMorning] = useState(false);
   const [briefingNote, setBriefingNote] = useState<string | null>(null);
   const [isConnectingYt, setIsConnectingYt] = useState(false);
-  const [gmailPolicy, setGmailPolicy] = useState<GmailSendPolicyView | null>(null);
-  const [gmailStatus, setGmailStatus] = useState<GmailStatus>({
-    connected: false,
-    email: null,
-    needsReconnect: false,
-    scopes: { gmail: false, contacts: false, calendar: false, drive: false },
-    sending: { enabled: true, dailyLimit: 25, sentToday: 0, remaining: 25 },
-  });
-  const [isConnectingGmail, setIsConnectingGmail] = useState(false);
-  const [isSavingGmailPolicy, setIsSavingGmailPolicy] = useState(false);
-  /** Email the agent queued for a later moment, and the recent ones it sent. */
-  const [gmailScheduled, setGmailScheduled] = useState<{ scheduled: GmailScheduledView[]; history: GmailScheduledView[] } | null>(null);
-  const [cancellingScheduledId, setCancellingScheduledId] = useState("");
+  // Google's mailbox — hooks/useGmail.ts. These are the same names the
+  // Settings → Email JSX below has always read.
+  const {
+    gmailPolicy,
+    gmailStatus,
+    gmailScheduled,
+    cancellingScheduledId,
+    isConnectingGmail,
+    isSavingGmailPolicy,
+    cancelScheduledEmail,
+    previewDailyLimit,
+    saveGmailPolicy,
+    fetchGmailStatus,
+    fetchGmailPolicy,
+    fetchGmailScheduled,
+    handleConnectGmail,
+    handleDisconnectGmail,
+  } = useGmail();
   // "Speak replies aloud" — stored, so the desktop voice bar follows it too.
   const [voiceFeedback, setVoiceFeedbackState] = useState(() => loadVoicePrefs().speakReplies);
   const setVoiceFeedback = (on: boolean) => {
@@ -514,72 +418,6 @@ export function AgentHub() {
     } catch {}
   };
 
-  const fetchGmailStatus = async () => {
-    try {
-      const res = await fetch("/api/v1/email/status");
-      if (res.ok) setGmailStatus(await res.json());
-    } catch {}
-  };
-
-  /** The sending policy + what was sent — Settings → Email shows both. */
-  const fetchGmailPolicy = async () => {
-    try {
-      const res = await fetch("/api/v1/email/policy");
-      if (res.ok) setGmailPolicy(await res.json());
-    } catch {}
-  };
-
-  const fetchGmailScheduled = async () => {
-    try {
-      const res = await fetch("/api/v1/email/scheduled");
-      if (res.ok) setGmailScheduled(await res.json());
-    } catch {}
-  };
-
-  /** Takes one back before it goes out. Nothing is sent after this returns. */
-  const cancelScheduledEmail = async (id: string, subject: string) => {
-    setCancellingScheduledId(id);
-    try {
-      const res = await fetch(`/api/v1/email/scheduled/${encodeURIComponent(id)}`, { method: "DELETE" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message || "Couldn't cancel that one.");
-      toast.success("Scheduled email cancelled", `“${subject || "(no subject)"}” won't be sent.`);
-      void fetchGmailScheduled();
-    } catch (err) {
-      toast.error("Scheduled email", (err as Error).message);
-    } finally {
-      setCancellingScheduledId("");
-    }
-  };
-
-  const saveGmailPolicy = async (patch: { enabled?: boolean; dailyLimit?: number }) => {
-    setIsSavingGmailPolicy(true);
-    try {
-      const res = await fetch("/api/v1/email/policy", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message || "Couldn't save that.");
-      setGmailPolicy(data);
-      setGmailStatus((current) => ({
-        ...current,
-        sending: { enabled: data.enabled, dailyLimit: data.dailyLimit, sentToday: data.sentToday, remaining: data.remaining },
-        scopes: data.scopes ?? current.scopes,
-      }));
-      toast.success(
-        patch.enabled === false ? "Sending turned off" : patch.enabled === true ? "Sending turned on" : "Saved",
-        patch.enabled === false
-          ? "The agent will only save drafts from now on."
-          : `The agent may send up to ${data.dailyLimit} emails a day from chat.`,
-      );
-    } catch (err) {
-      toast.error("Email settings", (err as Error).message);
-    } finally {
-      setIsSavingGmailPolicy(false);
-    }
-  };
 
   /** The channels and their publishing plans (never the sign-ins — the server keeps those). */
   const fetchChannels = async () => {
@@ -672,9 +510,6 @@ export function AgentHub() {
     // Initial Orbital background status, YouTube status & what's viral right now
     fetchOrbitalStatus();
     fetchYtStatus();
-    fetchGmailStatus();
-    fetchGmailPolicy();
-    fetchGmailScheduled();
     fetchChannels();
     fetchTrendStatus();
   }, []);
@@ -1263,50 +1098,6 @@ export function AgentHub() {
     }
   };
 
-  // Gmail access is separate from YouTube: the user grants mailbox scopes in
-  // Google's browser consent screen. The agent can save drafts, never send them.
-  const handleConnectGmail = async () => {
-    try {
-      setIsConnectingGmail(true);
-      const res = await fetch("/api/v1/email/connect", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message || "Couldn't start Gmail sign-in.");
-      window.open(data.url, "_blank", "noopener,noreferrer");
-      toast.info("Finish in your browser", "Review Google's Gmail permissions, then return here.");
-      const until = Date.now() + 5 * 60_000;
-      while (Date.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-        const status = await fetch("/api/v1/email/status").then((r) => r.json()).catch(() => null);
-        if (status?.connected) {
-          setGmailStatus(status);
-          void fetchGmailPolicy();
-          void fetchGmailScheduled();
-          toast.success("Google connected", status.email || "Your inbox is ready.");
-          return;
-        }
-      }
-      await fetchGmailStatus();
-    } catch (err) {
-      toast.error("Gmail", (err as Error).message);
-    } finally {
-      setIsConnectingGmail(false);
-    }
-  };
-
-  const handleDisconnectGmail = async () => {
-    if (!window.confirm(`Disconnect ${gmailStatus.email || "Gmail"} from Soundwave? Existing drafts in Gmail will remain.`)) return;
-    try {
-      const res = await fetch("/api/v1/email/disconnect", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message || "Couldn't disconnect Gmail.");
-      setGmailStatus({ connected: false, email: null, needsReconnect: false, scopes: { gmail: false, contacts: false, calendar: false, drive: false }, sending: { enabled: true, dailyLimit: 25, sentToday: 0, remaining: 25 } });
-      void fetchGmailPolicy();
-      void fetchGmailScheduled();
-      toast.success("Google disconnected", "Soundwave can no longer read, draft or send email.");
-    } catch (err) {
-      toast.error("Gmail", (err as Error).message);
-    }
-  };
 
   // ── Ghost Operator Macro Runner ─────────────────────────────────────────
   // The steps really run on this PC: the chat shows what each one did (or why
@@ -3255,14 +3046,11 @@ export function AgentHub() {
                       max={200}
                       value={gmailStatus.sending?.dailyLimit ?? 25}
                       disabled={!gmailStatus.connected || isSavingGmailPolicy}
-                      onChange={(e) => {
-                        const value = Number(e.target.value);
-                        setGmailStatus((current) => ({ ...current, sending: { ...current.sending, dailyLimit: Number.isFinite(value) ? value : current.sending.dailyLimit } }));
-                      }}
+                      onChange={(e) => previewDailyLimit(Number(e.target.value))}
                       onBlur={(e) => {
                         const value = Math.max(1, Math.min(200, Math.round(Number(e.target.value) || 25)));
                         if (value !== gmailPolicy?.dailyLimit) void saveGmailPolicy({ dailyLimit: value });
-                        else setGmailStatus((current) => ({ ...current, sending: { ...current.sending, dailyLimit: value } }));
+                        else previewDailyLimit(value);
                       }}
                       className="w-16 rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1 text-[11px] text-white focus:border-cyan-400 focus:outline-none"
                       data-testid="gmail-daily-limit"
@@ -3819,737 +3607,3 @@ export function AgentHub() {
   );
 }
 
-/** Which brain the agent thinks with — a click opens Settings → Brain. */
-/**
- * One channel in Settings → YouTube & Shorts: its name, default status, and
- * schedule for regular Shorts about the user's chosen topic.
- */
-function ChannelRow({
-  channel,
-  onSave,
-  onDefault,
-  onRemove,
-}: {
-  channel: YtChannelView;
-  onSave: (id: string, patch: Record<string, unknown>, ok?: string) => void;
-  onDefault: (id: string, name: string) => void;
-  onRemove: (id: string, name: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [what, setWhat] = useState(channel.plan.what);
-  const [everyDays, setEveryDays] = useState(channel.plan.everyDays);
-  const [time, setTime] = useState(channel.plan.time);
-  const [auto, setAuto] = useState(channel.plan.auto);
-
-  useEffect(() => {
-    setWhat(channel.plan.what);
-    setEveryDays(channel.plan.everyDays);
-    setTime(channel.plan.time);
-    setAuto(channel.plan.auto);
-  }, [channel.plan.what, channel.plan.everyDays, channel.plan.time, channel.plan.auto]);
-
-  const running = channel.plan.auto && channel.plan.what.trim().length > 0;
-  const summary = running
-    ? `Short · ${channel.plan.what} · every ${channel.plan.everyDays}d${channel.plan.time ? ` from ${channel.plan.time}` : ""}${channel.plan.due ? " · due now" : ""}`
-    : channel.plan.what.trim()
-      ? `On hold — ${channel.plan.what} · turn Autopilot on below to post it by itself`
-      : "Off — open this channel and say what to publish here (one sentence is enough), then turn Autopilot on";
-
-  return (
-    <div className="rounded-lg border border-[#24252D] bg-[#0A0A0C] p-2 space-y-1.5" data-testid={`yt-channel-${channel.id}`}>
-      <div className="flex items-center justify-between gap-1.5">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 items-center gap-1.5 text-left cursor-pointer"
-          title="What the agent publishes here"
-        >
-          <Youtube className="h-3 w-3 shrink-0 text-red-500" />
-          <span className="truncate text-[11px] font-bold text-gray-100">{channel.name}</span>
-          {channel.default && (
-            <span className="shrink-0 rounded bg-cyan-500/15 px-1 py-0.5 text-[8px] font-bold text-cyan-300 border border-cyan-500/30">DEFAULT</span>
-          )}
-          <span className={`shrink-0 rounded px-1 py-0.5 text-[8px] font-bold ${running ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30" : "bg-gray-800 text-gray-500"}`}>
-            {running ? "AUTOPILOT" : "OFF"}
-          </span>
-        </button>
-        <span className="shrink-0 text-[9px] text-gray-500" title={channel.lastUploadAt ? new Date(channel.lastUploadAt).toLocaleString() : "Nothing posted from here yet"}>
-          {channel.plan.runs ? `${channel.plan.runs} made` : ""}
-        </span>
-      </div>
-
-      <p className="text-[10px] text-gray-400 leading-snug">{summary}</p>
-      {channel.plan.lastError && (
-        <p className="truncate rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[9px] text-amber-200/90" title={channel.plan.lastError}>
-          ✗ {channel.plan.lastError}
-        </p>
-      )}
-
-      {open && (
-        <div className="space-y-1.5 border-t border-[#24252D]/70 pt-1.5" data-testid={`yt-plan-${channel.id}`}>
-          <label className="block text-[9px] text-gray-400">
-            What
-            <input
-              value={what}
-              onChange={(e) => setWhat(e.target.value)}
-              maxLength={400}
-              placeholder='e.g. "space facts" or "history stories"'
-              className="mt-0.5 w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-cyan-500 focus:outline-none"
-            />
-          </label>
-          <div className="flex items-center gap-1.5">
-            <label className="w-16 text-[9px] text-gray-400">
-              Every
-              <input
-                type="number"
-                min={1}
-                max={30}
-                value={everyDays}
-                onChange={(e) => setEveryDays(Math.min(30, Math.max(1, Number(e.target.value) || 3)))}
-                className="mt-0.5 w-full rounded border border-[#24252D] bg-[#050506] px-1.5 py-1 text-[10px] text-white focus:outline-none"
-              />
-            </label>
-            <label className="w-24 text-[9px] text-gray-400">
-              After
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="mt-0.5 w-full rounded border border-[#24252D] bg-[#050506] px-1.5 py-1 text-[10px] text-white focus:outline-none"
-              />
-            </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            <button
-              type="button"
-              onClick={() => onSave(channel.id, { plan: { what, everyDays, time, auto } }, `Saved for “${channel.name}”`)}
-              className="rounded bg-cyan-500 hover:bg-cyan-400 px-2 py-1 text-[10px] font-bold text-[#050506] transition-all cursor-pointer"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !auto;
-                setAuto(next);
-                onSave(channel.id, { plan: { what, everyDays, time, auto: next } }, next ? `Autopilot on for “${channel.name}”` : `Autopilot off for “${channel.name}”`);
-              }}
-              className={`rounded border px-2 py-1 text-[10px] font-bold transition-all cursor-pointer ${
-                auto ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "border-[#24252D] bg-[#050506] text-gray-300 hover:border-cyan-500/50"
-              }`}
-            >
-              {auto ? "Autopilot" : "Manual"}
-            </button>
-            {!channel.default && (
-              <button
-                type="button"
-                onClick={() => onDefault(channel.id, channel.name)}
-                className="rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[10px] text-gray-300 hover:border-cyan-500/50 hover:text-cyan-200 transition-all cursor-pointer"
-                title="Where shorts go when you don't name a channel"
-              >
-                Default
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onRemove(channel.id, channel.name)}
-              className="ml-auto rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[10px] text-gray-400 hover:border-red-500/40 hover:text-red-300 transition-all cursor-pointer"
-              title="Forget this channel and its sign-in"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Watching creators ────────────────────────────────────────────────────────
-// The agent's watch_youtube_channel tool, on screen — because a capability that
-// only exists in chat reads as missing. One row per watched channel: what it
-// cuts, what it has cut, whether the last check failed, and three icon buttons
-// (cut the newest one now · change what it cuts · stop). Adding one is an input
-// and a plus. The header's “i” explains the feature in place, like the niches.
-
-interface WatchItem {
-  id: string;
-  name: string;
-  input: string;
-  url: string;
-  clips: number;
-  focus: string | null;
-  queued: number;
-  clippedCount: number;
-  lastClipped: { title: string; at: number } | null;
-  addedAt: number;
-  lastCheckedAt: number | null;
-  lastError: string | null;
-}
-
-interface WatchCardState {
-  available: boolean;
-  max: number;
-  maxClips: number;
-  defaultClips: number;
-  checkEveryMinutes: number;
-  busy: boolean;
-  busySource: string | null;
-  watches: WatchItem[];
-}
-
-/** "12m ago" for a check time — shorter than a date, and it reads at a glance. */
-function agoLabel(at: number | null): string {
-  if (!at) return "not checked yet";
-  const mins = Math.max(0, Math.round((Date.now() - at) / 60_000));
-  if (mins < 1) return "checked just now";
-  if (mins < 60) return `checked ${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `checked ${hours}h ago`;
-  return `checked ${Math.round(hours / 24)}d ago`;
-}
-
-function WatchCard() {
-  const [state, setState] = useState<WatchCardState | null>(null);
-  const [site, setSite] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [openInfo, setOpenInfo] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draftClips, setDraftClips] = useState(3);
-  const [draftFocus, setDraftFocus] = useState("");
-  const [busyRow, setBusyRow] = useState<string | null>(null);
-
-  const apply = useCallback((data: Partial<WatchCardState>, msg?: string | null) => {
-    setState((prev) => (prev ? { ...prev, ...data, watches: data.watches ?? prev.watches } : (data as WatchCardState)));
-    if (msg !== undefined) setNote(msg);
-  }, []);
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/watch");
-      if (!res.ok) return;
-      setState((await res.json()) as WatchCardState);
-    } catch {
-      /* the card stays hidden until the server answers */
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // While something is being cut, keep asking: "1 waiting" should become
-  // "1 clipped" on its own.
-  useEffect(() => {
-    if (!state?.busy && !state?.watches.some((w) => w.queued > 0)) return;
-    const t = setInterval(() => void refresh(), 10_000);
-    return () => clearInterval(t);
-  }, [state?.busy, state?.watches, refresh]);
-
-  if (!state?.available) return null;
-
-  const call = async (url: string, init: RequestInit, okMsg?: string): Promise<boolean> => {
-    setError(null);
-    try {
-      const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...init });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string } & Partial<WatchCardState>;
-      if (!res.ok || data.ok === false) {
-        const why = data.error ?? "That didn't work.";
-        setError(why);
-        toast.error("Watching", why);
-        if (data.watches) apply(data);
-        return false;
-      }
-      apply(data, data.message ?? okMsg ?? null);
-      if (data.message && okMsg !== undefined) toast.success("Watching", data.message);
-      return true;
-    } catch {
-      setError("The server didn't answer.");
-      return false;
-    }
-  };
-
-  const add = async () => {
-    const channel = site.trim();
-    if (!channel || adding) return;
-    setAdding(true);
-    try {
-      const resp = await fetch("/api/v1/watch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel, clips: state.defaultClips }),
-      });
-      const data = (await resp.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string } & Partial<WatchCardState>;
-      if (!resp.ok || data.ok === false) {
-        // A bad handle or an unreachable channel: say which, right under the box.
-        setError(data.error ?? "I couldn't watch that channel.");
-        if (data.watches) apply(data);
-        return;
-      }
-      apply(data, data.message ?? null);
-      setSite("");
-      toast.success("Watching", data.message);
-    } catch {
-      setError("The server didn't answer.");
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const rowButton = (id: string) => async (fn: () => Promise<boolean>) => {
-    setBusyRow(id);
-    try {
-      await fn();
-    } finally {
-      setBusyRow(null);
-    }
-  };
-
-  const startEditing = (w: WatchItem) => {
-    setEditing(w.id);
-    setDraftClips(w.clips);
-    setDraftFocus(w.focus ?? "");
-    setError(null);
-  };
-
-  return (
-    <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2 font-mono" data-testid="watch-card">
-      <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-        <span className="flex items-center gap-1.5 font-semibold text-gray-200">
-          <Eye className="h-3.5 w-3.5 text-emerald-400" />
-          Watching creators
-          <span className="text-[9px] font-normal text-gray-500">
-            {state.watches.length}/{state.max}
-          </span>
-          <button
-            type="button"
-            onClick={() => setOpenInfo((v) => !v)}
-            aria-label={openInfo ? "Hide how watching works" : "How watching works"}
-            aria-expanded={openInfo}
-            title={openInfo ? "Hide how watching works" : "How watching works"}
-            data-testid="watch-info"
-            className={`flex h-4 w-4 items-center justify-center rounded-full border transition-colors cursor-pointer ${
-              openInfo ? "border-emerald-400/70 text-emerald-300" : "border-white/10 text-gray-500 hover:border-emerald-400/60 hover:text-emerald-300"
-            }`}
-          >
-            <Info className="h-2.5 w-2.5" />
-          </button>
-        </span>
-        {state.busy ? (
-          <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title={state.busySource ?? ""}>
-            <Loader2 className="h-3 w-3 animate-spin" />
-            RENDERING
-          </span>
-        ) : null}
-      </div>
-
-      {openInfo && (
-        <p className="text-[10px] leading-snug text-gray-400" data-testid="watch-info-text">
-          The PC checks each channel every ~{state.checkEveryMinutes} minutes while Soundwave is running, and cuts{" "}
-          {state.defaultClips === 1 ? "a short" : `${state.defaultClips} shorts`} out of every video posted from then on — the same pipeline as “Shorts
-          from a video”, posted into the chat as they're ready. One video renders at a time. Videos already up are skipped unless you press the scissors
-          to cut the newest one now.
-        </p>
-      )}
-
-      {state.watches.length === 0 ? (
-        <p className="rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1.5 text-[10px] text-gray-500">
-          Nothing watched yet. Paste a creator's @handle below and every new video they post gets cut into shorts by itself.
-        </p>
-      ) : (
-        <div className="space-y-1.5">
-          {state.watches.map((w) => (
-            <div key={w.id} className="rounded-lg border border-[#24252D] bg-[#050506] p-2 space-y-1.5" data-testid={`watch-row-${w.id}`}>
-              <div className="flex items-center justify-between gap-1.5">
-                <a
-                  href={w.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex min-w-0 items-center gap-1.5 text-left hover:text-emerald-300 transition-colors"
-                  title={`Open ${w.name} on YouTube`}
-                >
-                  <Youtube className="h-3 w-3 shrink-0 text-red-500" />
-                  <span className="truncate text-[11px] font-bold text-gray-100">{w.name}</span>
-                  <ExternalLink className="h-2.5 w-2.5 shrink-0 text-gray-500" />
-                </a>
-                <div className="flex shrink-0 items-center gap-1">
-                  <IconButton
-                    label={`Cut shorts out of the newest video on ${w.name} now`}
-                    tone="cyan"
-                    size="sm"
-                    disabled={busyRow === w.id}
-                    data-testid={`watch-clip-now-${w.id}`}
-                    onClick={() => void rowButton(w.id)(() => call(`/api/v1/watch/${w.id}/latest`, { method: "POST" }, undefined))}
-                  >
-                    {busyRow === w.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Scissors className="h-3.5 w-3.5" />}
-                  </IconButton>
-                  <IconButton
-                    label={editing === w.id ? `Close ${w.name}'s settings` : `What ${w.name} cuts, and what to look for`}
-                    size="sm"
-                    data-testid={`watch-edit-${w.id}`}
-                    onClick={() => (editing === w.id ? setEditing(null) : startEditing(w))}
-                  >
-                    <SettingsIcon className="h-3.5 w-3.5" />
-                  </IconButton>
-                  <IconButton
-                    label={`Stop watching ${w.name}`}
-                    tone="red"
-                    size="sm"
-                    disabled={busyRow === w.id}
-                    data-testid={`watch-stop-${w.id}`}
-                    onClick={() => void rowButton(w.id)(() => call(`/api/v1/watch/${w.id}`, { method: "DELETE" }, "Stopped"))}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </IconButton>
-                </div>
-              </div>
-
-              <p className="text-[10px] leading-snug text-gray-400">
-                {w.clips} short{w.clips === 1 ? "" : "s"} per video
-                {w.focus ? ` · looking for ${w.focus}` : ""}
-                {w.clippedCount ? ` · ${w.clippedCount} clipped` : ""}
-                {w.queued ? ` · ${w.queued} waiting` : ""}
-                {` · ${agoLabel(w.lastCheckedAt)}`}
-              </p>
-
-              {w.lastClipped && (
-                <p className="truncate text-[9px] text-gray-500" title={w.lastClipped.title}>
-                  Last: {w.lastClipped.title}
-                </p>
-              )}
-              {w.lastError && (
-                <p className="truncate rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[9px] text-amber-200/90" title={w.lastError}>
-                  ✗ {w.lastError}
-                </p>
-              )}
-
-              {editing === w.id && (
-                <div className="space-y-1.5 border-t border-[#24252D]/70 pt-1.5" data-testid={`watch-plan-${w.id}`}>
-                  <div className="flex items-center gap-1.5">
-                    <label className="w-20 text-[9px] text-gray-400">
-                      Shorts
-                      <input
-                        type="number"
-                        min={1}
-                        max={state.maxClips}
-                        value={draftClips}
-                        onChange={(e) => setDraftClips(Math.min(state.maxClips, Math.max(1, Number(e.target.value) || 1)))}
-                        data-testid={`watch-clips-${w.id}`}
-                        className="mt-0.5 w-full rounded border border-[#24252D] bg-[#0A0A0C] px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 focus:outline-none"
-                      />
-                    </label>
-                    <label className="flex-1 text-[9px] text-gray-400">
-                      Look for (optional)
-                      <input
-                        value={draftFocus}
-                        onChange={(e) => setDraftFocus(e.target.value)}
-                        maxLength={300}
-                        placeholder='e.g. "the funny bits"'
-                        data-testid={`watch-focus-${w.id}`}
-                        className="mt-0.5 w-full rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
-                      />
-                    </label>
-                    <IconButton
-                      label={`Save what ${w.name} cuts`}
-                      tone="cyan"
-                      size="sm"
-                      data-testid={`watch-save-${w.id}`}
-                      onClick={() =>
-                        void rowButton(w.id)(async () => {
-                          const ok = await call(`/api/v1/watch/${w.id}`, {
-                            method: "PATCH",
-                            body: JSON.stringify({ clips: draftClips, focus: draftFocus.trim() ? draftFocus.trim() : null }),
-                          });
-                          if (ok) {
-                            setEditing(null);
-                            toast.success("Watching", `Updated — ${draftClips} short${draftClips === 1 ? "" : "s"} per new video.`);
-                          }
-                          return ok;
-                        })
-                      }
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </IconButton>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex items-center gap-1.5">
-        <input
-          value={site}
-          onChange={(e) => setSite(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void add();
-          }}
-          placeholder="@MrBeast or youtube.com/@MrBeast"
-          aria-label="A creator's @handle or channel link"
-          data-testid="watch-add-input"
-          disabled={state.watches.length >= state.max}
-          className="w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/60 focus:outline-none disabled:opacity-50"
-        />
-        <IconButton
-          label="Watch this channel"
-          tone="cyan"
-          disabled={!site.trim() || adding || state.watches.length >= state.max}
-          data-testid="watch-add"
-          onClick={() => void add()}
-        >
-          {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        </IconButton>
-      </div>
-
-      {state.watches.length >= state.max && (
-        <p className="text-[9px] text-gray-500">That's the limit of {state.max} — stop watching one to add another.</p>
-      )}
-      {(error ?? note) && (
-        <p className={`text-[10px] leading-snug ${error ? "text-amber-300" : "text-gray-500"}`} data-testid="watch-note">
-          {error ?? note}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/**
- * One niche, one button: the title and an “i” at the right end. Pressing the
- * “i” grows the button and shows the description under the title; pressing the
- * button itself picks the niche. Nothing else is written on the grid.
- */
-interface ClipsStatus {
-  available: boolean;
-  busy: boolean;
-  source: string | null;
-  defaultCount: number;
-  maxCount: number;
-}
-
-/**
- * Cut Shorts out of a long video — the visible half of the agent's
- * make_shorts_from_video tool. A YouTube link or a file path, how many clips,
- * optionally what to look for; the server runs the exact same job and posts the
- * finished clips into the conversation. Hidden on a server without the desktop
- * app (that's where ffmpeg, yt-dlp and the speech engine live).
- */
-function ClipsCard() {
-  const [status, setStatus] = useState<ClipsStatus | null>(null);
-  const [video, setVideo] = useState("");
-  const [count, setCount] = useState(3);
-  const [focus, setFocus] = useState("");
-  const [starting, setStarting] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/clips");
-      if (!res.ok) return;
-      const data = (await res.json()) as ClipsStatus;
-      setStatus(data);
-      // The server's own default (3) — only until the person picks a number.
-      setCount((c) => (c === 3 && data.defaultCount ? data.defaultCount : c));
-    } catch {
-      /* the card simply stays hidden until the server answers */
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  // While clips are being cut, ask again so the card isn't left saying "working"
-  // after the last clip has landed in the chat.
-  useEffect(() => {
-    if (!status?.busy) return;
-    const t = setInterval(() => void refresh(), 10_000);
-    return () => clearInterval(t);
-  }, [status?.busy, refresh]);
-
-  if (!status?.available) return null;
-
-  const cut = async () => {
-    const source = video.trim();
-    if (!source || starting || status.busy) return;
-    setStarting(true);
-    setNote(null);
-    try {
-      const res = await fetch("/api/v1/clips", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ video: source, ...(count ? { count } : {}), ...(focus.trim() ? { focus: focus.trim() } : {}) }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string; count?: number };
-      if (res.ok && data.ok) {
-        setNote(data.message ?? "Cutting now — the clips appear in the chat.");
-        setVideo("");
-        setFocus("");
-        toast.success("Cutting Shorts", data.message);
-        void refresh();
-      } else {
-        setNote(data.error ?? "That video didn't work out.");
-        toast.error("Couldn't start", data.error);
-      }
-    } catch {
-      setNote("The server didn't answer.");
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  // One line under the controls: what just happened, or what is happening now.
-  const cutting = status.source ? `Cutting “${status.source}” — the clips appear in the chat.` : "Cutting — the clips appear in the chat.";
-  const line = note ?? (status.busy ? cutting : null);
-
-  return (
-    <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2 font-mono" data-testid="clips-card">
-      <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-        <span
-          className="flex items-center gap-1.5 font-semibold text-gray-200"
-          title="The agent listens to the whole video, finds where someone is talking and makes a point, and cuts clips that open on a hook and end on a pause — no random 45-second chunks."
-        >
-          <Scissors className="h-3.5 w-3.5 text-fuchsia-400" />
-          Shorts from a video
-        </span>
-        {status.busy ? (
-          <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title={status.source ?? ""} data-testid="clips-busy">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            CUTTING
-          </span>
-        ) : null}
-      </div>
-
-      <input
-        value={video}
-        onChange={(e) => setVideo(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") void cut();
-        }}
-        placeholder="YouTube link or video file path"
-        className="w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
-        data-testid="clips-video"
-      />
-
-      <div className="flex items-center gap-1.5">
-        <label className="flex flex-1 items-center gap-1.5 text-[10px] text-gray-500" title="Optional: what to look for in the video">
-          <input
-            value={focus}
-            onChange={(e) => setFocus(e.target.value)}
-            placeholder="what to look for"
-            className="w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
-            data-testid="clips-focus"
-          />
-        </label>
-        <select
-          value={count}
-          onChange={(e) => setCount(Number(e.target.value))}
-          title="How many shorts to cut out"
-          aria-label="How many shorts to cut out"
-          className="rounded border border-[#24252D] bg-[#050506] px-1 py-1 text-[11px] text-gray-300 focus:border-cyan-500/60 focus:outline-none cursor-pointer"
-          data-testid="clips-count"
-        >
-          {Array.from({ length: Math.max(1, status.maxCount - 1) }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-        <IconButton
-          label="Cut Shorts out of this video"
-          tone="cyan"
-          onClick={() => void cut()}
-          disabled={!video.trim() || starting || status.busy}
-          data-testid="clips-cut"
-        >
-          {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scissors className="h-4 w-4" />}
-        </IconButton>
-      </div>
-
-      {line ? (
-        <p className="text-[10px] leading-snug text-gray-500" data-testid="clips-note">
-          {line}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function NicheButton({
-  niche,
-  selected,
-  expanded,
-  onSelect,
-  onToggleInfo,
-}: {
-  niche: NicheInfo;
-  selected: boolean;
-  expanded: boolean;
-  onSelect: () => void;
-  onToggleInfo: () => void;
-}) {
-  return (
-    <div
-      className={`relative flex flex-col rounded-lg border transition-all ${
-        selected ? "border-cyan-400 bg-cyan-500/10" : "border-[#24252D] bg-[#050506]"
-      }`}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-pressed={selected}
-        className="flex w-full items-center gap-2 px-2 py-2 pr-7 text-left cursor-pointer"
-      >
-        {getNicheIcon(niche.iconName)}
-        <span className="truncate text-[11px] font-bold text-white">{niche.name}</span>
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleInfo();
-        }}
-        aria-label={`What “${niche.name}” is about`}
-        aria-expanded={expanded}
-        title={expanded ? "Hide the description" : "What this niche is about"}
-        className={`absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full border transition-colors cursor-pointer ${
-          expanded
-            ? "border-cyan-400/70 text-cyan-300"
-            : "border-white/10 text-gray-500 hover:border-cyan-400/60 hover:text-cyan-300"
-        }`}
-      >
-        <Info className="h-3 w-3" />
-      </button>
-      {expanded && (
-        <p className="px-2 pb-2 text-[10px] leading-snug text-gray-400">{niche.desc}</p>
-      )}
-    </div>
-  );
-}
-
-function BrainPill({ status }: { status: BrainStatus | null }) {
-  if (!status) return null;
-  const problem = status.configured ? status.lastError : null;
-  const look = !status.configured || problem
-    ? "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-    : "border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20";
-  const label = !status.configured ? "Add Gemini key" : problem ? "Gemini: problem" : status.modelLabel;
-  const title = !status.configured
-    ? "The agent needs a Gemini API key to think — add one in Settings → Brain (it's free)"
-    : problem
-      ? `${problem.message} (Settings → Brain)`
-      : `The agent thinks with ${status.modelLabel} — Settings → Brain`;
-  return (
-    <Link
-      to="/settings/brain"
-      title={title}
-      data-testid="brain-pill"
-      className={`hidden sm:flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold font-mono transition-colors ${look}`}
-    >
-      <Sparkles className="h-3 w-3" />
-      {label}
-    </Link>
-  );
-}

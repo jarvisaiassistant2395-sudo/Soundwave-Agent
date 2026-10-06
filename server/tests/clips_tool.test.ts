@@ -1,19 +1,25 @@
-// "Make shorts from this video" as the agent sees it: the tool exists on the
-// PC, refuses honestly when the video is wrong or the machine is busy, and
-// hands the work to the clips pipeline. The pipeline's own ffmpeg work is
-// mocked here (CI has no video to cut in this test); the pure rules are
-// covered in clips.test.ts and the real render is exercised in the smoke/E2E.
+// "Make shorts from this video" as the agent sees it: the tool exists on the PC,
+// refuses honestly when the video is wrong, queues when the renderer is busy,
+// and hands the work to the clips pipeline. The pipeline's own ffmpeg work is
+// mocked here (CI has no video to cut in this test); the pure rules are covered
+// in clips.test.ts and clip_queue.test.ts, and the real pipeline — including the
+// queue draining and a crash mid-render — in video_clips.test.ts.
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 const mocks = vi.hoisted(() => ({
-  clipsBusy: vi.fn(() => ({ busy: false }) as { busy: boolean; source?: string }),
+  clipsBusy: vi.fn(
+    () => ({ busy: false }) as { busy: boolean; source?: string; queued?: number; waitingFor?: string[] },
+  ),
   startClipsJob: vi.fn(async (opts: { video: string; count?: number }) => ({
     jobIds: ["job-clip-1", "job-clip-2", "job-clip-3"].slice(0, opts.count ?? 3),
     sourceName: "A Long Talk",
     count: opts.count ?? 3,
+    queued: false,
+    position: 0,
+    waitingAhead: 0,
   })),
   startShortJob: vi.fn(async () => ({ jobId: "job-short" })),
   getActiveShortJobs: vi.fn((): Array<{ jobId: string; topic: string; startedAt: number }> => []),
@@ -54,6 +60,10 @@ beforeEach(async () => {
   await store.init();
   setStoreForTests(store);
   fs.mkdirSync(config.uploadsDir, { recursive: true });
+  // The card's GET reads the real queue off disk; a file an earlier file's tests
+  // left behind would make it look busy.
+  fs.rmSync(path.join(config.dataDir, "clips-queue.json"), { force: true });
+  clips._resetClipsForTests();
 });
 
 describe("the tool the agent is offered", () => {
@@ -82,17 +92,31 @@ describe("the tool the agent is offered", () => {
     expect(mocks.startClipsJob).not.toHaveBeenCalled();
   });
 
-  it("never runs two at once — neither while clipping nor while a short renders", async () => {
-    mocks.clipsBusy.mockReturnValue({ busy: true, source: "An Old Panel" });
-    const whileClipping = await tool()!.run({ video: "x.mp4" }, ctx() as never);
-    expect(whileClipping).toMatchObject({ started: false, busy: true, renderingNow: "An Old Panel" });
-    expect(String(whileClipping.reason)).toContain("one video at a time");
+  it("queues behind what's rendering instead of refusing the person", async () => {
+    // One video renders at a time, but "clip these three" must not answer one
+    // and drop two: the pipeline queues this one and says where it landed.
+    mocks.clipsBusy.mockReturnValue({ busy: true, source: "An Old Panel", queued: 1, waitingFor: ["Another Talk"] });
+    mocks.startClipsJob.mockResolvedValueOnce({
+      jobIds: ["job-q-1"],
+      sourceName: "A Long Talk",
+      count: 1,
+      queued: true,
+      position: 2,
+      waitingAhead: 1,
+    });
+    const result = await tool()!.run({ video: "x.mp4" }, ctx() as never);
+    expect(result).toMatchObject({ started: true, queued: true, position: 2, clips: 1 });
+    expect(String(result.note)).toContain("queued behind 2 videos");
+    expect(String(result.note)).toContain("one renders at a time");
+    expect(mocks.startClipsJob).toHaveBeenCalled();
+  });
 
-    mocks.clipsBusy.mockReturnValue({ busy: false });
-    mocks.getActiveShortJobs.mockReturnValue([{ jobId: "j1", topic: "coffee", startedAt: Date.now() }]);
-    const whileShort = await tool()!.run({ video: "x.mp4" }, ctx() as never);
-    expect(whileShort).toMatchObject({ started: false, busy: true });
-    expect(mocks.startClipsJob).not.toHaveBeenCalled();
+  it("reports the queue when it's full and nothing can be taken on", async () => {
+    mocks.clipsBusy.mockReturnValue({ busy: true, source: "An Old Panel", queued: 8 });
+    mocks.startClipsJob.mockRejectedValueOnce(new Error("I've already got 8 videos waiting to be clipped — ask me again once some of them are done."));
+    const result = await tool()!.run({ video: "x.mp4" }, ctx() as never);
+    expect(result).toMatchObject({ started: false, busy: true, renderingNow: "An Old Panel", queued: 8 });
+    expect(String(result.reason)).toContain("8 videos waiting");
   });
 
   it("passes the pipeline's own words back when the video is no good", async () => {
@@ -143,14 +167,31 @@ describe("POST /api/v1/clips — the card's way in", () => {
     expect(mocks.startClipsJob).toHaveBeenCalledWith(expect.objectContaining({ video: "https://youtu.be/dQw4w9WgXcQ", count: 2, focus: "the funny bits" }));
   });
 
-  it("refuses a second video while one is being cut", async () => {
+  it("queues a second video while one is being cut, and says where it landed", async () => {
     mocks.clipsBusy.mockReturnValue({ busy: true, source: "A Long Talk" });
+    mocks.startClipsJob.mockResolvedValueOnce({
+      jobIds: ["job-q-9"],
+      sourceName: "Another Talk",
+      count: 1,
+      queued: true,
+      position: 1,
+      waitingAhead: 0,
+    });
+    const app = createApp();
+    const res = await request(app).post("/api/v1/clips").send({ video: "https://youtu.be/another" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, video: "Another Talk", queued: true, position: 1 });
+    expect(String(res.body.message)).toContain("queued behind");
+  });
+
+  it("answers 409 only when the queue itself is full", async () => {
+    mocks.clipsBusy.mockReturnValue({ busy: true, source: "A Long Talk", queued: 8 });
+    mocks.startClipsJob.mockRejectedValueOnce(new Error("I've already got 8 videos waiting to be clipped — ask me again once some of them are done."));
     const app = createApp();
     const res = await request(app).post("/api/v1/clips").send({ video: "https://youtu.be/another" });
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ ok: false, busy: true, source: "A Long Talk" });
-    expect(String(res.body.error)).toContain("one video at a time");
-    expect(mocks.startClipsJob).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({ ok: false, busy: true, source: "A Long Talk", queued: 8 });
+    expect(String(res.body.error)).toContain("8 videos waiting");
   });
 
   it("rejects an empty source instead of starting nothing", async () => {
@@ -173,7 +214,8 @@ describe("POST /api/v1/clips — the card's way in", () => {
     const app = createApp();
     const res = await request(app).get("/api/v1/clips");
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ busy: false, defaultCount: 3, maxCount: 5 });
+    expect(res.body).toMatchObject({ busy: false, defaultCount: 3, maxCount: 5, queued: 0, waitingFor: [] });
     expect(typeof res.body.available).toBe("boolean");
+    expect(res.body.maxQueued).toBeGreaterThan(0);
   });
 });

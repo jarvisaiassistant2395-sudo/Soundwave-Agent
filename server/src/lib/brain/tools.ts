@@ -132,7 +132,10 @@ export const AGENT_TOOLS: AgentTool[] = [
           started: false,
           busy: true,
           renderingNow: clipping.source,
-          reason: `I'm cutting shorts out of “${clipping.source}” right now — one video renders at a time. Those clips will be posted in this chat; ask again after that.`,
+          queuedBehind: clipping.queued ?? 0,
+          reason: `I'm cutting shorts out of “${clipping.source}” right now${
+            clipping.queued ? `, with ${clipping.queued} more video${clipping.queued === 1 ? "" : "s"} queued behind it` : ""
+          } — one video renders at a time. Those clips will be posted in this chat; ask again after that.`,
         };
       }
 
@@ -364,7 +367,7 @@ AGENT_TOOLS.push(
     declaration: {
       name: "make_shorts_from_video",
       description:
-        "Cut vertical YouTube Shorts out of a long video. Give a YouTube link or the path of a video file on this PC: the agent downloads it (links), listens to it, finds the moments worth posting, and renders each one as a Short — the original video and sound, cropped vertical, with burned captions of what is being said (no narration). Use it whenever someone asks to make shorts/clips/reels from a video, to cut up a long video, or to find the best bits. It runs in the background and the clips are posted in this chat as they finish.",
+        "Cut vertical YouTube Shorts out of a long video. Give a YouTube link or the path of a video file on this PC: the agent downloads it (links), listens to it, finds the moments worth posting, and renders each one as a Short — the original video and sound, cropped vertical, with burned captions of what is being said (no narration). Use it whenever someone asks to make shorts/clips/reels from a video, to cut up a long video, or to find the best bits. It runs in the background and the clips are posted in this chat as they finish. One video renders at a time: ask for several and each one is queued in turn — say so, don't ask the person to come back later.",
       parameters: {
         type: "OBJECT",
         properties: {
@@ -383,22 +386,14 @@ AGENT_TOOLS.push(
       if (!video) {
         return { started: false, reason: "Which video? Give me a YouTube link, or the path of a video file on this PC." };
       }
-      const clipping = clipsBusy();
-      if (clipping.busy) {
-        return {
-          started: false,
-          busy: true,
-          renderingNow: clipping.source,
-          reason: `I'm already cutting shorts out of “${clipping.source}” — one video at a time. They'll be posted in this chat; ask again after that.`,
-        };
-      }
-      if (getActiveShortJobs().length) {
-        return { started: false, busy: true, reason: "A short is still rendering — one video at a time. Ask again once it's posted." };
-      }
       const wanted = Number(args.count);
       const count = Number.isFinite(wanted) ? Math.max(1, Math.min(MAX_CLIPS, Math.round(wanted))) : DEFAULT_CLIPS;
       const focus = str(args.focus, 300);
       try {
+        // No busy pre-check: the pipeline queues this video behind whatever is
+        // rendering and says where it landed. Refusing here used to make the
+        // person's path the fragile one — the channel watcher had a queue with
+        // retries, and "clip these three videos" answered one and dropped two.
         const started = await startClipsJob({
           video,
           count,
@@ -407,15 +402,30 @@ AGENT_TOOLS.push(
           userId: ctx.userId,
         });
         ctx.effects.tag = "AUDIO";
-        ctx.effects.log.push(`Started cutting ${started.count} short(s) out of “${started.sourceName}”`);
+        ctx.effects.log.push(
+          started.queued
+            ? `Queued ${started.count} short(s) out of “${started.sourceName}” (position ${started.position})`
+            : `Started cutting ${started.count} short(s) out of “${started.sourceName}”`,
+        );
         return {
           started: true,
           clips: started.count,
           video: started.sourceName,
-          note: `Listening to “${started.sourceName}” now. Cutting and rendering each clip takes a few minutes; they are posted in this chat as they finish — no need to check on them.`,
+          queued: started.queued,
+          ...(started.queued ? { position: started.position } : {}),
+          note: started.queued
+            ? `“${started.sourceName}” is queued behind ${
+                started.position === 1 ? "the video being cut now" : `${started.position} videos`
+              } — one renders at a time on this PC. It starts by itself when the renderer is free and the clips are posted in this chat; no need to check on it.`
+            : `Listening to “${started.sourceName}” now. Cutting and rendering each clip takes a few minutes; they are posted in this chat as they finish — no need to check on them.`,
         };
       } catch (err) {
-        return { started: false, reason: (err as Error).message || "That video didn't work out." };
+        const busy = clipsBusy();
+        return {
+          started: false,
+          ...(busy.busy ? { busy: true, renderingNow: busy.source ?? null, queued: busy.queued ?? 0 } : {}),
+          reason: (err as Error).message || "That video didn't work out.",
+        };
       }
     },
   },

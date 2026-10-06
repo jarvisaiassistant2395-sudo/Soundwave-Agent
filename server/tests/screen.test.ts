@@ -86,6 +86,7 @@ describe("the tool", () => {
     seconds: 30,
     desktop: true,
     platform: "win32" as NodeJS.Platform,
+    effects: { log: [] as string[] },
   };
 
   it("is offered inside the desktop app, and not on a hosted server", () => {

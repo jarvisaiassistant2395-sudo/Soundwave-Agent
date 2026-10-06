@@ -158,7 +158,7 @@ describe("on-this-PC voices", () => {
     expect(Buffer.from(narration.audioBase64, "base64").subarray(0, 4).toString("latin1")).toBe("RIFF");
     expect(lastSynthBody).toMatchObject({ voice: "bm_george" });
     // The narrator's slightly slower cadence is kept for local voices too.
-    expect(lastSynthBody?.speed).toBeCloseTo(0.95, 2);
+    expect((lastSynthBody as Record<string, unknown> | null)?.speed).toBeCloseTo(0.95, 2);
   });
 
   it("turns a local-engine outage while narrating into its own sentence, not a fallback voice", async () => {

@@ -22,10 +22,30 @@ import { resolveFfmpegPath } from "../config.js";
 export const STT_SAMPLE_RATE = 16_000;
 /** Longest clip we transcribe (seconds). Voice commands are short. */
 export const MAX_AUDIO_SECONDS = 60;
-/** Upper bound for one whisper run. */
+/** Upper bound for one whisper run, when the caller doesn't say otherwise. */
 const WHISPER_TIMEOUT_MS = Number.parseInt(process.env.WHISPER_TIMEOUT_MS ?? "", 10) || 90_000;
+/** Longest any single whisper run may take, however long the audio is. */
+const MAX_WHISPER_TIMEOUT_MS = 10 * 60_000;
 /** Requests allowed to wait while one transcription runs. */
 const MAX_QUEUED = 2;
+
+/**
+ * How long a transcription of `seconds` of audio may take.
+ *
+ * A person waiting on a voice command should not sit through more than
+ * WHISPER_TIMEOUT_MS, so short recordings keep that cap. Background work with
+ * nobody waiting (clipping a long video — see lib/videoClips.ts) transcribes
+ * windows up to a minute long, and on a modest CPU whisper.cpp can run slower
+ * than real time: killing it at 90 s turned a slow machine into clips with no
+ * captions and no honest reason. Such a caller asks for a budget proportional
+ * to the audio instead, still under MAX_WHISPER_TIMEOUT_MS.
+ */
+export function whisperBudgetMs(audioSeconds: number, floorMs = WHISPER_TIMEOUT_MS): number {
+  const seconds = Number.isFinite(audioSeconds) ? Math.max(0, audioSeconds) : 0;
+  // Four times the audio's own length: slower than real time on the weakest
+  // CPU we ship on, generous enough that a slow machine still finishes.
+  return Math.min(MAX_WHISPER_TIMEOUT_MS, Math.max(floorMs, seconds * 4_000));
+}
 
 /** Model files we look for, best first (English models suit the agent). */
 export const MODEL_PREFERENCE = [
@@ -394,7 +414,7 @@ function enqueue<T>(task: () => Promise<T>, opts: { background?: boolean } = {})
   return run;
 }
 
-function runWhisper(setup: WhisperSetup, wav: Buffer, signal?: AbortSignal): Promise<string> {
+function runWhisper(setup: WhisperSetup, wav: Buffer, signal?: AbortSignal, timeoutMs = WHISPER_TIMEOUT_MS): Promise<string> {
   const language = (process.env.WHISPER_LANGUAGE ?? "").trim() || "en";
   const args = [
     "-m",
@@ -442,8 +462,8 @@ function runWhisper(setup: WhisperSetup, wav: Buffer, signal?: AbortSignal): Pro
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(() => reject(new SttError("STT_FAILED", `The speech engine took longer than ${Math.round(WHISPER_TIMEOUT_MS / 1000)} s.`)));
-    }, WHISPER_TIMEOUT_MS);
+      finish(() => reject(new SttError("STT_FAILED", `The speech engine took longer than ${Math.round(timeoutMs / 1000)} s.`)));
+    }, timeoutMs);
     signal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdout.on("data", (d: Buffer) => out.push(d));
@@ -491,10 +511,17 @@ export function getSttStatus(): SttStatus {
  * Transcribe a recording. Takes 16 kHz mono PCM WAV as-is (what the app's
  * recorder sends); anything else is converted with ffmpeg first. Near-silent
  * clips come back as `{ text: "", noSpeech: true }` without running whisper.
- * `background: true` is for work nobody is waiting on (the wake listener): it
- * is refused rather than queued when the engine is already busy.
+ * `background: true` is for work nobody is waiting on (the wake listener, the
+ * video clipper): it is refused rather than queued when the engine is already
+ * busy, so a person's recording always goes first — such a caller must treat
+ * STT_BUSY as "try again", never as "there was nothing said".
+ * `timeoutMs` overrides the 90 s cap for long background audio (see
+ * whisperBudgetMs); it is clamped, and short recordings keep the default.
  */
-export async function transcribe(audio: Buffer, opts: { signal?: AbortSignal; background?: boolean } = {}): Promise<TranscriptResult> {
+export async function transcribe(
+  audio: Buffer,
+  opts: { signal?: AbortSignal; background?: boolean; timeoutMs?: number } = {},
+): Promise<TranscriptResult> {
   const { setup, problem } = resolveWhisper();
   if (!setup) throw new SttError("STT_UNAVAILABLE", problem ?? "Voice input isn't available.");
   if (!audio || audio.length < 64) throw new SttError("BAD_AUDIO", "The recording was empty.");
@@ -518,8 +545,11 @@ export async function transcribe(audio: Buffer, opts: { signal?: AbortSignal; ba
   }
 
   const started = Date.now();
+  const budget = Number.isFinite(opts.timeoutMs)
+    ? Math.min(MAX_WHISPER_TIMEOUT_MS, Math.max(1_000, Math.round(opts.timeoutMs as number)))
+    : WHISPER_TIMEOUT_MS;
   try {
-    const raw = await enqueue(() => runWhisper(setup, encodeWav(pcm), opts.signal), { background: opts.background });
+    const raw = await enqueue(() => runWhisper(setup, encodeWav(pcm), opts.signal, budget), { background: opts.background });
     const text = cleanTranscript(raw, levels);
     const elapsedMs = Date.now() - started;
     health.lastError = null;

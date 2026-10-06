@@ -15,7 +15,7 @@ import {
   clipLength,
   clock,
   clockRange,
-  fallbackPicks,
+  createProfileAccumulator,
   highlightSignals,
   inVideoOrder,
   momentScore,
@@ -27,11 +27,8 @@ import {
   rankWindows,
   snapToSpeech,
   speechRuns,
-  windowScore,
   withoutOverlaps,
 } from "../src/lib/brain/core/clips.js";
-
-const levels = (voicedSec: number, peakDb: number) => ({ voicedMs: voicedSec * 1000, peakDb });
 
 describe("where a long video is searched", () => {
   it("chops it into 45-second windows, merging a stub tail into the one before", () => {
@@ -50,16 +47,21 @@ describe("where a long video is searched", () => {
     expect(planWindows(45)).toEqual([{ start: 0, end: 45 }]);
   });
 
-  it("scores speech and loudness, and ranks the windows", () => {
+  it("ranks a wall of talking over a half-silent stretch over quiet background", () => {
     const w = (start: number, end: number) => ({ start, end });
     const windows = [w(0, 45), w(45, 90), w(90, 135)];
-    // Window 2 is mostly talking; 1 is half silent; 3 is quiet background.
-    const scores = [windowScore(windows[0]!, levels(22, -6)), windowScore(windows[1]!, levels(41, -4)), windowScore(windows[2]!, levels(5, -45))];
+    // Window 2 is talking almost the whole time and livelier; 1 is half silent;
+    // 3 is a hushed stretch (an intro, a pause, a screen share).
+    const scores = [
+      momentScore({ speechRatio: 0.5, loudness: 0.5, dynamics: 0.3, heard: false, hooks: 0, fillers: 0 }),
+      momentScore({ speechRatio: 0.95, loudness: 0.6, dynamics: 0.7, heard: false, hooks: 0, fillers: 0 }),
+      momentScore({ speechRatio: 0.1, loudness: 0.2, dynamics: 0.1, heard: false, hooks: 0, fillers: 0 }),
+    ];
     expect(scores[1]).toBeGreaterThan(scores[0]!);
     expect(scores[0]).toBeGreaterThan(scores[2]!);
     expect(rankWindows(windows, scores)).toEqual([1, 0, 2]);
-    // A window with no levels at all is the least promising, not a crash.
-    expect(windowScore(windows[0]!, undefined)).toBeLessThan(scores[2]!);
+    // Equal scores keep video order, so a tie is never arbitrary.
+    expect(rankWindows(windows, [0.5, 0.5, 0.5])).toEqual([0, 1, 2]);
   });
 
   it("cuts at most the longest a Short may be", () => {
@@ -70,35 +72,58 @@ describe("where a long video is searched", () => {
 });
 
 describe("picking without a key", () => {
-  const windows = planWindows(200); // 5 windows: 0-45, 45-90, 90-135, 135-180, 180-200
-  const scores = [0.9, 0.4, 0.8, 0.3, 0.2];
+  // Moments packed 10 s apart, as speech onsets make them — the case the
+  // spacing rule exists for.
+  const dense = [0, 10, 20, 30, 40].map((start) => ({ start, end: start + 40 }));
+  const denseScores = [0.9, 0.85, 0.5, 0.4, 0.3];
 
-  it("takes the most promising windows, spread out, in video order", () => {
-    const picks = fallbackPicks(windows, scores, 200, 3);
-    expect(picks).toHaveLength(3);
-    // Window 0 wins, 1 is its neighbour (same moment) and 2 is next; with those
-    // two the count isn't full yet, so the most promising one left is 4 — three
-    // clips spread over the video, not three from the opening minute.
-    expect(picks.map((p) => p.start)).toEqual([0, 90, 180]);
+  it("takes the most promising moments, far enough apart, in video order", () => {
+    const picks = pickMoments(dense, denseScores, 200, 2);
+    // Each candidate is 40 s long and they start 10 s apart, so no two can be
+    // 12 s apart: the spread-out rule can't be satisfied and the neighbour rule
+    // takes over — two clips that touch but never share a second of footage.
+    // (Spacing the *starts* 12 s apart instead, as this used to, returned
+    // 0–40 and 20–60: two clips with 20 seconds of the same video in both.)
+    expect(picks.map((p) => p.start)).toEqual([0, 40]);
     expect(picks.every((p) => p.end - p.start >= MIN_CLIP_SECONDS)).toBe(true);
+    const [a, b] = picks;
+    expect(b!.start).toBeGreaterThanOrEqual(a!.end);
   });
 
-  it("gives fewer clips when the video is short, and honours the count", () => {
-    // A 70 s video has two windows and could hold two clips: neighbours are
-    // allowed once the spread-out rule can't fill the count.
-    expect(fallbackPicks(planWindows(70), [0.5, 0.9], 70, 3).map((p) => p.start)).toEqual([0, 45]);
-    expect(fallbackPicks(windows, scores, 200, 1)).toHaveLength(1);
-    expect(fallbackPicks(windows, scores, 200, 99)).toHaveLength(MAX_CLIPS);
-    expect(fallbackPicks(windows, scores, 200, Number.NaN)).toHaveLength(DEFAULT_CLIPS);
+  it("lets neighbours in when a short video can't space the count out", () => {
+    const windows = planWindows(70); // 0-45, 45-70
+    const picks = pickMoments(windows, [0.5, 0.9], 70, 3);
+    expect(picks.map((p) => p.start)).toEqual([0, 45]);
+    // …but never two clips sharing footage: a window padded out to a full clip
+    // can reach into its neighbour, and then that neighbour is refused.
+    const padded = pickMoments([{ start: 0, end: 5 }, { start: 6, end: 9 }], [0.9, 0.8], 40, 3);
+    expect(padded).toHaveLength(1);
+  });
+
+  it("honours the count, and falls back to the default when it isn't a number", () => {
+    // Spread-out windows, so the video can actually hold five separate clips.
+    const spread = planWindows(400);
+    const spreadScores = spread.map((_, i) => 0.9 - i * 0.1);
+    expect(pickMoments(spread, spreadScores, 400, 1)).toHaveLength(1);
+    expect(pickMoments(spread, spreadScores, 400, 99)).toHaveLength(MAX_CLIPS);
+    expect(pickMoments(spread, spreadScores, 400, Number.NaN)).toHaveLength(DEFAULT_CLIPS);
+    // …and a video too short for the count asked for gives fewer, not
+    // overlapping clips to make the numbers up (the caller fails the jobs it
+    // can't fill and says why).
+    expect(pickMoments(dense, denseScores, 200, MAX_CLIPS).length).toBeLessThan(MAX_CLIPS);
   });
 });
 
 describe("the picker's answer", () => {
   it("is asked for numbered windows with what is said", () => {
-    const windows = planWindows(100);
-    const ask = buildPickerAsk(windows, ["a hook about coffee", null], 3, "funny bits");
+    const windows = planWindows(145);
+    const ask = buildPickerAsk(windows, ["a hook about coffee", "", null], 3, "funny bits");
     expect(ask.user).toContain("1. 0:00–0:45 — “a hook about coffee”");
-    expect(ask.user).toContain("2. 0:45–1:40 — (no speech heard");
+    // Listened to and nothing said: a reason to skip it.
+    expect(ask.user).toContain("2. 0:45–1:30 — (no speech heard");
+    // Could not be listened to at all: not a reason to skip it, and the model
+    // must not be told the video was silent when the engine was busy or slow.
+    expect(ask.user).toContain("3. 1:30–2:25 — (could not be listened to");
     expect(ask.system).toContain("3 best moments");
     expect(ask.system).toContain("funny bits");
     expect(ask.system).toContain("JSON");
@@ -240,6 +265,32 @@ describe("finding the moments worth clipping (no model)", () => {
     expect(runs[0]!.end).toBeLessThan(5.3);
     expect(runs[1]!.start).toBeGreaterThan(5.4);
     expect(runs[1]!.end).toBeGreaterThan(7.4);
+  });
+
+  it("builds the same profile chunk by chunk as it does in one go", () => {
+    const pcm = parts([
+      [2, 0.002],
+      [3, 0.3],
+      [0.6, 0.002],
+      [2, 0.3],
+      [1, 0.002],
+    ]);
+    const whole = audioProfile(pcm, RATE);
+    // Fed in chunks that don't line up with the 100 ms frames at all (7 s,
+    // 997 samples, 1 sample), the frames must come out identical — the
+    // streaming read is what lets a four-hour video be profiled without
+    // holding its 460 MB of PCM in memory.
+    for (const size of [7 * RATE, 997, 1]) {
+      const acc = createProfileAccumulator(RATE);
+      for (let at = 0; at < pcm.length; at += size) acc.push(pcm.subarray(at, Math.min(pcm.length, at + size)));
+      expect(acc.samples()).toBe(pcm.length);
+      expect(acc.finish()).toEqual(whole);
+    }
+    // Nothing read at all is a hushed profile, not a crash or an empty one.
+    const empty = createProfileAccumulator(RATE);
+    expect(empty.finish().db).toHaveLength(1);
+    expect(empty.finish().durationSec).toBe(0);
+    expect(audioProfile(Int16Array.from([]), RATE)).toEqual(empty.finish());
   });
 
   it("opens a candidate on an onset and closes it on the furthest pause that fits", () => {

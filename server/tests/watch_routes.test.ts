@@ -48,7 +48,7 @@ beforeEach(() => {
   setStoreForTests(store);
   conversation.resetConversationForTests();
   watch.resetChannelWatchForTests();
-  config.desktopApp = true;
+  (config as { desktopApp: boolean }).desktopApp = true;
   app = createApp();
 });
 
@@ -138,12 +138,12 @@ describe("the Watching card's routes", () => {
   });
 
   it("a hosted server says it can't watch channels instead of pretending", async () => {
-    config.desktopApp = false;
+    (config as { desktopApp: boolean }).desktopApp = false;
     const res = await request(app).post("/api/v1/watch").send({ channel: "@MrBeast" }).expect(503);
     expect(res.body.error).toMatch(/desktop app/i);
     // The list still answers (the card uses it to decide whether to show itself).
     const list = await request(app).get("/api/v1/watch").expect(200);
     expect(list.body).toMatchObject({ available: false, watches: [] });
-    config.desktopApp = true;
+    (config as { desktopApp: boolean }).desktopApp = true;
   });
 });

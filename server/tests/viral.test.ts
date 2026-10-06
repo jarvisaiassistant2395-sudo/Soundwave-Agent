@@ -202,9 +202,15 @@ describe("the shipped sample scripts", () => {
   });
 
   it("keeps the Generate button's list in step with the engine", () => {
-    const hub = fs.readFileSync(new URL("../../frontend/src/pages/AgentHub.tsx", import.meta.url), "utf8");
-    const block = hub.split("const NICHES: NicheInfo[] = [")[1]?.split("];")[0] ?? "";
-    const ids = [...block.matchAll(/id: "([^"]+)"/g)].map((m) => m[1]);
+    // The Command Center's niche grid has its own component now. Match on the
+    // declaration rather than the file's whole shape, and say so loudly if the
+    // list can't be found — comparing against nothing looks like a pass until
+    // the day the two lists actually drift.
+    const grid = new URL("../../frontend/src/components/agent/niches.tsx", import.meta.url);
+    expect(fs.existsSync(grid), "the Command Center's niche grid moved — point this test at it").toBe(true);
+    const block = fs.readFileSync(grid, "utf8").split("const NICHES: NicheInfo[] = [")[1]?.split("];")[0];
+    expect(block, "couldn't find the NICHES list in the niche grid").toBeTruthy();
+    const ids = [...block!.matchAll(/id: "([^"]+)"/g)].map((m) => m[1]);
     expect(ids).toEqual(NICHE_IDS);
   });
 });

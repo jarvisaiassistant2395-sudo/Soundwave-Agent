@@ -17,7 +17,8 @@ const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const audit = path.join(repoRoot, "scripts", "license-audit.mjs");
 const writer = path.join(repoRoot, "scripts", "write-binary-licenses.mjs");
 
-const run = (args, opts = {}) => spawnSync(process.execPath, args, { encoding: "utf8", ...opts });
+const run = (args: string[], opts: Record<string, unknown> = {}) =>
+  spawnSync(process.execPath, args, { encoding: "utf8", ...opts });
 
 describe("the ship-licence audit", () => {
   it("passes on this repository and names what it checked", () => {
@@ -99,7 +100,7 @@ describe("the ship-licence audit", () => {
   it("refuses a build whose dependencies include a copyleft library", () => {
     const fixture = path.join(os.tmpdir(), `sw-licence-${process.pid}-${Date.now()}`);
     const modules = path.join(fixture, "server", "node_modules");
-    const pkg = (dir, name, version, licence) => {
+    const pkg = (dir: string, name: string, version: string, licence: string) => {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, version, license: licence }));
     };

@@ -27,13 +27,6 @@ export interface VideoWindow {
   end: number;
 }
 
-export interface WindowLevels {
-  /** How long someone was talking in that window (ms). */
-  voicedMs: number;
-  /** Loudest sample in the window, dBFS. */
-  peakDb: number;
-}
-
 export interface ClipPick {
   start: number;
   end: number;
@@ -61,18 +54,6 @@ export function planWindows(durationSec: number, windowSec = CLIP_WINDOW_SECONDS
   return out;
 }
 
-/**
- * How promising a window sounds: how much of it is speech, and how loud it is
- * (a quiet stretch is usually an intro, a pause or a screen share).
- */
-export function windowScore(window: VideoWindow, levels: WindowLevels | undefined): number {
-  const lengthMs = Math.max(1, (window.end - window.start) * 1000);
-  const voiced = Math.min(1, Math.max(0, (levels?.voicedMs ?? 0) / lengthMs));
-  // peakDb is dBFS (0 = full scale): -40 dB or quieter counts as "hushed".
-  const loudness = Math.min(1, Math.max(0, ((levels?.peakDb ?? -60) + 40) / 40));
-  return voiced * 0.75 + loudness * 0.25;
-}
-
 /** Window indices, most promising first. */
 export function rankWindows(windows: VideoWindow[], scores: number[]): number[] {
   return windows
@@ -87,39 +68,16 @@ export function clipLength(window: VideoWindow, durationSec: number): number {
 }
 
 /**
- * The picks when there's no brain to ask (no key): the most promising windows,
- * spread out so three clips don't come from the same minute.
- */
-export function fallbackPicks(windows: VideoWindow[], scores: number[], durationSec: number, count: number): ClipPick[] {
-  const want = clampCount(count);
-  const ranked = rankWindows(windows, scores);
-  const chosen: number[] = [];
-  // First the promising windows that aren't next to each other (three clips
-  // somewhere in a long video, not three from the same minute)…
-  for (const i of ranked) {
-    if (chosen.length >= want) break;
-    if (chosen.some((j) => Math.abs(j - i) <= 1)) continue;
-    chosen.push(i);
-  }
-  // …then, in a short video where that isn't enough, neighbours are fair:
-  // their clips don't overlap (a window is at most as long as a clip).
-  for (const i of ranked) {
-    if (chosen.length >= want) break;
-    if (chosen.includes(i)) continue;
-    chosen.push(i);
-  }
-  return chosen
-    .sort((a, b) => a - b)
-    .map((i) => {
-      const w = windows[i]!;
-      const length = clipLength(w, durationSec);
-      return { start: round3(w.start), end: round3(w.start + length), title: "", reason: "" };
-    });
-}
-
-/**
  * What Gemini is asked: numbered windows with what is said in them, and the
  * shape of the answer (JSON, one entry per short).
+ *
+ * `snippets[i]` is `""` when the window was listened to and nothing was said,
+ * and `null` when it could not be listened to at all (the speech engine was
+ * busy with the person, or too slow for that window). Those are different
+ * facts and the model is told them apart: "silent" is a reason to skip a
+ * window, "not listened to" is not — it just means that one has to be judged
+ * on where it sits in the video. Rendering both as "no speech heard" used to
+ * hand the picker a video that looked silent and let it choose blind.
  */
 export function buildPickerAsk(
   windows: VideoWindow[],
@@ -140,8 +98,14 @@ export function buildPickerAsk(
 
   const list = windows
     .map((w, i) => {
-      const said = (snippets[i] ?? "").trim();
-      return `${i + 1}. ${clockRange(w)} — ${said ? `“${said.slice(0, 400)}”` : "(no speech heard — music, silence or background)"}`;
+      const snippet = snippets[i];
+      const said = (snippet ?? "").trim();
+      const tail = said
+        ? `“${said.slice(0, 400)}”`
+        : snippet === null
+          ? "(could not be listened to — judge it on its place in the video alone)"
+          : "(no speech heard — music, silence or background)";
+      return `${i + 1}. ${clockRange(w)} — ${tail}`;
     })
     .join("\n");
   const user = [
@@ -334,8 +298,12 @@ function round3(n: number): number {
 
 /** The energy profile's resolution: fine enough for a sentence end, cheap over hours. */
 export const PROFILE_FRAME_MS = 100;
-/** A gap this long is a pause — where one thought ends and the next begins. */
-export const PAUSE_SECONDS = 0.45;
+/**
+ * A gap shorter than this is inside a sentence — a breath, a word boundary —
+ * so speechRuns bridges it rather than ending the run. A gap longer than it is
+ * a pause: where one thought ends and the next begins, and where a clip cuts.
+ */
+export const SPEECH_BRIDGE_SECONDS = 0.32;
 /** Shorter than this isn't speech, it's a cough or a door. */
 export const MIN_SPEECH_SECONDS = 0.7;
 /** Frames 9 dB over the video's own noise floor are someone talking. */
@@ -417,22 +385,8 @@ export function highlightSignals(text: string): { hooks: number; fillers: number
   return { hooks, fillers };
 }
 
-/** The whole video's sound as 100 ms RMS levels — the basis for everything below. */
-export function audioProfile(pcm: Int16Array, sampleRate: number, frameMs = PROFILE_FRAME_MS): AudioProfile {
-  const frameLen = Math.max(1, Math.round((sampleRate * frameMs) / 1000));
-  const count = Math.max(1, Math.ceil(pcm.length / frameLen));
-  const db: number[] = new Array(count);
-  for (let f = 0; f < count; f++) {
-    const from = f * frameLen;
-    const to = Math.min(pcm.length, from + frameLen);
-    let sum = 0;
-    for (let i = from; i < to; i++) {
-      const v = pcm[i]! / 32768;
-      sum += v * v;
-    }
-    db[f] = 10 * Math.log10(sum / Math.max(1, to - from) + 1e-12);
-  }
-  const durationSec = pcm.length / Math.max(1, sampleRate);
+/** The frames' distribution turned into the video's own floor, threshold and talking level. */
+function summarizeFrames(db: number[], durationSec: number, frameMs: number): AudioProfile {
   const sorted = [...db].sort((a, b) => a - b);
   const floorDb = sorted[Math.floor(sorted.length * 0.1)] ?? -70;
   const thresholdDb = Math.max(floorDb + SPEECH_RISE_DB, -52);
@@ -448,10 +402,72 @@ export function audioProfile(pcm: Int16Array, sampleRate: number, frameMs = PROF
   };
 }
 
+export interface ProfileAccumulator {
+  /** Feed the next chunk of 16-bit mono PCM, in order. */
+  push(chunk: Int16Array): void;
+  /** Samples fed so far. */
+  samples(): number;
+  /** The finished profile. Call once, after the last chunk. */
+  finish(): AudioProfile;
+}
+
+/**
+ * The energy profile, built one chunk at a time.
+ *
+ * A video's PCM is the largest thing this pipeline touches — 16 kHz mono
+ * 16-bit is 32 kB per second, so an hour is 115 MB and the four hours
+ * lib/videoClips.ts will read is 460 MB. Holding all of it (and a copy of it,
+ * and an Int16Array of it) to work out a hundred floats a second is what made
+ * clipping a long video a gigabyte of RAM on a machine that is also rendering.
+ * The frames are all that's needed to find the moments, so they are computed
+ * as the sound arrives and the samples themselves go to a temporary file to be
+ * read back one window at a time (lib/videoClips.ts).
+ */
+export function createProfileAccumulator(sampleRate: number, frameMs = PROFILE_FRAME_MS): ProfileAccumulator {
+  const rate = Math.max(1, sampleRate);
+  const frameLen = Math.max(1, Math.round((rate * frameMs) / 1000));
+  const db: number[] = [];
+  let pending = 0;
+  let pendingSum = 0;
+  let total = 0;
+
+  const closeFrame = () => {
+    db.push(10 * Math.log10(pendingSum / Math.max(1, pending) + 1e-12));
+    pending = 0;
+    pendingSum = 0;
+  };
+
+  return {
+    push(chunk) {
+      for (let i = 0; i < chunk.length; i++) {
+        const v = chunk[i]! / 32768;
+        pendingSum += v * v;
+        if (++pending === frameLen) closeFrame();
+      }
+      total += chunk.length;
+    },
+    samples: () => total,
+    finish() {
+      // A partial frame at the end still says something; nothing at all (an
+      // empty or silent read) is one hushed frame, as a whole-video read was.
+      if (pending > 0) closeFrame();
+      if (!db.length) db.push(10 * Math.log10(1e-12));
+      return summarizeFrames(db, total / rate, frameMs);
+    },
+  };
+}
+
+/** The whole video's sound as 100 ms RMS levels — the basis for everything below. */
+export function audioProfile(pcm: Int16Array, sampleRate: number, frameMs = PROFILE_FRAME_MS): AudioProfile {
+  const accumulator = createProfileAccumulator(sampleRate, frameMs);
+  accumulator.push(pcm);
+  return accumulator.finish();
+}
+
 /** Where someone is talking: frames over the floor, short gaps bridged, blips dropped. */
 export function speechRuns(profile: AudioProfile): SpeechRun[] {
   const frameSec = Math.max(0.01, profile.frameMs / 1000);
-  const bridge = Math.max(1, Math.round(0.32 / frameSec)); // inside-word gaps
+  const bridge = Math.max(1, Math.round(SPEECH_BRIDGE_SECONDS / frameSec)); // inside-word gaps
   const runs: SpeechRun[] = [];
   let from = -1;
   let last = -1;
@@ -581,7 +597,12 @@ export function momentReason(f: MomentFeatures): string {
 /**
  * The picks without asking a model: the best moments, from parts of the video
  * far enough apart that the shorts don't repeat each other; when a short video
- * can't space them out, neighbours are fair (clips never overlap anyway).
+ * can't space them out, neighbours are fair as long as the clips themselves
+ * don't share footage.
+ *
+ * Both rules are judged on the clip a window actually becomes, not on where the
+ * window starts: a window shorter than a clip is padded out to one, so two
+ * neighbours can overlap however far apart their starts looked.
  */
 export function pickMoments(
   windows: VideoWindow[],
@@ -592,24 +613,28 @@ export function pickMoments(
 ): ClipPick[] {
   const want = clampCount(count);
   const ranked = rankWindows(windows, scores);
-  const chosen: number[] = [];
+  const clipOf = (i: number): ClipPick => {
+    const w = windows[i]!;
+    const length = clipLength(w, durationSec);
+    return { start: round3(w.start), end: round3(w.start + length), title: "", reason: "" };
+  };
+  const chosen: ClipPick[] = [];
+  const same = (pick: ClipPick) => chosen.some((kept) => kept.start === pick.start && kept.end === pick.end);
+  const apart = (pick: ClipPick) =>
+    chosen.every((kept) => pick.start >= kept.end + minGapSec || kept.start >= pick.end + minGapSec);
+  const disjoint = (pick: ClipPick) => chosen.every((kept) => pick.end <= kept.start || pick.start >= kept.end);
+
   for (const i of ranked) {
     if (chosen.length >= want) break;
-    const start = windows[i]!.start;
-    if (chosen.some((j) => Math.abs(windows[j]!.start - start) < minGapSec)) continue;
-    chosen.push(i);
+    const pick = clipOf(i);
+    if (apart(pick)) chosen.push(pick);
   }
   for (const i of ranked) {
     if (chosen.length >= want) break;
-    if (!chosen.includes(i)) chosen.push(i);
+    const pick = clipOf(i);
+    if (!same(pick) && disjoint(pick)) chosen.push(pick);
   }
-  return chosen
-    .sort((a, b) => windows[a]!.start - windows[b]!.start)
-    .map((i) => {
-      const w = windows[i]!;
-      const length = clipLength(w, durationSec);
-      return { start: round3(w.start), end: round3(w.start + length), title: "", reason: "" };
-    });
+  return inVideoOrder(chosen);
 }
 
 /**

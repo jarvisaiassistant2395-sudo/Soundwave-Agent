@@ -59,15 +59,15 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
   const fake = {
     url: "",
     close: (async () => undefined) as () => Promise<void>,
-    seen: [],
+    seen: [] as Seen[],
     gemini: [] as Array<(req: Seen) => Reply>,
     router: null as ((req: Seen) => Reply | null) | null,
-    token: [],
+    token: [] as Array<(req: Seen) => Reply>,
     weather: { place: { name: "Kruševac", latitude: 43.58, longitude: 21.33, country: "Serbia", country_code: "RS" }, tempC: 14.2, code: 2 },
     youtube: { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true },
     accounts: [] as FakeGoogle["accounts"],
     badRefreshTokens: [] as string[],
-    uploads: [] as Array<{ initAuth?: string; title?: string; bytes: number }>,
+    uploads: [] as FakeGoogle["uploads"],
     generateCalls: () => fake.seen.filter((s) => s.path.includes(":generateContent")),
     reset() {
       fake.seen.length = 0;

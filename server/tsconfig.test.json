@@ -1,0 +1,35 @@
+// Typechecks the tests as well as the sources — deliberately standalone rather
+// than an `extends` of tsconfig.json, which sets rootDir/outDir for emitting
+// dist/ and can't have them unset from a child config.
+//
+// Why this exists: `npm run typecheck` only ever saw src/, which is how
+// brain/core/clips.ts came to export two functions nothing called but the tests.
+// Deleting them broke nothing that was checked, and nothing would have caught a
+// test whose types had drifted from the code it covers.
+//
+// The DOM lib is here because some tests import the phone app's and the Command
+// Center's own modules (tests/companion_brain.test.ts, tests/voices.test.ts),
+// and those are written against a browser.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    // tests/voice_choice.test.ts imports the Command Center's own voices.ts by its
+    // real name to prove the two apps offer the same list; that's only legal with
+    // noEmit, which is all this config does.
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

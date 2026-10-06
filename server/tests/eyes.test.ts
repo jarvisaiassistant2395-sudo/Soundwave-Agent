@@ -394,6 +394,7 @@ const ctx = (eyes: Eyes, desktop = true): ToolContext => ({
   userId: "eyes-test",
   voice: "en-US-AvaMultilingualNeural",
   resolution: "720p",
+  seconds: 60,
   desktop,
   platform: "win32",
   effects: { log: [] },

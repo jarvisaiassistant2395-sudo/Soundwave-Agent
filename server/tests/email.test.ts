@@ -12,6 +12,8 @@ const { createApp } = await import("../src/app.js");
 const { gmailService, GMAIL_SCOPES, WORKSPACE_SCOPES, gmailSendPolicy, gmailSentLog, isGmailCallback, parseRecipients, resetGmailForTests, saveGmailSendPolicy, startGmailConnect, finishGmailConnect } = await import("../src/lib/gmail.js");
 const { youtubeService } = await import("../src/lib/youtube.js");
 const { toolsFor } = await import("../src/lib/brain/tools.js");
+// The tools write draft and send records into ctx.effects; a bare { log } hides them.
+type ToolEffects = import("../src/lib/brain/tools.js").ToolEffects;
 
 const app = createApp();
 const EMAIL = "alice@example.com";
@@ -196,7 +198,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("creates a threaded Gmail reply draft but does not send it", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const tool = toolsFor(context).find((item) => item.declaration.name === "draft_email_reply")!;
     const result = await tool.run({ messageId: "message-1", body: "Thanks, that works for me." }, context);
     expect(result).toMatchObject({ ok: true, saved: true, sent: false, to: EMAIL, subject: "Re: Meeting tomorrow" });
@@ -237,7 +239,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("sends the email the person asked for, and records exactly what went out", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const sendTool = toolsFor(context).find((item) => item.declaration.name === "send_email")!;
     const result = await sendTool.run(
       { to: "editor@example.com", subject: "Invoice for March", body: "Here's the invoice.\nThanks!" },
@@ -261,7 +263,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("refuses an address that isn't one, an empty body and a missing recipient — sending nothing", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const sendTool = toolsFor(context).find((item) => item.declaration.name === "send_email")!;
 
     await expect(sendTool.run({ to: "John", subject: "Hi", body: "Hello" }, context)).rejects.toThrow(/valid To address/i);
@@ -284,7 +286,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("refuses to send the same email twice in a few minutes", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const sendTool = toolsFor(context).find((item) => item.declaration.name === "send_email")!;
     const mail = { to: "editor@example.com", subject: "Invoice", body: "Attached." };
     await sendTool.run({ ...mail }, context);
@@ -297,7 +299,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("replies in the original conversation when asked to answer an email", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const replyTool = toolsFor(context).find((item) => item.declaration.name === "send_reply")!;
     const result = await replyTool.run({ messageId: "message-1", body: "10:00 works for me." }, context);
     expect(result).toMatchObject({ ok: true, sent: true, to: EMAIL, subject: "Re: Meeting tomorrow" });
@@ -310,7 +312,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("saves a draft, then sends it when the person says so — and only if it is unchanged", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const draftTool = toolsFor(context).find((item) => item.declaration.name === "draft_email")!;
     const saved = await draftTool.run({ to: "editor@example.com", subject: "Invoice for March", body: "Here's the invoice." }, context);
     expect(saved).toMatchObject({ ok: true, sent: false, draftId: "draft-2" });
@@ -327,7 +329,7 @@ describe("Gmail tools and explicit-send boundary", () => {
 
   it("honours the sending switch and the daily cap, then offers a draft instead", async () => {
     await connectGmail();
-    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } };
+    const context = { userId: "local-user", voice: "en-US-AndrewNeural", resolution: "1080p" as const, seconds: 60, desktop: true, platform: "win32" as NodeJS.Platform, effects: { log: [] as string[] } as ToolEffects };
     const sendTool = toolsFor(context).find((item) => item.declaration.name === "send_email")!;
 
     const off = await request(app).put("/api/v1/email/policy").send({ enabled: false });

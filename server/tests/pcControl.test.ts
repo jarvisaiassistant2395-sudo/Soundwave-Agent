@@ -68,13 +68,13 @@ describe("reading the answer", () => {
   });
 
   it("reports the value Windows gives back, never the one it asked for", async () => {
-    const runner = vi.fn(async () => "42|0");
+    const runner = vi.fn(async (_script: string) => "42|0");
     expect(await setVolume(80, runner)).toEqual({ level: 42, muted: false });
     expect(runner.mock.calls[0]?.[0]).toContain("SetLevel([float]0.8000)");
   });
 
   it("does the mute and the read in one pass", async () => {
-    const runner = vi.fn(async () => "55|1");
+    const runner = vi.fn(async (_script: string) => "55|1");
     expect(await setMuted(true, runner)).toEqual({ level: 55, muted: true });
     expect(runner.mock.calls[0]?.[0]).toContain("SetMute($true)");
   });

@@ -9,8 +9,15 @@ const mocks = vi.hoisted(() => {
   // Routes under /api/v1/companion exist only in the desktop app.
   process.env.COMPANION = "1";
   return {
-    transcribe: vi.fn(async () => ({ text: "make a note", noSpeech: false, durationMs: 1200, elapsedMs: 80, model: "test" })),
-    synthesizeEdgeTTS: vi.fn(async () => ({ audioBase64: Buffer.from("ID3-fake-mp3").toString("base64"), mimeType: "audio/mpeg", duration: 1.2 })),
+    // Signatures matter: a vi.fn() with no declared parameters has an empty call
+    // tuple, so `mock.calls.at(-1)![0]` — the assertion several tests make —
+    // doesn't typecheck and the argument is never really checked.
+    transcribe: vi.fn(async (_audio: Buffer) => ({ text: "make a note", noSpeech: false, durationMs: 1200, elapsedMs: 80, model: "test" })),
+    synthesizeEdgeTTS: vi.fn(async (_opts: { text: string; voice: string }) => ({
+      audioBase64: Buffer.from("ID3-fake-mp3").toString("base64"),
+      mimeType: "audio/mpeg",
+      duration: 1.2,
+    })),
   };
 });
 
@@ -338,7 +345,12 @@ describe("what the PC refuses", () => {
     const { record } = await pairedClient();
     const keys = await phone.deriveDeviceKeys(phone.fromBase64(record.deviceKey), record.deviceId);
     const post = (body: Uint8Array, device = record.deviceId) =>
-      fetch(`${base}/companion/v1/rpc`, { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Soundwave-Device": device }, body });
+      fetch(`${base}/companion/v1/rpc`, { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Soundwave-Device": device },
+        // TS 5.7 made Uint8Array generic over its buffer, and this project resolves
+        // 5.9 while the phone app pins 5.6.3: the sealed frame is the right body,
+        // the two lib.dom.d.ts versions just disagree about saying so.
+        body: body as unknown as BodyInit,
+      });
     const sealed = (header: Record<string, unknown>) => phone.seal(keys.c2s, phone.frame(header), phone.aad("rpc", "c2s", record.deviceId));
 
     const body = await sealed({ op: "hello", args: {}, t: Date.now(), n: phone.randomNonce() });

@@ -9,6 +9,7 @@ import { initCompanion } from "./lib/companion/listener.js";
 import { initMemory } from "./lib/memory.js";
 import { initBriefingScheduler } from "./lib/briefing.js";
 import { initChannelWatch } from "./lib/channelWatch.js";
+import { initClips } from "./lib/videoClips.js";
 import { initTrendScout } from "./lib/trends.js";
 import { initPublishPlan } from "./lib/publishPlan.js";
 import { initReminders } from "./lib/reminders.js";
@@ -55,6 +56,9 @@ async function main() {
   // the last session) while nobody was watching. Then the phone companion's
   // LAN listener, if the person left "Let my phone connect" on.
   initConversation();
+  // Clips the last session left mid-render: their jobs are settled honestly
+  // here, rather than sitting in the Command Center as "processing" forever.
+  initClips();
   // The agent's memory keeps a summary of what falls out of the recent conversation.
   initMemory();
   // The morning briefing: prepared when it's due, spoken when an app is opened.
