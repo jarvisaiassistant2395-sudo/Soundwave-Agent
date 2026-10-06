@@ -45,6 +45,7 @@ import {
   ask,
   createChat,
   createNotebook,
+  fetchStatus,
   deleteChat,
   deleteNotebook,
   listChats,
@@ -65,7 +66,6 @@ import {
   type NotebookSummary,
   type StoredFile,
 } from "../lib/geminiChat";
-import { fetchStatus } from "../lib/geminiChat";
 
 const KIND_ICON: Record<string, JSX.Element> = {
   image: <ImageIcon className="h-3.5 w-3.5" />,
