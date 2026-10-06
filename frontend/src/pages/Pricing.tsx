@@ -1,3 +1,11 @@
+// ── NOTE: unrouted on purpose ───────────────────────────────────────────────
+// This page is the marketing site's copy. Since sign-in-with-Google, the app's
+// own routes send `/` and `/pricing` straight into the Command Center — the
+// desktop app has nothing to advertise to the person already using it. So this
+// file is built for an external site (deployed from here, not linked from
+// inside the SPA). Keep the numbers in it true: the plans live in
+// server/src/lib/plans.ts, and competitor prices carry the date they were
+// checked (docs/COMPETITIVE-PLAN.md).
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
