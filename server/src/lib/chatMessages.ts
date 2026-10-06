@@ -36,6 +36,10 @@ export interface ChatMessage {
   actionOutput?: string;
   /** Gmail drafts created by the agent, always unsent until explicitly approved in the UI. */
   emailDraftIds?: string[];
+  /** Emails that really went out this turn (who, and what about). */
+  emailSent?: Array<{ to: string; subject: string }>;
+  /** Emails the agent queued for a later moment ("send this at 5 pm"). */
+  emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
   time: string;
   tag?: "SYS" | "RPA" | "VOICE" | "USER" | "AUDIO";
   videoUrl?: string;
@@ -116,6 +120,17 @@ export const chatMessageSchema = z
       .array(z.object({ to: z.string().max(500), subject: z.string().max(500) }))
       .max(6)
       .optional(),
+    emailScheduled: z
+      .array(
+        z.object({
+          to: z.string().max(500),
+          subject: z.string().max(500),
+          when: z.string().max(120),
+          at: z.number(),
+        }),
+      )
+      .max(6)
+      .optional(),
     time: z.string().max(40).default(""),
     tag: z.enum(["SYS", "RPA", "VOICE", "USER", "AUDIO"]).optional(),
     videoUrl: z.string().max(2000).optional(),
@@ -166,6 +181,7 @@ export interface ChatReply {
   actionOutput?: string;
   emailDraftIds?: string[];
   emailSent?: Array<{ to: string; subject: string }>;
+  emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
   videoUrl?: string;
   downloadUrl?: string;
   tag?: ChatMessage["tag"];
@@ -189,6 +205,14 @@ export function replyToMessage(data: ChatReply, query: string, now = Date.now())
     ...(Array.isArray(data.emailDraftIds) && data.emailDraftIds.every((id) => typeof id === "string") ? { emailDraftIds: data.emailDraftIds.slice(0, 6) as string[] } : {}),
     ...(Array.isArray(data.emailSent) && data.emailSent.length
       ? { emailSent: data.emailSent.filter((item) => item && typeof item.to === "string").slice(0, 6).map((item) => ({ to: String(item.to), subject: String(item.subject ?? "") })) }
+      : {}),
+    ...(Array.isArray(data.emailScheduled) && data.emailScheduled.length
+      ? {
+          emailScheduled: data.emailScheduled
+            .filter((item) => item && typeof item.to === "string" && Number.isFinite(Number(item.at)))
+            .slice(0, 6)
+            .map((item) => ({ to: String(item.to), subject: String(item.subject ?? ""), when: String(item.when ?? ""), at: Number(item.at) })),
+        }
       : {}),
     ...(videoLink ? { videoUrl: videoLink, downloadUrl: videoLink } : {}),
     time: chatTime(new Date(now)),

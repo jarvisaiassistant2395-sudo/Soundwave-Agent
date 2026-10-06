@@ -35,7 +35,7 @@ export const WORKSPACE_SCOPES = [
 ] as const;
 export const ALL_GOOGLE_SCOPES = [...GMAIL_SCOPES, ...WORKSPACE_SCOPES] as const;
 const STATE_TTL_MS = 15 * 60_000;
-const MAX_BODY_CHARS = 12_000;
+export const MAX_BODY_CHARS = 12_000;
 const MAX_LIST = 10;
 
 interface GmailConfig {

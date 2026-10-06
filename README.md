@@ -99,7 +99,8 @@ it never claims something it didn't do:
 | `youtube_views` | how the person's videos are doing: per-channel totals, latest uploads, and what changed since the last look |
 | `soundwave_guide` | the built-in user guide — every feature, exact steps and button names (`server/src/lib/brain/core/guide.ts`) |
 | `list_emails`, `read_email`, `draft_email`, `draft_email_reply` | reads the connected mailbox and saves unsent drafts (id-and-body verified) |
-| `send_email`, `send_reply` | sends what the person asked for — guarded by the switch, the daily cap and a no-duplicates rule (below) |
+| `send_email`, `send_reply` | sends what the person asked for — guarded by the switch, the daily cap and a no-duplicates rule (below). A time they named ("at 5 pm") goes in `when`, and the email is written now and sent then with no further confirmation |
+| `list_scheduled_emails`, `cancel_scheduled_email` | what is waiting to go out (with the moment), and taking one back before it does |
 | `find_contact`, `list_calendar`, `search_drive` | the rest of the Google account, read-only: a name → address, the next days of the calendar, a file on Drive |
 | Google Search | live answers — only with a key that has billing (not on the free tier) |
 
@@ -368,6 +369,36 @@ person's leash**:
 - drafting and sending share `POST /api/v1/email/drafts/:id/send`, which still
   demands a fresh reviewed fingerprint when the person presses Send themselves.
 
+**"Send this to that guy at 5 pm."** A time makes it a *scheduled* email
+(`when` on `send_email` / `send_reply` → `server/src/lib/emailSchedule.ts`,
+queue in `<dataDir>/gmail/scheduled.json`):
+
+- it is written and checked **when the person asks** — the address, the body and
+  the moment are all validated there and then, so a mistake is answered while
+  they are still in the conversation, not silently at 17:00;
+- at that moment it goes out **by itself, with no confirmation** — asking twice
+  is not what "send it at 5" means, and a scheduled email that waits for someone
+  to be at the keyboard is not scheduled at all. The reply says exactly when it
+  will go;
+- **Settings → Email → “Waiting to go out”** shows every queued email with its
+  moment, the full text and a Cancel that really cancels (`GET/DELETE
+  /api/v1/email/scheduled`); the chat shows the same note for the message that
+  created it;
+- the same guards as an immediate send apply *at the moment it fires*: the
+  sending switch, the daily cap, the address check and the no-duplicates rule
+  all run through `gmailService.sendMessage`, so "sending is off" means a queued
+  email does not slip out either — it is marked failed and the person is told
+  why (a refusal is never retried forever; Google's own 5xx is retried twice
+  with a backoff, then reported);
+- it lives on this PC and the app must be running for the moment to be kept. A
+  PC that was off sends at the next start **and says how late it was**; more
+  than six hours late it is kept, marked *missed*, and **not** sent — a stale
+  email arriving unannounced is worse than being asked;
+- an interrupted send is reported, never repeated: the entry is marked *sending*
+  durably before the network call, and a send the app died in the middle of is
+  left for the person to check in Gmail's Sent folder rather than risking a
+  second copy.
+
 ## Get the phone app (Android)
 
 CI builds **`SoundwaveCompanion-*.apk`** (the `soundwave-companion-apk`
@@ -574,6 +605,8 @@ cd frontend && npm run build     # production build
 | GET | `/api/v1/email/status` | local app only | Google connection, the permissions it has, the sending switch, calls left today |
 | GET/PUT | `/api/v1/email/policy` | local app only | "let the agent send" + daily cap (1–200), with the last sends (`sent`), newest first |
 | POST | `/api/v1/email/drafts/:id/send` | local app only | sends a draft with `confirmSend` + the reviewed `fingerprint` (a person's own action; not capped) |
+| GET | `/api/v1/email/scheduled` | local app only | email waiting to go out (`scheduled`, with its moment, full text and how far off) and what recently happened to the finished ones (`history`) |
+| DELETE | `/api/v1/email/scheduled/:id` | local app only | cancels a queued email — it will not be sent (404 when nothing matches) |
 | GET | `/api/v1/user/me` | ✓ | profile + password change |
 | GET | `/api/v1/user/usage` | ✓ | quota snapshot |
 | DELETE | `/api/v1/user/account` | ✓ | account deletion (30-day window) |

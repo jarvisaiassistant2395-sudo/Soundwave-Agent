@@ -20,6 +20,19 @@ Soundwave asks for two Gmail permissions, and offers three optional ones:
 
 ---
 
+## Sending at a time you name
+
+Ask for it with a time — *"email Marko that I'll be late, at 5 pm"*, *"reply to
+that tomorrow at 9"* — and the message is written, addressed and checked when you
+ask, then sent at that moment on its own. Nothing asks you to confirm again, and
+you can be away from the PC. Everything waiting (with the full text) is in
+**Settings → Email → Waiting to go out**, where **Cancel** removes it before it
+goes. Soundwave must be running when the time comes; a PC that was off sends it
+at the next start and says how late it was, and anything more than six hours late
+is left unsent — marked as missed — so you can decide. The sending switch, the
+daily limit and the address checks apply to a scheduled send exactly as they do
+to one you asked for now.
+
 ## 1. Open the project that has your YouTube client
 
 1. Go to https://console.cloud.google.com

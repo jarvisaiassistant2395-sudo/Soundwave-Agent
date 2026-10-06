@@ -12,6 +12,7 @@ import { initChannelWatch } from "./lib/channelWatch.js";
 import { initTrendScout } from "./lib/trends.js";
 import { initPublishPlan } from "./lib/publishPlan.js";
 import { initReminders } from "./lib/reminders.js";
+import { initEmailSchedule } from "./lib/emailSchedule.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[soundwave] Handled asynchronous rejection:", reason);
@@ -68,6 +69,9 @@ async function main() {
   // Timers and reminders the agent set: they ring into the conversation (and the
   // phone sees it) while the app is running, once each, exactly when due.
   initReminders();
+  // Email the person scheduled ("send this at 5 pm"): it goes out at that
+  // moment with no second confirmation, and catches up if the PC was off.
+  initEmailSchedule();
   if (config.companionAvailable) {
     initCompanion().catch((err) => console.warn("[companion] could not start:", (err as Error).message));
   }

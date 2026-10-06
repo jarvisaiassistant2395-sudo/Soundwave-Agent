@@ -140,6 +140,27 @@ export interface GmailSendPolicyView {
   sent: Array<{ at: number; to: string; subject: string; source: "agent" | "app" }>;
 }
 
+/** GET /api/v1/email/scheduled — email written now that goes out at a set time. */
+export interface GmailScheduledView {
+  id: string;
+  at: number;
+  /** The words the person used: "at 17:00", "tomorrow at 09:00". */
+  when: string;
+  /** "in 2 hours", or what happened for a finished one. */
+  due: string;
+  atLocal: string;
+  to: string;
+  cc?: string;
+  bcc?: string;
+  subject: string;
+  body: string;
+  status: "scheduled" | "sending" | "sent" | "failed" | "missed" | "cancelled";
+  attempts: number;
+  lastError?: string;
+  sentAt?: number;
+  lateBy?: number;
+}
+
 /** GET /api/v1/email/status — the Google connection and what it may do. */
 export interface GmailStatus {
   connected: boolean;
@@ -418,6 +439,9 @@ export function AgentHub() {
   });
   const [isConnectingGmail, setIsConnectingGmail] = useState(false);
   const [isSavingGmailPolicy, setIsSavingGmailPolicy] = useState(false);
+  /** Email the agent queued for a later moment, and the recent ones it sent. */
+  const [gmailScheduled, setGmailScheduled] = useState<{ scheduled: GmailScheduledView[]; history: GmailScheduledView[] } | null>(null);
+  const [cancellingScheduledId, setCancellingScheduledId] = useState("");
   // "Speak replies aloud" — stored, so the desktop voice bar follows it too.
   const [voiceFeedback, setVoiceFeedbackState] = useState(() => loadVoicePrefs().speakReplies);
   const setVoiceFeedback = (on: boolean) => {
@@ -503,6 +527,29 @@ export function AgentHub() {
       const res = await fetch("/api/v1/email/policy");
       if (res.ok) setGmailPolicy(await res.json());
     } catch {}
+  };
+
+  const fetchGmailScheduled = async () => {
+    try {
+      const res = await fetch("/api/v1/email/scheduled");
+      if (res.ok) setGmailScheduled(await res.json());
+    } catch {}
+  };
+
+  /** Takes one back before it goes out. Nothing is sent after this returns. */
+  const cancelScheduledEmail = async (id: string, subject: string) => {
+    setCancellingScheduledId(id);
+    try {
+      const res = await fetch(`/api/v1/email/scheduled/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || "Couldn't cancel that one.");
+      toast.success("Scheduled email cancelled", `“${subject || "(no subject)"}” won't be sent.`);
+      void fetchGmailScheduled();
+    } catch (err) {
+      toast.error("Scheduled email", (err as Error).message);
+    } finally {
+      setCancellingScheduledId("");
+    }
   };
 
   const saveGmailPolicy = async (patch: { enabled?: boolean; dailyLimit?: number }) => {
@@ -627,6 +674,7 @@ export function AgentHub() {
     fetchYtStatus();
     fetchGmailStatus();
     fetchGmailPolicy();
+    fetchGmailScheduled();
     fetchChannels();
     fetchTrendStatus();
   }, []);
@@ -1232,6 +1280,7 @@ export function AgentHub() {
         if (status?.connected) {
           setGmailStatus(status);
           void fetchGmailPolicy();
+          void fetchGmailScheduled();
           toast.success("Google connected", status.email || "Your inbox is ready.");
           return;
         }
@@ -1252,6 +1301,7 @@ export function AgentHub() {
       if (!res.ok) throw new Error(data?.error?.message || "Couldn't disconnect Gmail.");
       setGmailStatus({ connected: false, email: null, needsReconnect: false, scopes: { gmail: false, contacts: false, calendar: false, drive: false }, sending: { enabled: true, dailyLimit: 25, sentToday: 0, remaining: 25 } });
       void fetchGmailPolicy();
+      void fetchGmailScheduled();
       toast.success("Google disconnected", "Soundwave can no longer read, draft or send email.");
     } catch (err) {
       toast.error("Gmail", (err as Error).message);
@@ -2236,6 +2286,31 @@ export function AgentHub() {
                   </section>
                 ))}
 
+                {/* Email the agent queued for later: the moment it goes out, and
+                    that cancelling it lives in Settings → Email. */}
+                {msg.emailScheduled?.map((mail, i) => (
+                  <section
+                    key={`${mail.to}-${mail.at}-${i}`}
+                    className="mt-3 rounded-lg border border-cyan-500/30 bg-[#08090B] p-3 text-[11px]"
+                    aria-label="Email scheduled"
+                    data-testid="email-scheduled-note"
+                  >
+                    <div className="flex items-center gap-2 text-cyan-200">
+                      <Clock className="h-4 w-4 shrink-0" />
+                      <b>Email scheduled</b>
+                      <span className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] text-cyan-300">
+                        Sends by itself
+                      </span>
+                    </div>
+                    <p className="mt-2 truncate text-gray-300"><span className="text-gray-500">To:</span> {mail.to}</p>
+                    <p className="mt-1 truncate text-gray-300"><span className="text-gray-500">Subject:</span> {mail.subject || "(no subject)"}</p>
+                    <p className="mt-1 text-gray-400">
+                      Goes out {mail.when || new Date(mail.at).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })} — no confirmation
+                      needed. Cancel it in Settings → Email.
+                    </p>
+                  </section>
+                ))}
+
                 {/* Inline Video Player & Download Button */}
                 {Boolean(msg.videoUrl || msg.downloadUrl) && (
                   <div className="mt-2.5 rounded-lg border border-cyan-500/30 bg-[#040814] p-2.5 space-y-2 font-mono">
@@ -3120,7 +3195,7 @@ export function AgentHub() {
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => void handleDisconnectGmail()}>Disconnect Google</Button>
                     )}
-                    <button type="button" onClick={() => { void fetchGmailStatus(); void fetchGmailPolicy(); }} className="rounded-lg border border-[#24252D] px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
+                    <button type="button" onClick={() => { void fetchGmailStatus(); void fetchGmailPolicy(); void fetchGmailScheduled(); }} className="rounded-lg border border-[#24252D] px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
                   </div>
 
                   {gmailStatus.connected && (
@@ -3194,6 +3269,82 @@ export function AgentHub() {
                     />
                   </div>
 
+                  {/* Email the agent wrote when asked, going out at a set time on
+                      its own — with the text readable here before it does, and a
+                      Cancel that really cancels (nothing is sent afterwards). */}
+                  <div className="border-t border-[#24252D] pt-2.5" data-testid="gmail-scheduled">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-cyan-300" />
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Waiting to go out</p>
+                      {gmailScheduled?.scheduled?.length ? (
+                        <span className="rounded bg-cyan-500/15 px-1.5 py-px text-[9px] font-bold text-cyan-300">{gmailScheduled.scheduled.length}</span>
+                      ) : null}
+                    </div>
+                    {gmailScheduled?.scheduled?.length ? (
+                      <ul className="mt-2 space-y-2">
+                        {gmailScheduled.scheduled.map((entry) => (
+                          <li key={entry.id} className="rounded-md border border-cyan-500/25 bg-[#0A0A0C] p-2.5" data-testid="gmail-scheduled-row">
+                            <div className="flex items-start gap-2">
+                              <span className="mt-0.5 shrink-0 rounded bg-cyan-500/15 px-1.5 py-px text-[9px] font-bold text-cyan-300">
+                                {entry.status === "sending" ? "SENDING" : "SCHEDULED"}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[11px] text-gray-200" title={`${entry.subject || "(no subject)"} — ${entry.to}`}>
+                                  {entry.subject || "(no subject)"}
+                                </p>
+                                <p className="truncate text-[10px] text-gray-400">
+                                  {entry.to || entry.cc || entry.bcc || "the conversation"} · {entry.atLocal}
+                                </p>
+                                <p className="mt-0.5 text-[10px] text-cyan-200/80">
+                                  Goes out {entry.due}. No confirmation needed.
+                                </p>
+                                {entry.lastError ? <p className="mt-0.5 text-[10px] text-amber-200/90">{entry.lastError}</p> : null}
+                                <details className="mt-1">
+                                  <summary className="cursor-pointer text-[10px] text-gray-500 hover:text-gray-300">Message</summary>
+                                  <p className="mt-1 whitespace-pre-wrap text-[10px] leading-relaxed text-gray-300">{entry.body}</p>
+                                </details>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void cancelScheduledEmail(entry.id, entry.subject)}
+                                disabled={cancellingScheduledId === entry.id}
+                                className="shrink-0 rounded border border-[#24252D] px-2 py-1 text-[10px] text-gray-400 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
+                                data-testid="gmail-scheduled-cancel"
+                              >
+                                {cancellingScheduledId === entry.id ? "Cancelling…" : "Cancel"}
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1.5 text-[10px] text-gray-500">
+                        Nothing scheduled. Say “email Marko that I'll be late, at 5 pm” and it is written and checked now, then sent at 17:00 by itself — even if the app was closed and reopened, as long as Soundwave is running when the time comes.
+                      </p>
+                    )}
+                    {gmailScheduled?.history?.length ? (
+                      <ul className="mt-2 space-y-1">
+                        {gmailScheduled.history.slice(0, 4).map((entry) => (
+                          <li key={entry.id} className="flex items-start gap-2 text-[10px]">
+                            <span
+                              className={cn(
+                                "mt-0.5 shrink-0 rounded px-1 py-px text-[8px] font-bold",
+                                entry.status === "sent" ? "bg-emerald-500/15 text-emerald-300" : entry.status === "cancelled" ? "bg-gray-700/40 text-gray-300" : "bg-amber-500/15 text-amber-200",
+                              )}
+                            >
+                              {entry.status === "sent" ? "SENT" : entry.status === "cancelled" ? "CANCELLED" : entry.status.toUpperCase()}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-gray-400" title={entry.lastError || `${entry.subject} — ${entry.to}`}>
+                              {entry.subject || "(no subject)"} <span className="text-gray-600">→ {entry.to || "the conversation"}</span>
+                              {entry.lastError ? <span className="text-amber-200/80"> · {entry.lastError}</span> : null}
+                            </span>
+                            <span className="shrink-0 text-gray-600">{entry.due}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+
                   {gmailPolicy?.sent?.length ? (
                     <div className="border-t border-[#24252D] pt-2.5">
                       <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Sent through Soundwave</p>
@@ -3216,7 +3367,7 @@ export function AgentHub() {
                   )}
 
                   <p className="text-[9px] leading-relaxed text-gray-500">
-                    The agent only sends when you ask it to, never from something an email says, and it never guesses an address: it uses the one you gave or looks it up in your contacts. Sending the exact same message twice within five minutes is refused, and a draft you asked it to save can be sent later by saying “send it” — unless it changed in Gmail first.
+                    A scheduled email is sent at the time you named without asking again — that is the point of scheduling it — and it is held on this PC, so the app has to be running then (a PC that was asleep sends it at the next start, and says how late it was). The agent only sends when you ask it to, never from something an email says, and it never guesses an address: it uses the one you gave or looks it up in your contacts. Sending the exact same message twice within five minutes is refused, and a draft you asked it to save can be sent later by saying “send it” — unless it changed in Gmail first.
                   </p>
                 </div>
               </div>

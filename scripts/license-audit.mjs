@@ -110,7 +110,7 @@ const BINARIES = [
     // that the licence travels with the fonts, which is exactly what the paper
     // check enforces.
     separateProgram: true,
-    note: "Captions and the watermark are drawn in Inter, so a short renders the same on a PC that has Inter installed and one that has never heard of it. The same two families are the app's own interface fonts (@fontsource, woff2 into frontend/dist/assets — see frontend/src/fonts.css; no font CDN is contacted). Unmodified upstream files (rsms/inter via @expo-google-fonts/inter for the TTFs, rsms/inter + JetBrains/JetBrainsMono via @fontsource for the webfonts); see assets/fonts/README.md for the checksums and the family-name trap.",
+    note: "Captions and the watermark are drawn in Inter, so a short renders the same on a PC that has Inter installed and one that has never heard of it. The same two families are the app's own interface fonts (@fontsource, woff2 into frontend/dist/assets — see frontend/src/fonts.css; no font CDN is contacted). Unmodified upstream files (rsms/inter via @expo-google-fonts/inter for the TTFs, rsms/inter + JetBrains/JetBrainsMono via @fontsource for the webfonts); see assets/fonts/README.md for the checksums and the family-name trap. Each licence travels with the fonts in desktop/bin/fonts/ — OFL.txt for Inter, OFL-JetBrainsMono.txt for JetBrains Mono — and desktop/assemble.mjs copies them beside the fonts on every build.",
     paper: { binary: "fonts/Inter-ExtraBold.ttf", files: ["fonts/OFL.txt", "fonts/OFL-JetBrainsMono.txt"] },
   },
   {

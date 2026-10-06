@@ -38,6 +38,8 @@ export interface ChatMessage {
   emailDraftIds?: string[];
   /** Emails the agent actually sent (who, and what about). */
   emailSent?: Array<{ to: string; subject: string }>;
+  /** Emails the agent queued for a later moment ("send this to Marko at 5 pm"). */
+  emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
   time: string;
   tag?: "SYS" | "RPA" | "VOICE" | "USER" | "AUDIO";
   videoUrl?: string;
@@ -156,6 +158,8 @@ export interface ChatReply {
   actionOutput?: string;
   emailDraftIds?: string[];
   emailSent?: Array<{ to: string; subject: string }>;
+  /** Emails the agent queued for a later moment (the same shape the chat stores). */
+  emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
   videoUrl?: string;
   downloadUrl?: string;
   tag?: ChatMessage["tag"];
@@ -212,6 +216,7 @@ export function replyToMessage(data: ChatReply, query: string): ChatMessage {
     actionOutput: data.actionOutput,
     emailDraftIds: data.emailDraftIds?.slice(0, 6),
     emailSent: data.emailSent?.slice(0, 6),
+    emailScheduled: data.emailScheduled?.slice(0, 6),
     videoUrl: videoLink,
     downloadUrl: videoLink,
     time: chatTime(),

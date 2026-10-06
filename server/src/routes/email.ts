@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { config } from "../config.js";
 import { gmailSendPolicy, gmailSentLog, gmailService, GmailError, saveGmailSendPolicy, startGmailConnect } from "../lib/gmail.js";
+import { cancelScheduledEmail, listScheduledEmails } from "../lib/emailSchedule.js";
 import { localAppGuard } from "../middleware/localApp.js";
 import { validate } from "../middleware/validate.js";
 
@@ -61,6 +62,23 @@ router.put("/policy", validate({ body: policySchema }), (req, res) => {
   const policy = saveGmailSendPolicy(body);
   const status = gmailService.status();
   res.json({ ...policy, sentToday: status.sending.sentToday, remaining: status.sending.remaining, connected: status.connected, scopes: status.scopes, sent: gmailSentLog(15) });
+});
+
+// ── Email that waits for its moment ────────────────────────────────────────
+// "Send this to Marko at 5 pm": written when asked, sent at the time with no
+// further confirmation. The page shows exactly what is waiting, with the text,
+// and can cancel any of it.
+router.get("/scheduled", (_req, res) => {
+  const { scheduled, history } = listScheduledEmails();
+  res.json({ scheduled, history });
+});
+
+router.delete("/scheduled/:id", (req, res) => {
+  const id = String(req.params.id ?? "").slice(0, 200);
+  if (!id) return res.status(400).json({ error: { code: "VALIDATION_ERROR", message: "A scheduled email id is required." } });
+  const result = cancelScheduledEmail(id);
+  if (!result.ok) return res.status(404).json({ error: { code: "NOT_SCHEDULED", message: result.error ?? "Nothing matched that." } });
+  res.json({ ok: true, cancelled: result.cancelled });
 });
 
 const inboxQuery = z.object({
