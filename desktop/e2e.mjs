@@ -250,8 +250,12 @@ try {
   // own poll and claim finish the sign-in.
   at("sign-in: Continue with Google");
   const googleButton = main.getByRole("button", { name: /Continue with Google/i });
+  const micButton = main.locator('button[aria-label="Talk to Soundwave"]');
+  // Judge by what is on the screen, never by the address: the app opens on its
+  // home route and shows a splash while it asks the server who is signed in, so
+  // the URL reads /agent for a moment before the gate sends it to /welcome.
   const firstScreen = await Promise.race([
-    main.waitForURL(/\/agent/, { timeout: 90_000 }).then(() => "agent").catch(() => null),
+    micButton.waitFor({ state: "visible", timeout: 90_000 }).then(() => "linked").catch(() => null),
     googleButton.waitFor({ state: "visible", timeout: 90_000 }).then(() => "welcome").catch(() => null),
   ]);
   if (firstScreen === null) await fail("neither the welcome screen nor the Command Center appeared");
@@ -287,13 +291,19 @@ try {
     // The runner's own browser may have opened the same URL too; whichever
     // callback lands first wins, and the app's poll is the judge from here.
     if (!back.ok) console.log(`    [e2e] the sign-in callback answered HTTP ${back.status} (continuing — the app decides)`);
-    await main.waitForURL(/\/agent/, { timeout: 120_000 });
+    // Signed in means the Command Center renders: the gate only lets the shell
+    // through once the claim has set the session.
+    await micButton.waitFor({ state: "visible", timeout: 120_000 });
     ok("linked the account with Google (a stand-in on loopback)");
+    annotate(
+      "notice",
+      "Desktop E2E: sign-in",
+      `The packaged app linked an account through a Google stand-in on loopback (${fakeGoogle.seen.map((r) => `${r.method} ${r.path}`).join(" → ")}).`,
+    );
     at("startup: window, tray, shortcut, bridge");
   }
 
-  await main.waitForURL(/\/agent/, { timeout: 120_000 });
-  await main.locator('button[aria-label="Talk to Soundwave"]').waitFor({ timeout: 60_000 });
+  await micButton.waitFor({ state: "visible", timeout: 60_000 });
   ok(`main window shows the Command Center (${main.url()})`);
 
   const state = await shell();
