@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
     return off;
   },
   onNavigate: (callback) => subscribe("soundwave:navigate", callback),
+  // Auto-update (desktop/src/update.cjs): the shell checks in the background
+  // and pushes this; restarting into the new version is the person's press.
+  onUpdate: (callback) => subscribe("soundwave:update", callback),
+  checkForUpdate: () => ipcRenderer.invoke("soundwave:check-update"),
+  installUpdate: () => ipcRenderer.invoke("soundwave:install-update"),
   // "Hey Soundwave": the hidden wake page reports what whisper heard on this PC
   // and the shell decides whether the phrase was in it. The voice bar is told
   // when the phrase was heard with words after it.

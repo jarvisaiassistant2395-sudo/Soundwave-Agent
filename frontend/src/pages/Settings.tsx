@@ -48,7 +48,7 @@ import {
   type VoiceInputStatus,
   type VoicePrefs,
 } from "../lib/voiceInput";
-import { getDesktop, hotkeyLabel, openInBrowser, type DesktopSettings, type DesktopState } from "../lib/desktop";
+import { getDesktop, hotkeyLabel, openInBrowser, type DesktopSettings, type DesktopState, type DesktopUpdateState } from "../lib/desktop";
 import { notifyUser } from "../lib/notify";
 import { BrandTab } from "./settings/BrandTab";
 import { PhoneTab } from "./settings/PhoneTab";
@@ -813,6 +813,10 @@ function VoiceDesktopTab() {
   const [prefs, setPrefs] = useState<VoicePrefs>(() => loadVoicePrefs());
   const [desk, setDesk] = useState<DesktopState | null>(null);
   const [savingDesk, setSavingDesk] = useState(false);
+  // Auto-update: pushed by the shell (it checks in the background), so this
+  // card is live rather than "what was true when the page opened".
+  const [update, setUpdate] = useState<DesktopUpdateState | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   // Microphone test
   const [test, setTest] = useState<"idle" | "listening" | "transcribing">("idle");
   const [level, setLevel] = useState(0);
@@ -828,8 +832,10 @@ function VoiceDesktopTab() {
     // The wake listener and the key watcher change on their own; the state line
     // must be true, not "as it was when the page opened".
     const poll = desktop ? window.setInterval(() => void desktop.getState().then(setDesk).catch(() => undefined), 4000) : undefined;
+    const off = desktop?.onUpdate?.((state) => setUpdate(state));
     return () => {
       if (poll) window.clearInterval(poll);
+      off?.();
       recorderRef.current?.cancel();
     };
   }, [desktop]);
@@ -842,6 +848,7 @@ function VoiceDesktopTab() {
     try {
       const next = await desktop.updateSettings(patch);
       setDesk(next);
+      if (next.update) setUpdate(next.update);
       if (patch.hotkey || patch.hotkeyEnabled) {
         if (next.hotkeyEnabled && !next.hotkeyRegistered) toast.error("Shortcut not available", next.hotkeyError ?? "Another app uses it — pick a different one.");
         else if (next.hotkeyEnabled) toast.success("Voice shortcut set", `Press ${next.hotkeyLabel} from any app to talk to Soundwave.`);
@@ -1063,8 +1070,80 @@ function VoiceDesktopTab() {
           </div>
         )}
       </Card>
+
+      {/* Updates: the shell checks the public feed quietly, downloads in the
+          background, and restarts when the person says so. */}
+      {update && (
+        <Card title="Updates" icon={<RefreshCw className="h-4 w-4" />}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-white">{updateLine(update)}</p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {update.enabled
+                  ? `You're on ${update.version ?? "—"}${update.channel ? ` · ${update.edition === "personal" ? "Dev" : "the " + update.channel} channel` : ""}`
+                  : "This build doesn't update itself — it was built here, on this PC."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2" data-testid="update-actions">
+              {update.enabled && update.status === "ready" && (
+                <Button
+                  size="sm"
+                  icon={<Download className="h-4 w-4" />}
+                  onClick={async () => {
+                    const going = await desktop?.installUpdate();
+                    if (!going) toast.error("Couldn't restart", "Close Soundwave and open it again — the update is already downloaded.");
+                  }}
+                >
+                  Restart &amp; update
+                </Button>
+              )}
+              {update.enabled && update.status !== "ready" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="update-check"
+                  disabled={checkingUpdate || update.status === "checking" || update.status === "downloading"}
+                  onClick={async () => {
+                    setCheckingUpdate(true);
+                    try {
+                      const next = await desktop?.checkForUpdate();
+                      if (next) setUpdate(next);
+                      if (next && next.status === "current") toast.success("You're up to date", `${next.version} is the newest version.`);
+                      else if (next && next.status === "failed") toast.error("Couldn't reach the update feed", "Nothing is wrong with your copy — it will try again later.");
+                    } finally {
+                      setCheckingUpdate(false);
+                    }
+                  }}
+                >
+                  {update.status === "checking" ? "Checking…" : update.status === "downloading" ? `Downloading ${update.progress}%` : "Check for updates"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
     </>
   );
+}
+
+/** One line that is true whatever the updater is doing. */
+function updateLine(update: DesktopUpdateState): string {
+  switch (update.status) {
+    case "ready":
+      return `Version ${update.available ?? ""} is downloaded and ready`;
+    case "downloading":
+      return `Downloading version ${update.available ?? ""} — ${update.progress}%`;
+    case "available":
+      return `Version ${update.available ?? ""} is available`;
+    case "checking":
+      return "Checking for updates…";
+    case "current":
+      return "You're on the newest version";
+    case "failed":
+      return "Couldn't check for updates";
+    default:
+      return "Updates are on";
+  }
 }
 
 function Card({ title, icon, children, className }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {

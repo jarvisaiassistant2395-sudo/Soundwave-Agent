@@ -9,6 +9,17 @@ directories:
   buildResources: build
   output: release
 
+# The auto-update feed (desktop/src/update.cjs). electron-builder writes
+# latest.yml here — the file an installed copy reads to find out there is a new
+# version — and CI lifts latest.yml + the setup exe onto a PUBLIC releases-only
+# repo (see .github/workflows/release-desktop.yml and docs/RELEASING.md).
+# It cannot be this repository's Releases: this repo is private, so its assets
+# need a token, and a token must never ship inside the app.
+publish:
+  provider: generic
+  url: https://github.com/jarvisaiassistant2395-sudo/soundwave-updates/releases/latest/download
+  channel: latest
+
 # Everything ships as real files (no asar): the bundled server chdirs here and
 # spawns ffmpeg/yt-dlp/whisper against these paths. The tree that holds the
 # agent's brain (resources/app/server/dist) is rewritten by assemble.mjs on the
@@ -53,6 +64,9 @@ win:
   icon: build/icon.ico
   # Standard user (asInvoker) — customers never see a UAC prompt.
   requestedExecutionLevel: asInvoker
+  # No certificate yet, so a downloaded update has no signature to check.
+  # Flip this to true the same day CSC_LINK/CSC_KEY_PASSWORD become real —
+  # see docs/RELEASING.md → "Updates and downloads".
   verifyUpdateCodeSignature: false
   target:
     - nsis

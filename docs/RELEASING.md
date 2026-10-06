@@ -814,6 +814,58 @@ fine but are not: XTTS v2 (Coqui CPML), F5-TTS (CC-BY-NC-4.0), Higgs Audio
 employees), firecrawl (AGPL), Pixabay Music and the YouTube Audio Library (not
 redistributable inside software).
 
+## Updates and downloads
+
+An installed copy checks for a new version by itself (`desktop/src/update.cjs`):
+checking starts a minute after launch and repeats every six hours, a download
+happens quietly in the background, and a **Restart & update** button appears in
+Settings → Voice & Desktop. Nothing ever installs under someone mid-edit, and a
+failed check (offline, feed not reachable) is logged, not shown.
+
+**The feed is not this repository.** This repo is private, so its Release assets
+need a token — and a token must never ship inside an app anyone can unzip. The
+feed is therefore a small **public, releases-only** repository:
+
+```
+https://github.com/jarvisaiassistant2395-sudo/soundwave-updates/releases/latest/download
+```
+
+Setup, once:
+
+1. Create that public repo (it can be completely empty, or have a one-line
+   README). It holds no source — only `latest.yml`, the setup exe and its
+   `.blockmap` per version.
+2. Create a fine-grained token with **write access to that repo's releases**
+   (or a classic token with `repo` scope) and set it as a secret here:
+   `gh secret set SOUNDWAVE_UPDATE_TOKEN`.
+3. Optional: if the feed repo ever has a different name, set a repository
+   variable — `gh variable set SOUNDWAVE_UPDATE_REPO --body owner/name`.
+4. Change the `publish.url` in `desktop/electron-builder.yml` if you used a
+   different name, and bump `DEFAULT_FEED` in `desktop/src/update.cjs` to match.
+   The updater's test fails if those drift apart.
+
+Then every tag does the rest: CI builds the installers, `latest.yml` comes out
+of electron-builder, and the *"Publish the update feed (tags only)"* step lifts
+`latest.yml` + `SoundwaveAI-Setup-<version>.exe` + its blockmap onto the feed
+repo's release for that tag. Without the secret the step says so in the log and
+skips — the installers still build, they just don't self-update yet.
+
+**The two editions never cross feeds.** The sold build only reads `latest`; the
+Dev build only reads `dev`, and stays off entirely until you name its own feed
+(`SOUNDWAVE_UPDATE_FEED`). A retail install that pulled the Dev feed, or a Dev
+install that pulled the sold build over itself, is the one update that must
+never happen — `desktop/test/update.test.cjs` is the guard.
+
+**Signature checks.** `desktop/electron-builder.yml` has
+`verifyUpdateCodeSignature: false` because nothing is signed yet. The day
+`CSC_LINK` / `CSC_KEY_PASSWORD` are real (see *SmartScreen & code signing*),
+flip it to `true` — then a downloaded update must be signed by the same
+certificate, which is what stops a tampered feed from installing anything.
+
+**Before you sell a build, check it updates:** install the previous version on a
+spare PC, launch it, and watch `%APPDATA%\Soundwave AI\logs` (or Settings →
+Voice & Desktop) for the new version arriving.
+
 ## Versioning
 
 Bump `desktop/package.json` → `version` (this drives artifact names), tag

@@ -12,15 +12,18 @@
   "scripts": {
     "assemble": "node assemble.mjs",
     "smoke": "node smoke.mjs",
-    "test": "node --test test/desktop-settings.test.cjs test/check-dlls.test.mjs test/youtube-client.test.cjs test/protect.test.mjs test/wake.test.cjs test/kokoro-manager.test.cjs test/edition.test.cjs",
+    "test": "node --test test/desktop-settings.test.cjs test/check-dlls.test.mjs test/youtube-client.test.cjs test/protect.test.mjs test/wake.test.cjs test/kokoro-manager.test.cjs test/edition.test.cjs test/update.test.cjs",
     "dist:win": "electron-builder --win",
-    "dist:dev": "electron-builder --config electron-builder.dev.yml --win",
+    "dist:dev": "electron-builder --config electron-builder.dev.yml --win --publish never",
     "dist:dir": "electron-builder --win dir",
-    "dist:dir:dev": "electron-builder --config electron-builder.dev.yml --win dir"
+    "dist:dir:dev": "electron-builder --config electron-builder.dev.yml --win dir --publish never"
   },
   "devDependencies": {
     "electron": "44.4.5",
     "electron-builder": "26.15.3",
     "javascript-obfuscator": "5.8.1"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

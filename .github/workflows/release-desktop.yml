@@ -375,6 +375,43 @@ jobs:
             gh release upload $env:GITHUB_REF_NAME $exes --clobber
           }
 
+      # Auto-update (desktop/src/update.cjs): an installed copy reads latest.yml
+      # from a PUBLIC feed and downloads the setup exe beside it. It cannot be
+      # this repo's Releases — this repo is private, so those assets need a
+      # token, and a token must never ship inside an app. The feed therefore
+      # lives in a separate public, releases-only repo: create it once, give a
+      # token write access to it (SOUNDWAVE_UPDATE_TOKEN), and optionally point
+      # SOUNDWAVE_UPDATE_REPO at it. Without the secret this step says so and
+      # moves on — the installers still build, they just don't self-update yet.
+      - name: Publish the update feed (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.SOUNDWAVE_UPDATE_TOKEN }}
+          FEED_REPO: ${{ vars.SOUNDWAVE_UPDATE_REPO }}
+        run: |
+          if (-not $env:GH_TOKEN) {
+            Write-Host "::notice title=Update feed::SOUNDWAVE_UPDATE_TOKEN is not set — this build ships without self-updates. See docs/RELEASING.md (\"Updates and downloads\")."
+            exit 0
+          }
+          $yml = "desktop/release/latest.yml"
+          if (-not (Test-Path $yml)) { throw "latest.yml is missing — is publish configured in desktop/electron-builder.yml?" }
+          $repo = $env:FEED_REPO
+          if (-not $repo) { $repo = "jarvisaiassistant2395-sudo/soundwave-updates" }
+          $exes = Get-ChildItem desktop/release/SoundwaveAI-Setup-*.exe, desktop/release/SoundwaveAI-Setup-*.exe.blockmap -ErrorAction SilentlyContinue
+          if (-not $exes) { throw "no setup exe in desktop/release to publish" }
+          $assets = @($yml) + ($exes | ForEach-Object { $_.FullName })
+          $tag = $env:GITHUB_REF_NAME
+          $global:LASTEXITCODE = 0
+          gh release view $tag --repo $repo 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo $repo --title "Soundwave AI $tag" --notes "Auto-update feed for Soundwave AI $tag. Installed copies read latest.yml from this release; the installer sits next to it."
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed for the update feed" }
+          }
+          gh release upload $tag $assets --repo $repo --clobber
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed for the update feed" }
+          Write-Host "::notice title=Update feed::installed copies will find $tag at https://github.com/$repo/releases/latest"
+
       # Branch builds: a rolling pre-release (doesn't count against the Actions
       # artifact quota), recreated each time so it always holds the latest build.
       - name: Publish installers to the "desktop-build" pre-release (branch builds)

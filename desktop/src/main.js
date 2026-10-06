@@ -40,6 +40,7 @@ const { createManagedKokoro } = require("./kokoro-manager.cjs");
 const { createKeyWatcher } = require("./keywatch.cjs");
 const { DEFAULT_WAKE_PHRASES, vkCodesFor, wakeHit } = require("./wake.cjs");
 const { currentEdition } = require("./edition.cjs");
+const { createAutoUpdater } = require("./update.cjs");
 const {
   HOTKEY_CHOICES,
   applySettingsPatch,
@@ -219,6 +220,7 @@ function publicState() {
       ...(keyWatcher ? keyWatcher.info() : { supported: false, ready: false, down: false, problem: "off", keys: [] }),
     },
     version: app.getVersion(),
+    update: updater ? { ...updater.state } : null,
     hotkeyLabel: hotkeyLabel(settings.hotkey),
     hotkeyRegistered: hotkeyState.registered,
     hotkeyError: hotkeyState.error,
@@ -683,10 +685,52 @@ function notify({ title, body, route }) {
   setTimeout(release, 10 * 60_000).unref?.();
 }
 
+// ── Updates ─────────────────────────────────────────────────────────────────
+// Edition-aware and quiet (src/update.cjs): the sold build follows the public
+// `latest` feed, the Dev build its own `dev` channel, and neither can be
+// pointed at the other. Nobody is ever interrupted — the window is told, and
+// the restart is theirs to choose.
+
+let updater = null;
+
+function startUpdates() {
+  try {
+    updater = createAutoUpdater({ app, editionId: currentEdition().id });
+  } catch (err) {
+    console.warn("[soundwave-desktop] updates are off:", err && err.message ? err.message : err);
+    updater = null;
+    return;
+  }
+  if (!updater) return;
+  updater.onStatus((state) => {
+    if (!alive(mainWindow)) return;
+    try {
+      mainWindow.webContents.send("soundwave:update", state);
+    } catch {
+      /* the window went away between the check and the send */
+    }
+    // One notification, the first time a download lands — not on every tick.
+    if (state.status === "ready" && settings.notifications && state.available && lastReadyVersion !== state.available) {
+      lastReadyVersion = state.available;
+      notify({ title: `${APP_NAME} ${state.available} is ready`, body: "It goes in the next time you restart — or press Restart now in Settings.", route: "/settings/preferences" });
+    }
+  });
+  updater.start();
+}
+
+let lastReadyVersion = null;
+
 // ── IPC from the app's pages (preload.cjs) ──────────────────────────────────
 
 function registerIpc() {
   ipcMain.handle("soundwave:get-state", (event) => (trusted(event) ? publicState() : null));
+  ipcMain.handle("soundwave:check-update", async (event) => {
+    if (!trusted(event) || !updater) return null;
+    await updater.checkNow();
+    return { ...updater.state };
+  });
+  // Restarting into the new version is deliberate, so it comes from a press.
+  ipcMain.handle("soundwave:install-update", (event) => (trusted(event) ? Boolean(updater && updater.installNow()) : false));
   ipcMain.handle("soundwave:update-settings", (event, patch) => (trusted(event) ? updateSettings(patch) : null));
   ipcMain.handle("soundwave:start-local-voice-setup", (event) => {
     if (!trusted(event) || !kokoroManager) return false;
@@ -847,6 +891,10 @@ async function main() {
   appOrigin = new URL(appUrl).origin;
   restrictPermissions();
   registerIpc();
+
+  // Updates (src/update.cjs): the first check is a minute out, so it never
+  // competes with start-up, and nobody is ever interrupted mid-edit.
+  startUpdates();
 
   // Set up the on-device voices (Kokoro narration + voice cloning) in the
   // background — including the first launch straight after the installer —

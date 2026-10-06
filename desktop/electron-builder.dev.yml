@@ -18,6 +18,11 @@
 # a GitHub Release. See docs/RELEASING.md ("Your own build").
 extends: ./electron-builder.yml
 
+# The feed in the base config is the SOLD build's. This build never reads it:
+# desktop/src/update.cjs keeps the Dev edition on its own "dev" channel, off
+# until its own feed is named (SOUNDWAVE_UPDATE_FEED). An update that replaced
+# this install with the sold build would take the unlocked features away.
+
 appId: ai.soundwave.desktop.dev
 productName: Soundwave AI - Dev
 

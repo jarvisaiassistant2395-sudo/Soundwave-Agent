@@ -45,8 +45,28 @@ export interface PushToTalkStatus {
   keys: number[];
 }
 
+/** Auto-update, as the shell sees it (desktop/src/update.cjs). */
+export interface DesktopUpdateState {
+  /** False in a source checkout, for the Dev build with no feed of its own, and when the edition/channel disagree. */
+  enabled: boolean;
+  edition: "retail" | "personal" | string;
+  /** "latest" for the sold build, "dev" for the Dev build — the two never cross. */
+  channel: "latest" | "dev" | null;
+  feed: string;
+  status: "off" | "idle" | "checking" | "current" | "available" | "downloading" | "ready" | "failed";
+  version: string | null;
+  /** The version being downloaded / waiting for a restart. */
+  available: string | null;
+  progress: number;
+  /** Quiet: offline and "the feed isn't there yet" both land here. */
+  error: string | null;
+  lastCheck: number | null;
+}
+
 export interface DesktopState extends DesktopSettings {
   wake: WakeListenerStatus;
+  /** Null in a browser, or on a shell too old to know about updates. */
+  update: DesktopUpdateState | null;
   /** The key watcher's state (the setting itself is `pushToTalk`). */
   pushToTalkStatus: PushToTalkStatus;
   version: string;
@@ -80,6 +100,12 @@ export interface SoundwaveDesktop {
   isAppFocused(): Promise<boolean>;
   onVoiceCommand(callback: (command: VoiceCommand) => void): () => void;
   onNavigate(callback: (route: string) => void): () => void;
+  /** The shell checked the feed in the background, or a download moved along. */
+  onUpdate(callback: (state: DesktopUpdateState) => void): () => void;
+  /** Ask the feed by hand — Settings has a button for this. */
+  checkForUpdate(): Promise<DesktopUpdateState | null>;
+  /** Restart into the downloaded version. False when there is nothing waiting. */
+  installUpdate(): Promise<boolean>;
   notify(notification: DesktopNotification): void;
   showApp(route?: string): void;
   hideOverlay(): void;
