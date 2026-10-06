@@ -13,8 +13,11 @@
 // Gemini on loopback) and the chat is then answered through it, and closing
 // the window keeps the app in the tray, and a Ghost Operator macro run from
 // the Workflow panel really copies to the clipboard (verified in Electron) and
-// skips — with the reason — the steps Soundwave can't do yet. Needs
-// playwright-core (CI: npm i --no-save).
+// skips — with the reason — the steps Soundwave can't do yet. A fresh machine
+// has no account, so the run starts at the welcome screen and links one: the
+// same stand-in-on-loopback trick the rest of the file uses points Google's
+// sign-in endpoints at test/fake-google.mjs, and the browser leg is finished
+// from here. Needs playwright-core (CI: npm i --no-save).
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -183,6 +186,9 @@ const { _electron: electron } = await import("playwright-core");
 // The agent's brain talks to a fake Gemini on loopback (no real key in CI).
 const { FAKE_HELLO, FAKE_KEY, FAKE_MORNING, startFakeGemini } = await import(new URL("./test/fake-gemini.mjs", import.meta.url).href);
 const fakeGemini = await startFakeGemini();
+// Google's sign-in endpoints, on loopback the same way (test/fake-google.mjs).
+const { startFakeGoogle } = await import(new URL("./test/fake-google.mjs", import.meta.url).href);
+const fakeGoogle = await startFakeGoogle();
 
 console.log(`[e2e] launching ${exe}`);
 try {
@@ -197,6 +203,11 @@ try {
       // Morning Setup's weather from the same stand-in.
       OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
       OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
+      // The welcome screen's "Continue with Google" (lib/googleSignIn.ts) is
+      // pointed at the stand-in, so the browser leg can be completed here.
+      GOOGLE_OAUTH_AUTH_URL: `${fakeGoogle.url}/auth`,
+      GOOGLE_OAUTH_TOKEN_URL: `${fakeGoogle.url}/token`,
+      GOOGLE_USERINFO_URL: `${fakeGoogle.url}/userinfo`,
     },
     timeout: 180_000,
   });
@@ -230,6 +241,57 @@ try {
     if (m.type() === "error" || /\[voice\]|microphone|getUserMedia|worklet/i.test(m.text())) rememberPageLog(`[${m.type()}] ${m.text()}`);
   });
   main.on("pageerror", (err) => rememberPageLog(`pageerror: ${err.message}`));
+
+  // ── 1a. First launch: link the account ────────────────────────────────────
+  // Nothing in the app is reachable until Google comes back. A CI machine has no
+  // Google session and nobody to press consent, so the stand-in answers the
+  // authorization URL with a redirect straight back to the app's own loopback
+  // callback — exactly the round trip a person's browser makes — and the app's
+  // own poll and claim finish the sign-in.
+  at("sign-in: Continue with Google");
+  const googleButton = main.getByRole("button", { name: /Continue with Google/i });
+  const firstScreen = await Promise.race([
+    main.waitForURL(/\/agent/, { timeout: 90_000 }).then(() => "agent").catch(() => null),
+    googleButton.waitFor({ state: "visible", timeout: 90_000 }).then(() => "welcome").catch(() => null),
+  ]);
+  if (firstScreen === null) await fail("neither the welcome screen nor the Command Center appeared");
+  if (firstScreen === "welcome") {
+    // A build with no Google app of its own shows the paste-a-client box (the
+    // same one a person gets). The stand-in accepts any client, so a made-up one
+    // is enough — saved through the app's own route, like a person would.
+    const providers = await main.evaluate(async () => (await fetch("/api/v1/auth/providers")).json());
+    if (!providers.configured) {
+      const saved = new Promise((resolve) => {
+        main.on("response", (res) => {
+          if (res.url().includes("/youtube/config")) resolve(res.status());
+        });
+      });
+      await main.locator('textarea[placeholder^="Paste the client_secret"]').fill(
+        JSON.stringify({ installed: { client_id: "e2e.apps.googleusercontent.com", client_secret: "e2e-secret", redirect_uris: ["http://localhost"] } }),
+      );
+      await main.getByRole("button", { name: /Use this client/i }).click();
+      const status = await saved;
+      if (status !== 200) await fail(`the pasted Google client was refused (HTTP ${status})`);
+    }
+    // The app's own start call carries the URL + secret the session is claimed
+    // with; read it off the wire, then play the browser.
+    const started = new Promise((resolve) => {
+      main.on("response", (res) => {
+        if (res.url().includes("/auth/google/start") && res.request().method() === "POST") void res.json().then(resolve, () => resolve(null));
+      });
+    });
+    await googleButton.click();
+    const info = await started;
+    if (!info?.url) await fail("pressing Continue with Google produced no sign-in URL");
+    const back = await fetch(info.url, { redirect: "follow" });
+    // The runner's own browser may have opened the same URL too; whichever
+    // callback lands first wins, and the app's poll is the judge from here.
+    if (!back.ok) console.log(`    [e2e] the sign-in callback answered HTTP ${back.status} (continuing — the app decides)`);
+    await main.waitForURL(/\/agent/, { timeout: 120_000 });
+    ok("linked the account with Google (a stand-in on loopback)");
+    at("startup: window, tray, shortcut, bridge");
+  }
+
   await main.waitForURL(/\/agent/, { timeout: 120_000 });
   await main.locator('button[aria-label="Talk to Soundwave"]').waitFor({ timeout: 60_000 });
   ok(`main window shows the Command Center (${main.url()})`);
