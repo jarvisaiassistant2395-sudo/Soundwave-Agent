@@ -10,6 +10,24 @@ like the product that made it.
 - `OFL.txt` — the licence, shipped with the fonts and copied next to them into
   the installer (`desktop/bin/fonts/`), as OFL requires.
 
+## The interface's fonts are the same deal
+
+The app's own UI text is Inter too, plus JetBrains Mono for anything monospaced.
+Those are **woff2 webfonts**, not these TTFs: `frontend/src/fonts.css` imports
+the weights the design uses (400/500/600/700/800, Latin + Latin-ext) from the
+`@fontsource/inter` and `@fontsource/jetbrains-mono` packages, so Vite bundles
+them into `frontend/dist/assets/` and the installed app carries them. Nothing is
+fetched from a font CDN — the UI used to link Google's stylesheet, which is a
+render-blocking third-party request that keeps the app's `load` event pending
+while it hangs and leaves a PC with no route to Google painting in fallback
+fonts (and hung the packaged-app end-to-end run on CI).
+
+Both families are SIL OFL-1.1. The licence text of *each* travels inside the
+installer: `OFL.txt` (Inter) and `OFL-JetBrainsMono.txt` (JetBrains Mono, taken
+unchanged from `@fontsource/jetbrains-mono`), both copied to `desktop/bin/fonts/`
+by `desktop/assemble.mjs`, and both required by `scripts/license-audit.mjs`
+(`fonts/OFL-JetBrainsMono.txt` sha256 starts `403581b69dac5cff`).
+
 ## Where they came from
 
 `@expo-google-fonts/inter` 0.4.1 (npm), which repackages the upstream

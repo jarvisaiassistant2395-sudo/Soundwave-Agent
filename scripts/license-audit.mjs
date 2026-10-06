@@ -102,15 +102,16 @@ const BINARIES = [
     note: "Public domain — no obligations. Used for the YouTube paths the user asks for.",
   },
   {
-    name: "Inter (caption font — assets/fonts)",
+    name: "Inter and JetBrains Mono (fonts — assets/fonts)",
     licence: "OFL-1.1",
-    // Same rule as the programs above: it ships as its own file, under its own
-    // licence, with the licence text next to it in bin/fonts/. OFL allows being
-    // bundled and shipped with software; the obligation is that the licence
-    // travels with the fonts, which is exactly what the paper check enforces.
+    // Same rule as the programs above: they ship as their own files, under
+    // their own licences, with the licence text next to them in bin/fonts/.
+    // OFL allows being bundled and shipped with software; the obligation is
+    // that the licence travels with the fonts, which is exactly what the paper
+    // check enforces.
     separateProgram: true,
-    note: "The font captions and the watermark are drawn in, so a short renders the same on a PC that has Inter installed and one that has never heard of it. Unmodified upstream Inter (rsms/inter via @expo-google-fonts/inter); see assets/fonts/README.md for the checksums and the family-name trap.",
-    paper: { binary: "fonts/Inter-ExtraBold.ttf", files: ["fonts/OFL.txt"] },
+    note: "Captions and the watermark are drawn in Inter, so a short renders the same on a PC that has Inter installed and one that has never heard of it. The same two families are the app's own interface fonts (@fontsource, woff2 into frontend/dist/assets — see frontend/src/fonts.css; no font CDN is contacted). Unmodified upstream files (rsms/inter via @expo-google-fonts/inter for the TTFs, rsms/inter + JetBrains/JetBrainsMono via @fontsource for the webfonts); see assets/fonts/README.md for the checksums and the family-name trap.",
+    paper: { binary: "fonts/Inter-ExtraBold.ttf", files: ["fonts/OFL.txt", "fonts/OFL-JetBrainsMono.txt"] },
   },
   {
     name: "whisper.cpp + ggml",

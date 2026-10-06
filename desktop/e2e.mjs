@@ -34,6 +34,21 @@ function annotate(level, title, message) {
   console.log(`::${level} title=${prop(title)}::${data(message)}`);
 }
 
+/**
+ * Open a route in the app window.
+ *
+ * The app is a single-page app served by the packaged server, so “this page is
+ * ready” means the app's own DOM — which every caller waits for right after.
+ * Playwright's default instead waits for the `load` event, which also waits for
+ * every subresource: one slow font or third-party stylesheet then looks like a
+ * broken app. Run 37392172221 failed here exactly that way — `page.reload` at
+ * “sidebar minimize” timed out on `load` while the page was already painted and
+ * answered `evaluate` (the old index.html pulled Google's font CSS). Waiting for
+ * `domcontentloaded` still proves the app's own bundle was fetched and executed
+ * (module scripts gate it), and the caller's own selector wait proves the rest.
+ */
+const open = (page, url, options = {}) => page.goto(url, { waitUntil: "domcontentloaded", ...options });
+
 let app = null;
 // Which part of the flow is running. The failure annotation carries it, so a
 // bare Playwright timeout says *where* it happened even when the run's log
@@ -314,7 +329,22 @@ try {
   await main.screenshot({ path: path.join(shotsDir, "1b-sidebar-rail.png") });
 
   // Still minimized after a restart of the window (that's what "remembered" means).
-  await main.reload();
+  try {
+    await main.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+  } catch (err) {
+    // A bare “Timeout” says nothing: ask the live document what it is still
+    // waiting for, so the next run names the request instead of the symptom.
+    const pending = await main
+      .evaluate(() =>
+        performance
+          .getEntriesByType("resource")
+          .filter((r) => !r.responseEnd)
+          .map((r) => r.name)
+          .slice(0, 5),
+      )
+      .catch(() => []);
+    await fail(`the window did not come back after a reload: ${String(err.message).split("\n")[0]}${pending.length ? ` — still waiting for ${pending.join(", ")}` : ""}`);
+  }
   // "attached", not "visible": below the desktop breakpoint the aside is in the
   // DOM but deliberately hidden, and this run still checks its state.
   await main.waitForSelector('[data-testid="desktop-sidebar"]', { state: "attached", timeout: 60_000 });
@@ -462,7 +492,7 @@ try {
   // don't paint, so bring it back before looking at it.)
   await app.evaluate(() => globalThis.__soundwaveShell.mainWindow().show());
   const appBase = new URL(main.url()).origin;
-  await main.goto(`${appBase}/settings/phone`);
+  await open(main, `${appBase}/settings/phone`);
   const phoneToggle = 'button[role="switch"][aria-label="Let my phone connect"]';
   await main.waitForSelector(phoneToggle, { timeout: 30_000 });
   await main.click(phoneToggle);
@@ -485,7 +515,7 @@ try {
 
   // ── 3c. Settings → Brain: paste a Gemini key, test it, chat with Gemini ───
   at("Settings → Brain");
-  await main.goto(`${appBase}/settings/brain`);
+  await open(main, `${appBase}/settings/brain`);
   await main.waitForSelector('[data-testid="brain-key-input"]', { timeout: 30_000 });
   await main.fill('[data-testid="brain-key-input"]', FAKE_KEY);
   await main.click('[data-testid="brain-save"]');
@@ -496,7 +526,7 @@ try {
   await main.screenshot({ path: path.join(shotsDir, "7-settings-brain.png"), timeout: 15_000 }).catch(() => console.log("[e2e] (Settings → Brain screenshot skipped)"));
   ok(`Settings → Brain: key saved (${hint}) and tested — ${tested.trim()}`);
 
-  await main.goto(`${appBase}/agent`);
+  await open(main, `${appBase}/agent`);
   // The pill renders only once the brain status has arrived, and the renderer
   // polls it every 30 s — on a loaded runner (13fd3cb: whisper 4.8 s vs 1.8 s,
   // voice 870 ms vs 470 ms) the first answer can be slower than the old 30 s
@@ -548,7 +578,7 @@ try {
       }),
     dueAt,
   );
-  await main.goto(`${appBase}/agent`);
+  await open(main, `${appBase}/agent`);
   await app.evaluate(() => {
     const w = globalThis.__soundwaveShell.mainWindow();
     w.show();
@@ -657,7 +687,7 @@ try {
   // bot-checks and CI networks make both flaky, and a flaky gate teaches people
   // to ignore red. What matters is that the answer is reported every run.
   at("agent eyes (real video + real page)");
-  await main.goto(`${appBase}/agent`);
+  await open(main, `${appBase}/agent`);
   /**
    * Ask the Command Center something, and if its message box isn't usable say
    * exactly why: on the run that failed here, "fill: Timeout 30000ms exceeded"
@@ -768,7 +798,7 @@ try {
   );
   const macroId = created?.macro?.id;
   if (!macroId) await fail(`Ghost Operator: the custom macro wasn't saved (${JSON.stringify(created).slice(0, 200)})`);
-  await main.goto(`${appBase}/agent`);
+  await open(main, `${appBase}/agent`);
   // On the CI runner this click has hung at Playwright's "attempting click
   // action" once (the packaging window stopped handing out animation frames, so
   // the stability/hit-target wait never came back) while the page itself still
@@ -843,7 +873,7 @@ try {
   at("clips out of a video");
   // The agent downloads or reads the file, listens with whisper.cpp, picks the
   // moment and renders a vertical clip with captions — watch it in the chat.
-  await main.goto(`${appBase}/agent`);
+  await open(main, `${appBase}/agent`);
   await main.waitForSelector('input[placeholder="Message…"]', { timeout: 30_000 });
   // The same job has to be findable without knowing to ask for it: the card on
   // the Command Center is the visible half of make_shorts_from_video.
@@ -1113,7 +1143,7 @@ try {
 
   // ── 3i. The wake switch is real (Settings → Voice & Desktop) ─────────────
   at("Settings → Voice & Desktop: the wake switch");
-  await main.goto(`${appBase}/settings/voice`);
+  await open(main, `${appBase}/settings/voice`);
   const wakeToggle = main.locator('button[role="switch"][aria-label="Wake word"]');
   await wakeToggle.waitFor({ timeout: 30_000 });
   await wakeToggle.click(); // off
