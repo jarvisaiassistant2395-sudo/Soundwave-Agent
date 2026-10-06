@@ -225,6 +225,14 @@ jobs:
         working-directory: desktop
         run: npm test
 
+      # If that step fails, say WHICH test failed. node --test prints TAP, not
+      # GitHub annotations, so a red step otherwise only reports "exit code 1".
+      - name: Name the failing desktop test (if any)
+        if: failure()
+        working-directory: desktop
+        shell: bash
+        run: npm test 2>&1 | grep -E "^not ok" | sed 's/^/::error::/' || true
+
       # Optional, one-time setup for the shop: create ONE Google OAuth client
       # (type "Desktop app") for Soundwave itself and save it as the repository
       # secrets SOUNDWAVE_YOUTUBE_CLIENT_ID / SOUNDWAVE_YOUTUBE_CLIENT_SECRET.

@@ -10,7 +10,10 @@ const os = require("node:os");
 const path = require("node:path");
 
 const desktopDir = path.join(__dirname, "..");
-const read = (name) => fs.readFileSync(path.join(desktopDir, name), "utf8");
+// Checked out on Windows, these files have CRLF line endings (Git's autocrlf),
+// so normalise before matching — a regex with a literal "\n" would otherwise
+// pass on Linux and fail on the build machine that makes the installers.
+const read = (name) => fs.readFileSync(path.join(desktopDir, name), "utf8").replace(/\r\n/g, "\n");
 
 const { EDITIONS, currentEdition } = require(path.join(desktopDir, "src", "edition.cjs"));
 const { applyServerEnv } = require(path.join(desktopDir, "src", "server-env.cjs"));
