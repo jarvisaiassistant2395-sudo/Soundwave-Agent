@@ -567,7 +567,31 @@ async function synthesizeLegacy(text: string, voice: string, prosody: Prosody): 
   } catch (err) {
     throw new EdgeTtsError("protocol", `Second voice engine failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeDirQuietly(dir);
+  }
+}
+
+/**
+ * Delete a temp directory without ever failing the call that made it.
+ *
+ * Windows refuses to remove a directory while anything still holds a file
+ * inside it — and a just-written mp3 is often held for a moment by Defender or
+ * Search. The old code called rmSync in `finally`, so that momentary hold threw
+ * ENOTEMPTY, the throw replaced the audio that had already been synthesized,
+ * and the app told the person "the voice is unavailable" for a request that had
+ * actually worked (seen in the packaged Windows end-to-end test). Give it a few
+ * short tries, then leave the folder behind: a stale temp directory is a much
+ * smaller problem than a voice that breaks at random.
+ */
+async function removeDirQuietly(dir: string, attempts = 4): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch {
+      if (i === attempts - 1) return;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (i + 1)));
+    }
   }
 }
 
