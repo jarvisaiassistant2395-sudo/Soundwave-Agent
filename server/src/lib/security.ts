@@ -4,14 +4,18 @@ import { config } from "../config.js";
 
 // ── HTTP security headers ───────────────────────────────────────────────────
 // TTS is server-side (Microsoft Neural voices), so no WebAssembly, no Web
-// Workers, and no model CDN are required on the client — the CSP is tight.
+// Workers, and no model CDN are required on the client — the CSP is tight. The
+// interface's fonts are shipped inside the install too (frontend/src/fonts.css
+// pulls them from assets/fonts, and the desktop assembly copies that folder in),
+// so no third-party origin is allowed for styles or fonts any more: everything
+// the window draws comes from this app's own origin.
 export const securityHeaders = helmet({
   contentSecurityPolicy: {
     directives: {
       "default-src": ["'self'"],
       "script-src": ["'self'"],
-      "style-src": ["'self'", "https://fonts.googleapis.com"],
-      "font-src": ["'self'", "https://fonts.gstatic.com"],
+      "style-src": ["'self'"],
+      "font-src": ["'self'"],
       "img-src": ["'self'", "data:", "blob:"],
       "media-src": ["'self'", "blob:"],
       "connect-src": ["'self'"],
