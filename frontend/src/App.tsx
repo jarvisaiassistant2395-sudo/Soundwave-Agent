@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "./store/auth";
 import { Welcome } from "./pages/Welcome";
+import { Setup } from "./pages/Setup";
 import { ToastHost } from "./components/ui/ToastHost";
 import { AppShell } from "./components/layout/AppShell";
 import { Dashboard } from "./pages/Dashboard";
@@ -81,6 +82,16 @@ export default function App() {
         <Route path="/" element={<Navigate to={HOME} replace />} />
         {/* The one screen before the account: "Continue with Google". */}
         <Route path="/welcome" element={<Welcome />} />
+        {/* The five small things between signing in and having a working app —
+            gated (it needs the account) but outside the frame. */}
+        <Route
+          path="/setup"
+          element={
+            <Linked>
+              <Setup />
+            </Linked>
+          }
+        />
         {/* The password days are gone — old links keep working. */}
         <Route path="/signin" element={<Navigate to={HOME} replace />} />
         <Route path="/signup" element={<Navigate to={HOME} replace />} />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   AppWindow,
   Brain,
@@ -45,9 +46,33 @@ function Card({ title, icon, children, className }: { title: string; icon?: Reac
       <div className="mb-5 flex items-center gap-2">
         {icon && <span className="text-blue-400">{icon}</span>}
         <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {title.startsWith("Agent brain") && (
+          <span className="ml-auto">
+            <SetupAgain />
+          </span>
+        )}
       </div>
       {children}
     </div>
+  );
+}
+
+/**
+ * A way back into the first-run wizard, from the tab that would send someone
+ * looking for it. The wizard is not a gate — it is five small things with the
+ * order and the reasons attached — so reopening it costs nothing.
+ */
+function SetupAgain() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => navigate("/setup")}
+      data-testid="brain-setup-again"
+      className="text-xs font-medium text-blue-400 hover:text-blue-300"
+    >
+      Run the setup steps again
+    </button>
   );
 }
 

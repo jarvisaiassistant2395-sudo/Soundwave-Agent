@@ -296,9 +296,26 @@ try {
     // The runner's own browser may have opened the same URL too; whichever
     // callback lands first wins, and the app's poll is the judge from here.
     if (!back.ok) console.log(`    [e2e] the sign-in callback answered HTTP ${back.status} (continuing — the app decides)`);
-    // Signed in means the Command Center renders: the gate only lets the shell
-    // through once the claim has set the session.
-    await micButton.waitFor({ state: "visible", timeout: 120_000 });
+    // Signed in means the Command Center renders — or, on a machine that has
+    // never been set up, the first-run wizard. Both are correct; the run takes
+    // the shortcut a person can take, and everything the wizard offers is
+    // exercised for real later (Settings → Brain, Settings → YouTube, voice).
+    const setupSkip = main.locator('[data-testid="setup-skip"]');
+    const afterSignIn = await Promise.race([
+      micButton.waitFor({ state: "visible", timeout: 120_000 }).then(() => "agent").catch(() => null),
+      setupSkip.waitFor({ state: "visible", timeout: 120_000 }).then(() => "setup").catch(() => null),
+    ]);
+    if (afterSignIn === null) await fail("signed in, but neither the Command Center nor the setup wizard appeared");
+    if (afterSignIn === "setup") {
+      const heading = (await main.locator("h1").first().textContent().catch(() => "")) ?? "";
+      annotate(
+        "notice",
+        "Desktop E2E: first-run setup",
+        `The app opened its setup wizard after sign-in (first step on screen: “${heading.trim()}”). This run skips it and drives each piece from Settings instead.`,
+      );
+      await setupSkip.click();
+      await micButton.waitFor({ state: "visible", timeout: 90_000 });
+    }
     ok("linked the account with Google (a stand-in on loopback)");
     annotate(
       "notice",

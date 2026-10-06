@@ -15,6 +15,7 @@ import { http } from "../lib/api";
 import { useOAuthProviders } from "../hooks/useOAuthProviders";
 import { Button } from "../components/ui/Button";
 import { getDesktop, openInBrowser } from "../lib/desktop";
+import { setupDone } from "./Setup";
 import { cn } from "../lib/cn";
 
 /** The app polls this often while the browser is open. */
@@ -52,7 +53,7 @@ export function Welcome() {
 
   // Already linked (second launch, or the browser came back first): go in.
   useEffect(() => {
-    if (user) navigate("/agent", { replace: true });
+    if (user) navigate(setupDone() ? "/agent" : "/setup", { replace: true });
   }, [user, navigate]);
 
   const finish = useCallback(
