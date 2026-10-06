@@ -77,6 +77,7 @@ afterAll(async () => {
 
 const brain = await import("../src/lib/brain/settings.js");
 const files = await import("../src/lib/geminiFiles.js");
+const { dataPathFor } = await import("../src/lib/geminiFiles.js");
 const chats = await import("../src/lib/geminiChats.js");
 const notebooks = await import("../src/lib/notebooks.js");
 
@@ -156,6 +157,14 @@ describe("dropping a file in", () => {
   it("serves the file, and forgets it on request", async () => {
     const created = await local(request(app).post("/api/v1/gemini/files").attach("file", Buffer.from("hello"), "hello.txt"));
     const id = created.body.file.id as string;
+    // The path we hand res.sendFile must be absolute on THIS platform — on
+    // Windows that means a drive letter, which a POSIX-style DATA_DIR like the
+    // one these tests use does not have. That is how serving a stored file
+    // worked on Linux and 500'd on Windows ("path must be absolute or specify
+    // root to res.sendFile"), with the whole test suite red and no installer.
+    if (process.platform === "win32") {
+      expect(dataPathFor(id)).toMatch(/^[A-Za-z]:[\\/]/);
+    }
     const raw = await local(request(app).get(`/api/v1/gemini/files/${id}`));
     expect(raw.status).toBe(200);
     expect(raw.text).toBe("hello");

@@ -79,12 +79,16 @@ for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execF
 const EDITION = currentEdition();
 const APP_ID = EDITION.appId;
 const APP_NAME = EDITION.displayName;
-const USER_DATA_DIR = path.join(app.getPath("appData"), EDITION.userDataFolder);
+// Set before the app is ready, which is the only time Electron honours it. If
+// anything here fails, the app keeps working in the default folder — a person's
+// app must not refuse to start over a directory name.
+let USER_DATA_DIR = null;
 try {
+  USER_DATA_DIR = path.join(app.getPath("appData"), EDITION.userDataFolder);
   fs.mkdirSync(USER_DATA_DIR, { recursive: true });
   app.setPath("userData", USER_DATA_DIR);
 } catch (err) {
-  console.warn(`[soundwave-desktop] could not use ${USER_DATA_DIR}: ${err.message}`);
+  console.warn(`[soundwave-desktop] could not use its own data folder: ${err.message}`);
 }
 /** Started by Windows at sign-in ("Start with Windows"): stay in the tray. */
 const START_HIDDEN = process.argv.includes("--hidden");

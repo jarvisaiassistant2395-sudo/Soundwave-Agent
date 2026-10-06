@@ -136,7 +136,7 @@ router.get("/file/:key", optionalAuth, async (req, res, next) => {
     const p = filePath(key);
     if (!fs.existsSync(p)) throw new ApiError(404, "NOT_FOUND", "The file no longer exists. Please import it again.");
     res.setHeader("Content-Type", mime);
-    res.sendFile(p, (err) => {
+    res.sendFile(path.resolve(p), (err) => {
       if (err && !res.headersSent) next(err);
     });
   } catch (e) {

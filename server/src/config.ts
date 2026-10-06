@@ -88,8 +88,15 @@ export const config = {
     const v = str("DEFAULT_SIGNUP_PLAN", "FREE").toUpperCase();
     return v === "PRO" || v === "ENTERPRISE" ? v : "FREE";
   })(),
-  dataDir: str("DATA_DIR", path.join(process.cwd(), "data")),
-  uploadsDir: str("UPLOADS_DIR", path.join(process.cwd(), "uploads")),
+  // Absolute, always. A path like "/tmp/soundwave" or "\\share\\soundwave" is
+  // rooted but has no drive letter on Windows, and libraries that demand a
+  // truly absolute path refuse it — Express's res.sendFile answers
+  // "path must be absolute or specify root" and every download 500s. This is
+  // how that reached CI: the tests use a POSIX-style DATA_DIR, so serving a
+  // stored file worked on Linux and failed on Windows. path.resolve() gives it
+  // a drive on Windows and changes nothing on POSIX.
+  dataDir: path.resolve(str("DATA_DIR", path.join(process.cwd(), "data"))),
+  uploadsDir: path.resolve(str("UPLOADS_DIR", path.join(process.cwd(), "uploads"))),
   // Absolute path to a built frontend (frontend/dist). Packaged/desktop builds
   // set this so Express serves the SPA from one origin — no Vite, no second port.
   webDist: str("WEB_DIST", ""),

@@ -28,6 +28,7 @@
 
 import { Router } from "express";
 import fs from "node:fs";
+import path from "node:path";
 import multer from "multer";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -157,7 +158,9 @@ router.get("/files/:id", ...gated, (req, res, next) => {
     if (!fs.existsSync(dataPath)) throw new ApiError(404, "NOT_FOUND", "The stored copy of that file is gone.");
     res.setHeader("Content-Type", file.mime);
     res.setHeader("Content-Disposition", `inline; filename="${file.name.replace(/["\\]/g, "")}"`);
-    res.sendFile(dataPath);
+    // Resolved, never the bare joined path: see the note in config.ts (Windows
+    // has no drive letter on a path that only starts with a slash).
+    res.sendFile(path.resolve(dataPath));
   } catch (err) {
     next(err);
   }

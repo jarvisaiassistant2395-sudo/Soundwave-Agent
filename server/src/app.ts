@@ -139,7 +139,7 @@ export function createApp() {
     );
     app.get("*", (req, res, next) => {
       if (req.path.startsWith("/api/")) return next();
-      res.sendFile(path.join(config.webDist, "index.html"));
+      res.sendFile(path.resolve(config.webDist, "index.html"));
     });
   }
 
