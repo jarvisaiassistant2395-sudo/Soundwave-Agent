@@ -281,6 +281,32 @@ const EMPTY = Buffer.alloc(0);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
+ * Deletes a temporary file, retrying a few times off the hot path. On Windows a
+ * name can stay listed for a moment after the file itself is gone — a handle
+ * that is still open, or a virus scanner reading the file mid-write — and these
+ * retries make sure a temporary file cannot outlive the request. Never throws:
+ * a leftover temp file must not turn into a failed render.
+ */
+function deleteTemp(file: string, tries = 4): void {
+  try {
+    fs.unlinkSync(file);
+    return;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT" || tries <= 0) return;
+  }
+  setTimeout(() => deleteTemp(file, tries - 1), 120).unref();
+}
+
+/** Ends a write stream if needed and resolves once its handle is really closed. */
+function closeWriteStream(stream: fs.WriteStream): Promise<void> {
+  if (stream.closed) return Promise.resolve();
+  return new Promise((resolve) => {
+    stream.once("close", () => resolve());
+    stream.destroy();
+  });
+}
+
+/**
  * Decodes the whole video's sound to 16 kHz mono PCM, writing it to a temporary
  * file and computing the energy profile as it streams past.
  *
@@ -360,19 +386,27 @@ export async function extractPcm(filePath: string, durationSec: number): Promise
       child.on("close", (code) => {
         done(() => {
           out.end(() => {
-            if (writeError) reject(writeError);
-            else if (code === 0) resolve();
-            else reject(new Error(stderr.trim().slice(-400) || `ffmpeg exited with code ${code}`));
+            const settle = () => {
+              if (writeError) reject(writeError);
+              else if (code === 0) resolve();
+              else reject(new Error(stderr.trim().slice(-400) || `ffmpeg exited with code ${code}`));
+            };
+            // "finish" means the bytes reached the OS, not that the handle is
+            // gone. Windows keeps a deleted-but-open file listed in the folder
+            // until it closes, and the caller may dispose() the moment this
+            // promise settles — so wait for the stream's own close.
+            if (out.closed) settle();
+            else out.once("close", settle);
           });
         });
       });
     });
   } catch (err) {
-    try {
-      fs.unlinkSync(pcmPath);
-    } catch {
-      /* nothing written yet */
-    }
+    // Close the write handle first: a Windows file with an open handle cannot
+    // be removed from its folder yet, and this temp file must not survive a
+    // failure the caller is being told about.
+    await closeWriteStream(out);
+    deleteTemp(pcmPath);
     throw err;
   }
 
@@ -408,11 +442,7 @@ export async function extractPcm(filePath: string, durationSec: number): Promise
       } catch {
         /* already closed */
       }
-      try {
-        fs.unlinkSync(pcmPath);
-      } catch {
-        /* already gone */
-      }
+      deleteTemp(pcmPath);
     },
   };
 }
