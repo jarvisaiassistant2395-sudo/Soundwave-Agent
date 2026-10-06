@@ -148,6 +148,14 @@ const assistantLines = () => getConversation().messages.filter((m) => m.sender =
 
 beforeEach(() => {
   vi.unstubAllGlobals();
+  // Almost every call below passes MORNING as its own `now`. The two that go
+  // through a tool cannot — send_email and send_reply read the clock themselves
+  // — so after 17:00 "at 5 pm" correctly means tomorrow and the answer becomes
+  // "tomorrow at 17:00". That made this file fail whenever CI ran in the
+  // evening (run 37502746078 reached step 6 at 17:2x UTC; the green run before
+  // it was at 16:56). Freezing Date — only Date, so the timers these tests
+  // drive by hand stay real — makes the header's promise true at any hour.
+  vi.useFakeTimers({ now: MORNING, toFake: ["Date"] });
   seen.length = 0;
   sendResponse = () => json({ id: "sent-new-1", threadId: "thread-9" });
   sendGate = null;
@@ -161,6 +169,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 

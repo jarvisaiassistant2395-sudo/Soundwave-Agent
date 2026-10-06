@@ -39,10 +39,7 @@ const ctx = (desktop = true): ToolContext => ({
 });
 
 const modeFile = () => path.join(config.dataDir, "agent-mode.json");
-const forgetMode = () => {
-  fs.rmSync(modeFile(), { force: true });
-  modes._resetAgentModeForTests();
-};
+const forgetMode = () => modes._resetAgentModeForTests();
 
 let app: ReturnType<typeof createApp>;
 
@@ -207,7 +204,8 @@ describe("the saved choice", () => {
     expect(modes.loadAgentMode()).toBe(DEFAULT_MODE);
     expect(modes.saveAgentMode("professional")).toBe("professional");
     expect(modes.loadAgentMode()).toBe("professional");
-    modes._resetAgentModeForTests();
+    // A cache-only forget: the file has to stay, or the question is meaningless.
+    modes._forgetAgentModeCacheForTests();
     expect(modes.loadAgentMode(), "a fresh process must read the file, not a cache").toBe("professional");
     expect(JSON.parse(fs.readFileSync(modeFile(), "utf8")).mode).toBe("professional");
   });
@@ -215,17 +213,17 @@ describe("the saved choice", () => {
   it("falls back to the default when the file names a mode that no longer exists", () => {
     fs.mkdirSync(path.dirname(modeFile()), { recursive: true });
     fs.writeFileSync(modeFile(), JSON.stringify({ mode: "victorian-butler" }));
-    modes._resetAgentModeForTests();
+    modes._forgetAgentModeCacheForTests();
     expect(modes.loadAgentMode()).toBe(DEFAULT_MODE);
     // …and a file that isn't JSON at all.
     fs.writeFileSync(modeFile(), "not json{");
-    modes._resetAgentModeForTests();
+    modes._forgetAgentModeCacheForTests();
     expect(modes.loadAgentMode()).toBe(DEFAULT_MODE);
   });
 
   it("takes the environment's mode when nothing is saved, and the saved one once there is", () => {
     process.env.AGENT_MODE = "concise";
-    modes._resetAgentModeForTests();
+    modes._forgetAgentModeCacheForTests();
     expect(modes.loadAgentMode()).toBe("concise");
     expect(modes.agentModeStatus().source).toBe("environment");
     modes.saveAgentMode("witty");
@@ -234,7 +232,7 @@ describe("the saved choice", () => {
     // An environment value naming no mode is ignored rather than crashing.
     forgetMode();
     process.env.AGENT_MODE = "shouty";
-    modes._resetAgentModeForTests();
+    modes._forgetAgentModeCacheForTests();
     expect(modes.loadAgentMode()).toBe(DEFAULT_MODE);
     expect(modes.agentModeStatus().source).toBe("default");
   });

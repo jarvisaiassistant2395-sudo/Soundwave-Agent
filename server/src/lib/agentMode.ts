@@ -92,7 +92,22 @@ export function agentModeStatus(): {
   };
 }
 
-/** Only the tests call this: forget the in-memory copy so the file is read again. */
+/** Only the tests call this: drop the in-memory copy so the file is read again. */
+export function _forgetAgentModeCacheForTests(): void {
+  cache = null;
+}
+
+/**
+ * Only the tests call this: forget the choice entirely, file and cache, so the
+ * next read starts from the default. Clearing the cache without deleting the
+ * file would look like a reset and behave like a re-read of whatever the last
+ * test saved — every test file shares one DATA_DIR.
+ */
 export function _resetAgentModeForTests(): void {
   cache = null;
+  try {
+    fs.rmSync(fileFor(), { force: true });
+  } catch {
+    /* nothing on disk */
+  }
 }

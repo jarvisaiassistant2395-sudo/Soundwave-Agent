@@ -37,6 +37,8 @@ const prompt = await import("../src/lib/brain/prompt.js");
 const pc = await import("../src/lib/brain/pc.js");
 const { writeShortScript } = await import("../src/lib/brain/script.js");
 const trends = await import("../src/lib/trends.js");
+const agentMode = await import("../src/lib/agentMode.js");
+const persona = await import("../src/lib/brain/core/persona.js");
 const viral = await import("../src/lib/brain/core/viral.js");
 const { contentsFor, buildRequest } = await import("../src/lib/brain/chat.js");
 const { buildShortVideo } = await import("../src/routes/agentShort.js");
@@ -104,6 +106,8 @@ afterAll(() => {
 
 beforeEach(() => {
   settings.resetBrainSettingsForTests();
+  // A mode another file saved would otherwise change how every turn here reads.
+  agentMode._resetAgentModeForTests();
   // The trend digest lives in the shared data dir (lib/trends.ts) — no test
   // here should be written to whatever another file researched.
   trends.resetTrendsForTests();
@@ -440,6 +444,72 @@ describe("Chat answered by Gemini", () => {
     } finally {
       c.desktopApp = true;
       c.memoryAvailable = true;
+    }
+  });
+});
+
+// ── The mode the turn is written in ─────────────────────────────────────────
+// agent_modes.test.ts pins agentInstruction() on its own. This is the wire
+// between the two: that a real chat turn carries whichever mode is saved on this
+// PC. Nothing else would notice if chat.ts stopped passing it — the instruction
+// would simply be the default one, every test here would still pass, and the
+// feature would be quietly dead everywhere except the pill.
+describe("the mode the turn is written in", () => {
+  beforeEach(() => {
+    settings.saveBrainSettings({ apiKey: KEY });
+  });
+
+  const instructionOf = () => generateCalls()[0]!.body.systemInstruction.parts[0].text as string;
+
+  it("carries the saved mode into the request Gemini actually gets", async () => {
+    agentMode.saveAgentMode("professional");
+    fake.queue.push(text("Very good, sir."));
+    const res = await chat("good morning");
+    expect(res.status).toBe(200);
+    const instruction = instructionOf();
+    expect(instruction).toContain("you are in Professional mode");
+    expect(instruction).toMatch(/executive assistant/);
+    expect(instruction).toMatch(/Address them as “sir”/);
+    // The correctness rules travel with the tone; a mode is not a licence.
+    expect(instruction).toContain("Plain text only: no Markdown");
+    expect(instruction).toContain("Don't make up facts, numbers, links, quotes or events");
+    expect(instruction).toContain("The mode is how you sound, not what you know");
+  });
+
+  it("uses the default when nobody has chosen, and follows a change on the next turn", async () => {
+    fake.queue.push(text("Morning! What can I make for you?"));
+    await chat("good morning");
+    expect(instructionOf()).toContain("you are in Friendly mode");
+
+    // Changed between turns, the way the pill or "be brief" would change it.
+    agentMode.saveAgentMode("concise");
+    fake.seen.length = 0; // otherwise instructionOf() reads the first turn again
+    fake.queue.push(text("Morning."));
+    await chat("good morning");
+    const second = instructionOf();
+    expect(second).toContain("you are in Concise mode");
+    expect(second).toMatch(/Answer only/);
+    expect(second).not.toContain("you are in Friendly mode");
+  });
+
+  it("puts exactly one mode's tone in the instruction — never two, never none", async () => {
+    // Not "the other modes' words are absent": the set_agent_mode tool lists all
+    // six so the agent can switch between them, so "executive assistant" is in
+    // every instruction that offers it. What has to be exclusive is the tone
+    // itself, and each mode's opening line is distinct enough to prove it.
+    const opener = (id: string) => persona.personaLines(id)[0]!;
+    for (const mode of persona.AGENT_MODES) {
+      agentMode.saveAgentMode(mode.id);
+      fake.seen.length = 0;
+      fake.queue.length = 0;
+      fake.queue.push(text("Right."));
+      await chat("hello");
+      const instruction = instructionOf();
+      expect(instruction, mode.id).toContain(`you are in ${mode.name} mode:`);
+      for (const other of persona.AGENT_MODES) {
+        const present = instruction.includes(opener(other.id));
+        expect(present, `${mode.id}: ${other.id}'s tone ${present ? "leaked in" : "is missing"}`).toBe(other.id === mode.id);
+      }
     }
   });
 });
