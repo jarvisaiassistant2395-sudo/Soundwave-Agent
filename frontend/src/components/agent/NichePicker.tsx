@@ -18,7 +18,7 @@ import { useNiches } from "../../lib/niches";
  * from the local copy: a person who opens the app offline can still make a short.
  */
 export function NichePicker({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) {
-  const { niches, proposals, counts, loading, error, deciding, accept, dismiss } = useNiches();
+  const { niches, proposals, leads, counts, loading, error, deciding, accept, dismiss } = useNiches();
   // Which niche's "i" is open. The picker's own business — the screen doesn't
   // need to know, and keeping it here is one less piece of state up there.
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -95,6 +95,25 @@ export function NichePicker({ selected, onSelect }: { selected: string; onSelect
         {error && (
           <p className="text-3xs leading-snug text-amber-300/80" data-testid="niche-error">
             Couldn't reach the server for the newest list ({error}) — showing the researched topics.
+          </p>
+        )}
+        {/* What the free scan saw climbing that isn't on the list yet. Without
+            this the whole feature waits on the person happening to ask the agent
+            "what's trending" — the leads are already in the answer above, and a
+            topic nobody can see might as well not have been found. It's a line,
+            not a card: the agent writes a real proposal, with an audience and
+            angles and the trap that kills it, and that's what gets accepted. */}
+        {proposals.length === 0 && leads.length > 0 && (
+          <p className="text-3xs leading-snug text-gray-500" data-testid="niche-leads">
+            Climbing right now and not on your list:{" "}
+            <span className="text-gray-400">
+              {leads
+                .slice(0, 4)
+                .map((l) => l.topic)
+                .join(", ")}
+              {leads.length > 4 ? "…" : ""}
+            </span>
+            . Ask the agent to write one up and it lands here for you to accept.
           </p>
         )}
       </div>
