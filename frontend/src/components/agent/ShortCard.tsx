@@ -41,7 +41,7 @@ export function ShortCard({ short }: { short: AgentShort }) {
           href={background.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex min-w-0 items-center gap-1.5 text-[11px] text-gray-400 hover:text-cyan-300"
+          className="flex min-w-0 items-center gap-1.5 text-2xs text-gray-400 hover:text-cyan-300"
           title={`Background imported from Orbital NCG: ${background.url}`}
         >
           <Youtube className="h-3 w-3 shrink-0 text-red-500" />

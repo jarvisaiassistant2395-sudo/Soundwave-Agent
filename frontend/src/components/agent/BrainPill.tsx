@@ -20,7 +20,7 @@ export function BrainPill({ status }: { status: BrainStatus | null }) {
       to="/settings/brain"
       title={title}
       data-testid="brain-pill"
-      className={`hidden sm:flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold font-mono transition-colors ${look}`}
+      className={`hidden sm:flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-semibold font-mono transition-colors ${look}`}
     >
       <Sparkles className="h-3 w-3" />
       {label}

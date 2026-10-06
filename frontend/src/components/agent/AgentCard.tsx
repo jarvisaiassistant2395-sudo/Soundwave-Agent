@@ -36,7 +36,7 @@ export function AgentCard({
     switch (status) {
       case "running":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-400">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-400">
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500" />
@@ -46,7 +46,7 @@ export function AgentCard({
         );
       case "ready":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-2xs font-medium text-emerald-400">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             {statusText || "Ready"}
           </span>
@@ -55,7 +55,7 @@ export function AgentCard({
       case "standby":
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] font-medium text-gray-400">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-2xs font-medium text-gray-400">
             <span className="h-1.5 w-1.5 rounded-full bg-gray-500" />
             {statusText || (status === "idle" ? "Idle" : "Standby")}
           </span>
@@ -66,8 +66,8 @@ export function AgentCard({
   return (
     <div
       className={cn(
-        "group relative flex flex-col justify-between rounded-xl border border-white/[0.07] bg-[#0C0C0F] p-5 transition-all duration-150 hover:border-white/[0.14] hover:bg-[#131419]",
-        active && "border-blue-500/40 bg-[#131419] shadow-sm",
+        "group relative flex flex-col justify-between rounded-xl border border-surface-hairline bg-panel p-5 transition-all duration-150 hover:border-white/[0.14] hover:bg-surface-elevated",
+        active && "border-blue-500/40 bg-surface-elevated shadow-sm",
         className,
       )}
     >
@@ -81,7 +81,7 @@ export function AgentCard({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-white tracking-tight">{name}</h3>
-                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-gray-400">
+                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-3xs font-medium text-gray-400">
                   {role}
                 </span>
               </div>
@@ -96,7 +96,7 @@ export function AgentCard({
           {capabilities.map((cap) => (
             <span
               key={cap}
-              className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2 py-0.5 text-[11px] font-medium text-gray-400"
+              className="rounded-md border border-white/[0.05] bg-white/[0.02] px-2 py-0.5 text-2xs font-medium text-gray-400"
             >
               {cap}
             </span>
@@ -107,7 +107,7 @@ export function AgentCard({
       {/* Footer: Recent Activity & Primary CTA */}
       <div className="mt-5 pt-3.5 border-t border-white/[0.06] flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <span className="text-[11px] text-gray-400 block truncate">
+          <span className="text-2xs text-gray-400 block truncate">
             <strong className="text-gray-400 font-medium">Activity:</strong> {recentActivity}
           </span>
         </div>

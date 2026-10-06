@@ -39,7 +39,8 @@ import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, WORDS_PER_SECOND } from "../
 // the researched beat structure, the niches and the script doctor. They are
 // what renders when there is no Gemini key (or Gemini is unreachable) — so they
 // are held to the same bar as the written ones: the tests lint every sample.
-import { SAMPLE_SCRIPTS, detectNiche, pickTemplate } from "../lib/brain/core/viral.js";
+import { SAMPLE_SCRIPTS, pickTemplate } from "../lib/brain/core/viral.js";
+import { resolveNiche } from "../lib/discoveredNiches.js";
 
 export const VIRAL_SCRIPTS: Record<string, string[]> = SAMPLE_SCRIPTS;
 
@@ -52,7 +53,9 @@ export function generateScript(topic: string): string {
     .replace(/^(create a short|generate a short|make a short|make me a short|did you know|fact|hook):\s*/i, "")
     .replace(/^about\s+/i, "")
     .trim();
-  return pickTemplate(detectNiche(cleaned).id, cleaned);
+  // resolveNiche: a niche the agent found and the person accepted is written for
+  // too. It has no samples of its own, and pickTemplate already falls back.
+  return pickTemplate(resolveNiche(cleaned).id, cleaned);
 }
 
 export function cuesFromTimings(

@@ -17,6 +17,7 @@ import {
   estimateSeconds,
   hookById,
   lintScript,
+  matchNiche,
   nicheById,
   nicheCatalog,
   pickTemplate,
@@ -194,6 +195,32 @@ describe("the shipped sample scripts", () => {
       expect(all, topic).toContain(picked);
       expect(lintScript(picked, { seconds: DEFAULT_SECONDS }).issues, topic).toEqual([]);
     }
+  });
+
+  it("classifies by whole words, so a keyword inside a longer word doesn't hijack the topic", () => {
+    // Each of these used to land in the wrong niche because the matcher looked
+    // for substrings: "nobody" holds "body", "warmer" holds "war", "taxi" holds
+    // "tax", "air" holds "ai". They are not about health, history, finance or AI.
+    for (const topic of ["quantum nobody explains this", "nobody tells you about pricing", "toward a warmer climate", "a taxi driver's day", "air quality in cities", "everybody hates this"]) {
+      expect(matchNiche(topic), topic).toBeNull();
+    }
+    // And the stems still earn their keep: an inflection is the same subject.
+    const stems: Array<[string, string]> = [
+      ["psychological tricks", "psychology"],
+      ["why habits stick", "motivation"],
+      ["my savings plan", "finance"],
+      ["robots taking jobs", "ai"],
+      ["sleeping better", "health"],
+      ["procrastinating again", "motivation"],
+      ["kidnapped in 1974", "crime"],
+      ["ancient rome", "history"],
+      ["unexplained events", "horror"],
+      ["facts about space", "facts"],
+    ];
+    for (const [topic, want] of stems) expect(matchNiche(topic)?.id, topic).toBe(want);
+    // matchNiche says "none of them"; detectNiche still has to pick one to write
+    // for, and it picks the same one it always did.
+    expect(detectNiche("something nothing covers").id).toBe("facts");
   });
 
   it("routes a topic into the sample that talks about it", () => {

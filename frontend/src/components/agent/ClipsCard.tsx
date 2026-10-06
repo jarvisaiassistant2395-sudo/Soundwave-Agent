@@ -126,8 +126,8 @@ export function ClipsCard() {
   const line = note ?? ([cutting, waiting].filter((part): part is string => part !== null).join(" ") || null);
 
   return (
-    <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2 font-mono" data-testid="clips-card">
-      <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
+    <div className="rounded-xl border border-surface-hairline bg-panel p-3.5 space-y-2 font-mono" data-testid="clips-card">
+      <div className="flex items-center justify-between border-b border-surface-hairline pb-1.5 text-xs">
         <span
           className="flex items-center gap-1.5 font-semibold text-gray-200"
           title="The agent listens to the whole video, finds where someone is talking and makes a point, and cuts clips that open on a hook and end on a pause — no random 45-second chunks."
@@ -137,14 +137,14 @@ export function ClipsCard() {
         </span>
         <span className="flex items-center gap-1.5">
           {status.busy ? (
-            <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title={status.source ?? ""} data-testid="clips-busy">
+            <span className="flex items-center gap-1 text-3xs font-bold text-amber-300" title={status.source ?? ""} data-testid="clips-busy">
               <Loader2 className="h-3 w-3 animate-spin" />
               CUTTING
             </span>
           ) : null}
           {status.queued > 0 ? (
             <span
-              className="flex items-center gap-1 text-[9px] font-bold text-cyan-300"
+              className="flex items-center gap-1 text-3xs font-bold text-cyan-300"
               title={`Waiting their turn: ${status.waitingFor.join(", ")}`}
               data-testid="clips-queued"
             >
@@ -162,17 +162,17 @@ export function ClipsCard() {
           if (e.key === "Enter") void cut();
         }}
         placeholder="YouTube link or video file path"
-        className="w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
+        className="w-full rounded border border-surface-border bg-surface-subtle px-2 py-1 text-2xs text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
         data-testid="clips-video"
       />
 
       <div className="flex items-center gap-1.5">
-        <label className="flex flex-1 items-center gap-1.5 text-[10px] text-gray-500" title="Optional: what to look for in the video">
+        <label className="flex flex-1 items-center gap-1.5 text-3xs text-gray-500" title="Optional: what to look for in the video">
           <input
             value={focus}
             onChange={(e) => setFocus(e.target.value)}
             placeholder="what to look for"
-            className="w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
+            className="w-full rounded border border-surface-border bg-surface-subtle px-2 py-1 text-2xs text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/60 focus:outline-none"
             data-testid="clips-focus"
           />
         </label>
@@ -181,7 +181,7 @@ export function ClipsCard() {
           onChange={(e) => setCount(Number(e.target.value))}
           title="How many shorts to cut out"
           aria-label="How many shorts to cut out"
-          className="rounded border border-[#24252D] bg-[#050506] px-1 py-1 text-[11px] text-gray-300 focus:border-cyan-500/60 focus:outline-none cursor-pointer"
+          className="rounded border border-surface-border bg-surface-subtle px-1 py-1 text-2xs text-gray-300 focus:border-cyan-500/60 focus:outline-none cursor-pointer"
           data-testid="clips-count"
         >
           {Array.from({ length: Math.max(1, status.maxCount - 1) }, (_, i) => i + 1).map((n) => (
@@ -208,7 +208,7 @@ export function ClipsCard() {
       </div>
 
       {line ? (
-        <p className="text-[10px] leading-snug text-gray-500" data-testid="clips-note">
+        <p className="text-3xs leading-snug text-gray-500" data-testid="clips-note">
           {line}
         </p>
       ) : null}

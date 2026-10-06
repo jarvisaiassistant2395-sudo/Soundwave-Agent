@@ -79,11 +79,11 @@ export function EmailDraftCard({ draftId }: { draftId: string }) {
 
   return (
     <>
-      <section className="mt-3 rounded-lg border border-cyan-500/30 bg-[#08090B] p-3 text-[11px]" aria-label="Gmail reply draft">
+      <section className="mt-3 rounded-lg border border-cyan-500/30 bg-panel p-3 text-2xs" aria-label="Gmail reply draft">
         <div className="flex items-center gap-2 text-cyan-200">
           <Mail className="h-4 w-4 shrink-0" />
           <b>{sent ? "Email sent" : "Unsent Gmail draft"}</b>
-          <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-300">
+          <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-3xs text-emerald-300">
             <ShieldCheck className="h-3 w-3" /> {sent ? "Confirmed" : "Not sent"}
           </span>
         </div>
@@ -103,7 +103,7 @@ export function EmailDraftCard({ draftId }: { draftId: string }) {
                 ) : (
                   <span className="text-amber-200">Review attachments and send from Gmail.</span>
                 )}
-                <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[10px] text-gray-300 hover:border-white/20 hover:text-white">
+                <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-3xs text-gray-300 hover:border-white/20 hover:text-white">
                   Edit in Gmail <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
@@ -135,7 +135,7 @@ export function EmailDraftCard({ draftId }: { draftId: string }) {
             {draft.bcc && <div><div className="text-gray-500">Bcc</div><div className="mt-0.5 break-all text-white">{draft.bcc}</div></div>}
             <div><div className="text-gray-500">Subject</div><div className="mt-0.5 break-words text-white">{draft.subject}</div></div>
             {draft.attachments.length > 0 && <div><div className="text-gray-500">Attachments</div><div className="mt-0.5 break-words text-amber-200">{draft.attachments.join(", ")}</div></div>}
-            <div><div className="text-gray-500">Message</div><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-[#24252D] bg-[#050506] p-3 font-sans text-gray-200">{draft.body}</pre></div>
+            <div><div className="text-gray-500">Message</div><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-surface-border bg-surface-subtle p-3 font-sans text-gray-200">{draft.body}</pre></div>
             <p className="text-amber-200">This is the exact recipient and message Soundwave is about to send. Choose “Keep as draft” to leave it unsent.</p>
           </div>
         )}

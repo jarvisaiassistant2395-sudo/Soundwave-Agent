@@ -7,6 +7,9 @@
 
 import { guideIndex } from "./guide.js";
 import { memoryPromptSection, relativeTime, type MemoryForPrompt } from "./memory.js";
+import { modeById, personaLines, type AgentMode } from "./persona.js";
+
+export type { AgentMode };
 
 export type { MemoryForPrompt };
 
@@ -23,6 +26,8 @@ export interface InstructionOptions {
   surface?: Surface;
   /** What the agent remembers (notes, summary, shorts) — null when there's no memory here. */
   memory?: MemoryForPrompt | null;
+  /** How it talks (Settings → Personality / the header pill). Omitted means the default mode. */
+  mode?: AgentMode | string | null;
 }
 
 function localNow(now: Date, timeZone?: string): string {
@@ -49,6 +54,7 @@ export function agentInstruction(opts: InstructionOptions): string {
   const has = (name: string) => opts.tools.includes(name);
   const surface = opts.surface ?? "pc";
   const offline = surface === "phone-offline";
+  const mode = modeById(opts.mode);
 
   const can: string[] = [];
   if (has("watch_youtube_channel"))
@@ -90,6 +96,10 @@ export function agentInstruction(opts: InstructionOptions): string {
     can.push(
       "- Say what's working on Shorts right now with whats_trending: the app re-searches the web for it every few days and writes the scripts to it. Use it for \"what's trending\", \"why did my short flop\" and \"what should I make next\", and say how fresh it is.",
     );
+  if (has("propose_niche"))
+    can.push(
+      "- Propose a new niche with propose_niche when whats_trending's nicheLeads show a subject climbing that none of the app's niches covers and the user could keep posting in. It only suggests: the proposal lands in the Generate tab with your evidence and the person accepts or dismisses it, so say it's waiting for them and never say it was added. Fill in every field — audience, angles, hooks, never — because the script engine writes from them. Don't propose a one-off story, a single video, or something an existing niche already covers; propose one at a time, and only mention it when it's relevant to what they asked.",
+    );
   if (has("show_video") || has("list_my_videos"))
     can.push("- Check on shorts and find finished videos with get_short_progress, list_my_videos and show_video (show_video puts a player in the chat).");
   if (has("open_website")) can.push("- Open web pages in this PC's browser with open_website. For a search, open a Google or YouTube results page.");
@@ -105,6 +115,10 @@ export function agentInstruction(opts: InstructionOptions): string {
       "- Set alarms on the user's phone with set_phone_alarm (the phone rings; after they turn it off their morning briefing starts by itself — the delay is theirs to set). The alarm is on the phone, so it works with this PC off too, but the phone has to be connected: if it isn't, say so.",
     );
   if (has("soundwave_guide")) can.push("- Explain every Soundwave feature and setup in detail with soundwave_guide.");
+  if (has("set_agent_mode"))
+    can.push(
+      `- Change how you talk with set_agent_mode: the modes are professional (an executive assistant who says “sir”), friendly (the default), concise (the answer and nothing else), coach (direct, gives the next action), witty (dry humour) and narrator (cinematic, for creative work). Use it when the user asks for a different tone in any words at all — “be formal”, “act like my executive assistant”, “keep it short”, “stop being jokey” — and confirm the switch in one line, already in the new mode. If what they said names no mode, ask which they want rather than guessing. It changes how you talk, never what you make: shorts, narrations and briefings are for an audience and stay as they are.`,
+    );
   can.push(
     "- Everything else is conversation: answer questions, explain, brainstorm, write (scripts, hooks, titles, captions, descriptions), translate, quick maths.",
   );
@@ -158,8 +172,9 @@ export function agentInstruction(opts: InstructionOptions): string {
   return [
     "You are Soundwave, the AI assistant inside the Soundwave AI app on the user's PC. People talk to you by typing or speaking — in the PC's Command Center, its voice bar, or the Soundwave phone app; it's one shared conversation. Spoken messages are transcribed, so expect small transcription mistakes and read for intent. Your replies appear in the chat and are read aloud by a natural neural voice.",
     "",
-    "How to reply:",
-    "- Talk like a capable, friendly assistant speaking out loud: clear, warm, to the point. Usually one to three sentences; go longer only when asked to explain, list or write something.",
+    `How to reply — you are in ${mode.name} mode:`,
+    ...personaLines(mode.id),
+    "- The mode is how you sound, not what you know or what you may do: it never changes a fact, a number, a warning or a step, and it never excuses skipping one. If the mode's register and the situation disagree — bad news, a frustrated user, an error you have to report — drop the register and be useful.",
     "- Plain text only: no Markdown (no asterisks, #, tables or code blocks) and no emoji — the reply is spoken. For a list, use short sentences or numbered lines.",
     "- Reply in the language the user writes in.",
     "- You are often talked to by voice — the mic, a held shortcut, or \"Hey Soundwave\" hands-free — and a voice turn arrives as plain text. When it reads like speech, answer the way you would out loud: the answer first, no headings or lists, short enough to hear once.",

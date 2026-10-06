@@ -1,3 +1,4 @@
+import { SettingsCard as Card } from "../components/ui/SettingsCard";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -8,6 +9,7 @@ import {
   Database,
   Download,
   Loader2,
+  MessageSquareText,
   Mic,
   MonitorSmartphone,
   Palette,
@@ -49,10 +51,12 @@ import { notifyUser } from "../lib/notify";
 import { PhoneTab } from "./settings/PhoneTab";
 import { BrainTab } from "./settings/BrainTab";
 import { MorningTab } from "./settings/MorningTab";
+import { PersonalityTab } from "./settings/PersonalityTab";
 
 const TABS = [
   { id: "profile", label: "Profile", icon: <User className="h-4 w-4" /> },
   { id: "brain", label: "Brain", icon: <Brain className="h-4 w-4" /> },
+  { id: "personality", label: "Personality", icon: <MessageSquareText className="h-4 w-4" /> },
   { id: "billing", label: "Billing", icon: <CreditCard className="h-4 w-4" /> },
   { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="h-4 w-4" /> },
   { id: "voice", label: "Voice & Desktop", icon: <Mic className="h-4 w-4" /> },
@@ -64,19 +68,9 @@ export function Settings() {
   const location = useLocation();
   const navigate = useNavigate();
   const { refreshQuota } = useAuth();
-  const active = location.pathname.includes("/brain")
-    ? "brain"
-    : location.pathname.includes("/billing")
-    ? "billing"
-    : location.pathname.includes("/preferences")
-      ? "preferences"
-      : location.pathname.includes("/voice")
-        ? "voice"
-        : location.pathname.includes("/phone")
-          ? "phone"
-          : location.pathname.includes("/morning")
-            ? "morning"
-            : "profile";
+  // Which tab the URL names. Every tab's id is its own path segment, so this
+  // reads the same whatever gets added next instead of growing a ternary level.
+  const active = TABS.map((t) => t.id).find((id) => id !== "profile" && location.pathname.includes(`/${id}`)) ?? "profile";
 
   useEffect(() => {
     void refreshQuota();
@@ -108,6 +102,7 @@ export function Settings() {
       <div className="mt-6 space-y-5">
         {active === "profile" && <ProfileTab />}
         {active === "brain" && <BrainTab />}
+        {active === "personality" && <PersonalityTab />}
         {active === "billing" && <BillingTab />}
         {active === "preferences" && <PreferencesTab />}
         {active === "voice" && <VoiceDesktopTab />}
@@ -679,14 +674,3 @@ function VoiceDesktopTab() {
   );
 }
 
-function Card({ title, icon, children, className }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("rounded-card border border-gray-800 bg-panel p-5 sm:p-6", className)}>
-      <div className="mb-5 flex items-center gap-2">
-        {icon && <span className="text-blue-400">{icon}</span>}
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}

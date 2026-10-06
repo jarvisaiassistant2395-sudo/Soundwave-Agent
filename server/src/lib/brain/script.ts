@@ -22,12 +22,12 @@ import { loadTrendDigest } from "../trends.js";
 import {
   DEFAULT_SECONDS,
   buildScriptInstruction,
-  detectNiche,
   lintScript,
   scriptWordTarget,
   type Niche,
   type ScriptLint,
 } from "./core/viral.js";
+import { resolveNiche } from "../discoveredNiches.js";
 
 export interface WrittenScript {
   script: string;
@@ -87,7 +87,10 @@ export async function writeShortScript(
   const brain = activeBrain();
   if (!brain) return null;
   const seconds = opts.seconds && opts.seconds > 0 ? Math.round(opts.seconds) : DEFAULT_SECONDS;
-  const niche: Niche = opts.nicheId ? detectNiche(opts.nicheId) : detectNiche(topic);
+  // resolveNiche rather than detectNiche: a niche the agent found and the person
+  // accepted has to reach the script engine, and detectNiche only knows the nine
+  // standing ones (it would answer "facts" for anything else).
+  const niche: Niche = resolveNiche(opts.nicheId ?? topic);
   const { target } = scriptWordTarget(seconds);
   const models = [...new Set([brain.model, FALLBACK_MODEL])];
   // What the scout last found on the web (lib/trends.ts): current formats and

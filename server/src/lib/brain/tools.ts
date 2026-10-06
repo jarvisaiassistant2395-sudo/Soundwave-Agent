@@ -19,6 +19,8 @@ import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } 
 import { clipsBusy, startClipsJob } from "../videoClips.js";
 import { defaultEyes, type Eyes } from "../eyes.js";
 import { trendsStatus } from "../trends.js";
+import { HOOK_PATTERNS } from "./core/viral.js";
+import { listNicheProposals, proposeNiche } from "../discoveredNiches.js";
 import { channelFor, defaultChannelId, listChannels, updateChannel } from "../youtubeChannels.js";
 import { gmailService } from "../gmail.js";
 import { cancelScheduledEmail, listScheduledEmails, scheduleEmail } from "../emailSchedule.js";
@@ -38,6 +40,8 @@ import { describeVolume, getVolume, setMuted, setVolume, volumeSupported } from 
 import { cancelReminder, createReminder, listReminders } from "../reminders.js";
 import { guideTool } from "./core/guide.js";
 import { memoryTools, type MemoryStore } from "./core/memory.js";
+import { loadAgentMode, saveAgentMode } from "../agentMode.js";
+import { AGENT_MODES, detectMode, isAgentMode, modeById, type AgentMode } from "./core/persona.js";
 import { localDay } from "./core/morning.js";
 
 export interface ToolEffects {
@@ -737,9 +741,153 @@ AGENT_TOOLS.push(
         sources: status.sources,
         via: status.via === "youtube" ? "YouTube's own Shorts search (this week, by popularity)" : "web search",
         topShorts: status.top.slice(0, 8).map((t) => ({ title: t.title, views: t.views, channel: t.channel, url: t.url, niche: t.query })),
+        // Topics climbing that none of the nine niches covers. This is the lead
+        // propose_niche works from, so "what's trending" and "what should we add"
+        // are answered from the same free scan.
+        nicheLeads: status.nicheLeads,
+        ...(status.nicheLeads.length
+          ? {
+              nicheLeadNote: `These topics are climbing outside the niches the app has: ${status.nicheLeads
+                .slice(0, 5)
+                .map((l) => l.topic)
+                .join(", ")}. If one of them is a real niche the user could post in — not a one-off story, and not something one of the existing niches already covers — propose_niche adds it to the Generate tab for them to accept. Don't propose more than one at a time, and don't propose without telling them.`,
+            }
+          : {}),
         note: status.due
           ? `This research is ${status.ageDays === 0 ? "from today" : `${status.ageDays} days old`} — it refreshes by itself twice a day.`
           : "Fresh research — the newest scripts are written to this.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "set_agent_mode",
+      description:
+        "Change how you talk in this chat — your tone and manner, and nothing else. The modes are professional (an executive assistant who addresses the user as “sir”), friendly (warm; the default), concise (the answer and nothing else), coach (direct, ends on the next action), witty (dry humour) and narrator (cinematic, for creative work). Use it whenever the user asks for a different tone in any words at all — “be formal”, “act like my executive assistant”, “keep it short”, “stop with the jokes”, “talk to me like a coach”. Pass their words as asked and they are resolved here; pass mode only when they named one exactly. It never changes what you make: shorts, narrations and briefings are written for an audience and stay exactly as they are.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          mode: {
+            type: "STRING",
+            description: "The mode's own id, only when the user named one exactly.",
+            enum: ["professional", "friendly", "concise", "coach", "witty", "narrator"],
+          },
+          asked: {
+            type: "STRING",
+            description: "Otherwise the user's own words — “be more formal”, “talk like my executive assistant”, “keep it brief”.",
+          },
+        },
+      },
+    },
+    // A PC tool, like the rest of the ones that change this installation: the
+    // mode is saved once in DATA_DIR, so on a hosted server one person asking
+    // for "sir" would change the agent for everyone. There it isn't offered,
+    // and the instruction doesn't mention it either.
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args) {
+      const current = loadAgentMode();
+      const named = typeof args.mode === "string" ? args.mode.trim().toLowerCase() : "";
+      const words = typeof args.asked === "string" ? args.asked : "";
+      const wanted = isAgentMode(named) ? (named as AgentMode) : detectMode(named || words);
+      const options = AGENT_MODES.map((m) => ({ id: m.id, name: m.name, tagline: m.tagline }));
+      if (!wanted) {
+        // Guessing a personality is worse than asking: the wrong one changes
+        // every reply after this, and the user may not notice for a while.
+        return {
+          changed: false,
+          mode: current,
+          modes: options,
+          reason: `That doesn't name a mode I have. Ask which one they want — ${AGENT_MODES.map((m) => m.name.toLowerCase()).join(", ")} — and call this again with it.`,
+        };
+      }
+      const saved = saveAgentMode(wanted);
+      const chosen = modeById(saved);
+      return {
+        changed: saved !== current,
+        mode: saved,
+        name: chosen.name,
+        tagline: chosen.tagline,
+        modes: options,
+        note:
+          saved === current
+            ? `Already in ${chosen.name} mode — nothing to change. Say so in one line.`
+            : `${chosen.name} mode is on from the next reply. Confirm the switch in one line, in the new register, and say that it changes how you talk only — shorts, narrations and briefings stay as they are.`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "propose_niche",
+      description:
+        "Propose a new niche for the Generate tab, when something is going viral that none of the standing niches covers. Nothing changes until the person accepts it in the app: they see your proposal with its evidence and choose. Check whats_trending first — its nicheLeads are the topics this week's popular Shorts are climbing on outside the current list, and the best ones to propose from. Only propose a real niche: a subject someone could post in repeatedly, with an audience, not a one-off news story, not a single video, and not something one of the existing niches already covers (that gets refused). Every field is required because the script engine writes from them — audience, angles, hooks and never are what turn a topic into videos, so a thin proposal is refused rather than stored. Say you proposed it and that it's waiting in the Generate tab; never claim it was added.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING", description: "What the picker calls it, 2-4 words, in the style of the existing ones: “Psychology & Mind Tricks”, “Untold History”, “Money & Wealth”." },
+          description: { type: "STRING", description: "One line under the name saying what the videos are about, like “Forgotten events, impossible timelines”." },
+          audience: { type: "STRING", description: "Who actually watches this — the script talks to them. One sentence, like “People who like recognizing themselves in a behavior.”" },
+          angles: { type: "ARRAY", items: { type: "STRING" }, description: "3 to 6 places the ideas come from, each a fill-in-the-blank angle rather than one topic — “a bias that quietly runs an everyday decision”, not “the anchoring bias”. This is what stops the niche running dry after three videos." },
+          hooks: {
+            type: "ARRAY",
+            items: { type: "STRING", enum: HOOK_PATTERNS.map((h) => h.id) },
+            description: `The hook shapes that fit this niche, best first. Leave it out and the topic-agnostic three are used (${["question-gap", "secret", "number-tease"].join(", ")}).`,
+          },
+          never: { type: "STRING", description: "The one trap that kills this niche, as a rule the script must not break — “No pop-psych claims with nothing behind them — every effect must be a real, named, studied one.”" },
+          evidence: { type: "STRING", description: "What you actually saw that makes this worth having: the topic, how fast it's climbing, how many channels are on it, an example or two. This is shown to the person, so it has to be specific and true — no invented numbers." },
+          sources: { type: "ARRAY", items: { type: "STRING" }, description: "Where you saw it: “YouTube Shorts search”, “Google Trends”, a page title, a video title." },
+        },
+        required: ["name", "description", "audience", "angles", "never", "evidence"],
+      },
+    },
+    // The scout that finds these runs on this PC (whats_trending is desktop-only
+    // for the same reason), and the proposals are saved on this PC — so on a
+    // hosted server there is no scan to propose from and nowhere to save it.
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args) {
+      const result = proposeNiche({
+        name: args.name,
+        description: args.description,
+        audience: args.audience,
+        angles: args.angles,
+        hooks: args.hooks,
+        never: args.never,
+        evidence: args.evidence,
+        sources: args.sources,
+        // The scan's own leads back up whatever the agent says it saw: attached
+        // here rather than trusted from the model, so the card the person reads
+        // shows real Shorts and real numbers.
+        leads: trendsStatus()
+          .nicheLeads.filter((l) => {
+            const where = `${String(args.name ?? "")} ${String(args.description ?? "")} ${String(args.evidence ?? "")}`.toLowerCase();
+            return where.includes(l.topic.toLowerCase());
+          })
+          .slice(0, 4),
+      });
+      if (!result.ok) {
+        return {
+          proposed: false,
+          reason: result.reason,
+          standingNiches: listNicheProposals("accepted").length
+            ? "the ones the app has, plus any already accepted"
+            : "the ones the app has",
+          waiting: listNicheProposals("pending").map((p) => p.name),
+        };
+      }
+      const p = result.proposal;
+      return {
+        proposed: true,
+        alreadyWaiting: result.alreadyPending === true,
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        evidence: p.evidence,
+        leadsAttached: p.leads.length,
+        waiting: listNicheProposals("pending").map((x) => x.name),
+        note: result.alreadyPending
+          ? `“${p.name}” was already waiting in the Generate tab — nothing added twice. Tell them it's still there to accept or dismiss.`
+          : `“${p.name}” is waiting in the Generate tab for them to accept or dismiss. It is not on the list yet and no script will be written for it until they accept — say exactly that.`,
       };
     },
   },

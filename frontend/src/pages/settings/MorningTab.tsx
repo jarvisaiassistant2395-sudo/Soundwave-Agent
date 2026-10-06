@@ -1,3 +1,11 @@
+import type { ComponentProps } from "react";
+import { SettingsCard } from "../../components/ui/SettingsCard";
+
+// Morning Setup’s icon is amber; every call site stays as it was.
+const Card = (props: ComponentProps<typeof SettingsCard>) => (
+  <SettingsCard {...props} iconClassName={props.iconClassName ?? "text-amber-300"} />
+);
+
 import { useEffect, useState } from "react";
 import { AppWindow, CloudSun, Globe, Loader2, Newspaper, Plus, Sunrise, Trash2 } from "lucide-react";
 import { toast } from "../../store/toast";
@@ -10,18 +18,6 @@ import { morningApi, weatherLine, type MorningItem, type MorningSettings } from 
 // What the "🌅 Morning Setup" chip does (Command Center and phone app): which
 // websites and apps it opens on this PC, the weather city for the briefing,
 // and whether it suggests short ideas. Server: routes/morning.ts.
-
-function Card({ title, icon, children, className }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("rounded-card border border-gray-800 bg-panel p-5 sm:p-6", className)}>
-      <div className="mb-5 flex items-center gap-2">
-        {icon && <span className="text-amber-300">{icon}</span>}
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}
 
 export function MorningTab() {
   const [settings, setSettings] = useState<MorningSettings | null>(null);

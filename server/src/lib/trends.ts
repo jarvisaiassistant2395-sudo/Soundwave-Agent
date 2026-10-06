@@ -27,7 +27,7 @@ import { config } from "../config.js";
 import { GeminiError, generateContent, visibleText } from "./brain/gemini.js";
 import { RESEARCH_MODELS } from "./brain/core/research.js";
 import { activeBrain } from "./brain/settings.js";
-import { scanTrendingShorts, type TrendingShort } from "./shortsTrends.js";
+import { nicheLeads as findNicheLeads, scanTrendingShorts, type NicheLead, type TrendingShort } from "./shortsTrends.js";
 import { DEFAULT_TRENDS_GEO, fetchGoogleTrends } from "./googleTrends.js";
 
 /** A digest is good for this many days before the scout looks again (12 hours: the YouTube scan is free). */
@@ -53,6 +53,12 @@ export interface TrendDigest {
   ideas?: string[];
   /** The day's Google trending searches (free RSS), when they were read. */
   googleTrends?: string[];
+  /**
+   * Topics climbing outside the standing niches — the raw material for the
+   * agent's propose_niche tool. Free, from the same scan: the general searches
+   * are the only part of it not aimed at a niche we already have.
+   */
+  nicheLeads?: NicheLead[];
   /** The country the Shorts scan read (YouTube scans only). */
   region?: string;
 }
@@ -83,6 +89,8 @@ export interface TrendStatus {
   ideas: string[];
   /** The day's Google trending searches, when the last scan read them. */
   googleTrends: string[];
+  /** What's climbing that none of the nine niches covers (the propose_niche lead). */
+  nicheLeads: NicheLead[];
 }
 
 function fileFor(): string {
@@ -116,6 +124,30 @@ export function loadTrendDigest(): TrendDigest | null {
     const ideas = (Array.isArray(raw.ideas) ? raw.ideas : []).map((i) => clean(i, 200)).filter((i) => i.length >= 12).slice(0, MAX_FINDINGS);
     const googleTrends = (Array.isArray(raw.googleTrends) ? raw.googleTrends : []).map((t) => clean(t, 80)).filter(Boolean).slice(0, 10);
     const region = typeof raw.region === "string" && /^[A-Z]{2}$/.test(raw.region) ? raw.region : undefined;
+    const nicheLeads = (Array.isArray(raw.nicheLeads) ? raw.nicheLeads : [])
+      .filter(
+        (l): l is NicheLead =>
+          Boolean(l) && typeof l === "object" && typeof (l as NicheLead).topic === "string" && ((l as NicheLead).from === "youtube" || (l as NicheLead).from === "google-trends"),
+      )
+      .slice(0, 8)
+      .map((l) => ({
+        topic: clean(l.topic, 60),
+        from: l.from,
+        channels: Number.isFinite(l.channels) ? Math.max(0, Math.round(l.channels)) : 0,
+        views: Number.isFinite(l.views) ? Math.max(0, Math.round(l.views)) : 0,
+        ...(typeof l.velocity === "number" && Number.isFinite(l.velocity) ? { velocity: l.velocity } : {}),
+        examples: (Array.isArray(l.examples) ? l.examples : [])
+          .filter((e): e is { title: string; url: string; views: number; channel?: string } => Boolean(e) && typeof (e as { title?: unknown }).title === "string")
+          .slice(0, 3)
+          .map((e) => ({
+            title: clean(e.title, 140),
+            url: typeof e.url === "string" && e.url.startsWith("https://www.youtube.com/") ? e.url : "",
+            views: typeof e.views === "number" && Number.isFinite(e.views) ? Math.max(0, Math.round(e.views)) : 0,
+            ...(typeof e.channel === "string" ? { channel: clean(e.channel, 80) } : {}),
+          }))
+          .filter((e) => e.title.length > 0),
+      }))
+      .filter((l) => l.topic.length > 0);
     return {
       researchedAt: raw.researchedAt,
       findings,
@@ -125,6 +157,7 @@ export function loadTrendDigest(): TrendDigest | null {
       ...(ideas.length ? { ideas } : {}),
       ...(googleTrends.length ? { googleTrends } : {}),
       ...(region ? { region } : {}),
+      ...(nicheLeads.length ? { nicheLeads } : {}),
     };
   } catch {
     return null;
@@ -167,6 +200,7 @@ export function trendsStatus(now = new Date()): TrendStatus {
     top: digest?.top ?? [],
     ideas: digest?.ideas ?? [],
     googleTrends: digest?.googleTrends ?? [],
+    nicheLeads: digest?.nicheLeads ?? [],
   };
 }
 
@@ -257,6 +291,13 @@ export function refreshTrends(opts: { reason?: "schedule" | "manual" | "startup"
           ...(google.trends.length ? { googleTrends: google.trends.map((t) => t.title) } : {}),
           region: scan.region,
         };
+        // What's climbing outside the nine niches: read from the general
+        // searches in the same scan plus the day's Google searches, so it costs
+        // nothing extra and spends no AI quota. Computed from scan.shorts, which
+        // still carries each Short's velocity — the `top` field above strips it
+        // from its own copy, not from the scan's.
+        const leads = findNicheLeads(scan.shorts, google.trends.map((t) => t.title));
+        if (leads.length) digest.nicheLeads = leads;
         saveTrendDigest(digest);
         console.log(
           `[trends] refreshed (${opts.reason ?? "manual"}): ${findings.length} findings and ${digest.ideas?.length ?? 0} ideas from ${scan.shorts.length} Shorts${google.trends.length ? ` + ${google.trends.length} Google searches` : ""} — no Gemini used`,

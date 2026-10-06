@@ -176,24 +176,51 @@ export function nicheById(id: string | undefined): Niche {
   return NICHES.find((n) => n.id === id) ?? NICHES[1]!;
 }
 
-/** Which niche a loose topic belongs to (the agent and the Generate button). */
-export function detectNiche(topic: string): Niche {
+/**
+ * Which of the standing niches a loose topic really belongs to — or null when
+ * none of them does. `detectNiche` below has always answered "facts" for
+ * anything unrecognised, which is right for writing a script (something has to
+ * be chosen) but useless for asking "is this covered yet?", and that question is
+ * exactly what finding a new niche turns on. So the guess and the fallback are
+ * now two functions, and the fallback stays where it was.
+ */
+export function matchNiche(topic: string): Niche | null {
   const t = String(topic ?? "").toLowerCase().trim();
+  if (!t) return null;
   // An exact id or full name is the caller naming the niche (the Generate
   // button sends one) — never guess it into another one from a short label.
   const exact = NICHES.find((n) => n.id === t || n.name.toLowerCase() === t);
   if (exact) return exact;
-  const has = (...words: string[]) => words.some((w) => t.includes(w));
-  if (has("psych", "brain", "behav", "mind trick", "persuasi", "body language", "bias", "attachment")) return nicheById("psychology");
-  if (has("money", "finance", "invest", "saving", "credit", "debt", "salary", "stock", "wealth", "budget", "tax")) return nicheById("finance");
-  if (has("ai ", " ai", "artificial intelligence", "chatgpt", "automation", "robot", "future tech", "machine learning", "algorithm")) return nicheById("ai");
-  if (has("horror", "scary", "creepy", "ghost", "haunted", "unexplained", "cursed", "nightmare")) return nicheById("horror");
-  if (has("crime", "murder", "cold case", "detective", "forensic", "heist", "kidnap", "fbi", "evidence")) return nicheById("crime");
-  if (has("health", "sleep", "body", "energy", "caffeine", "walk", "posture", "breath", "diet", "exercise", "brain fog", "tired", "wake up", "fatigue", "sleepy", "slump")) return nicheById("health");
-  if (has("motivat", "discipl", "habit", "focus", "procrastinat", "grit", "mindset", "success", "stoic", "consistent")) return nicheById("motivation");
-  if (has("history", "ancient", "war", "empire", "century", "roman", "medieval", "pyramid")) return nicheById("history");
-  if (has("fact", "science", "space", "ocean", "animal", "physics", "nature", "universe", "planet", "biology")) return nicheById("facts");
-  return nicheById("facts");
+  // Whole words, not substrings — with a trailing "*" on the ones that are
+  // genuinely stems. Substring matching quietly sent topics to the wrong niche
+  // whenever a keyword hid inside a longer word: "nobody tells you…" contains
+  // "body" and became a health video, "a warmer climate" contains "war" and
+  // became history, "a taxi driver" contains "tax" and became finance. A stem
+  // still matches its inflections ("psych*" finds psychology and psychological,
+  // "habit*" finds habits); everything else has to be the actual word.
+  const has = (...words: string[]) =>
+    words.some((w) => {
+      const stem = w.endsWith("*");
+      const body = (stem ? w.slice(0, -1) : w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${body}${stem ? "" : "\\b"}`).test(t);
+    });
+  if (has("psych*", "brain*", "behav*", "mind trick*", "persuasi*", "body language", "bias*", "attachment*")) return nicheById("psychology");
+  if (has("money", "finance*", "invest*", "saving*", "credit*", "debt*", "salary*", "stock*", "wealth*", "budget*", "tax", "taxes", "taxation")) return nicheById("finance");
+  // Two letters need both boundaries, or "air" and "aid" become AI videos.
+  if (/(^|[^a-z])ai([^a-z]|$)/.test(t) || has("artificial intelligence", "chatgpt", "automation*", "robot*", "future tech", "machine learning", "algorithm*"))
+    return nicheById("ai");
+  if (has("horror*", "scary", "creepy", "ghost*", "haunted", "unexplained", "cursed", "nightmare*")) return nicheById("horror");
+  if (has("crime*", "murder*", "cold case*", "detective*", "forensic*", "heist*", "kidnap*", "fbi", "evidence")) return nicheById("crime");
+  if (has("health*", "sleep*", "body", "energy", "caffeine", "walk*", "posture*", "breath*", "diet*", "exercise*", "brain fog", "tired", "wake up", "fatigue*", "sleepy", "slump*")) return nicheById("health");
+  if (has("motivat*", "discipl*", "habit*", "focus*", "procrastinat*", "grit", "mindset*", "success*", "stoic*", "consistent*")) return nicheById("motivation");
+  if (has("history", "ancient*", "war", "wars", "empire*", "century", "centuries", "roman*", "medieval", "pyramid*")) return nicheById("history");
+  if (has("fact*", "science", "space*", "ocean*", "animal*", "physics", "nature", "universe", "planet*", "biology")) return nicheById("facts");
+  return null;
+}
+
+/** Which niche a loose topic belongs to (the agent and the Generate button). */
+export function detectNiche(topic: string): Niche {
+  return matchNiche(topic) ?? nicheById("facts");
 }
 
 // ── Hook shapes ─────────────────────────────────────────────────────────────

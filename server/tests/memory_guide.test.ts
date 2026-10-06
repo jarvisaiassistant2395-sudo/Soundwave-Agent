@@ -247,6 +247,22 @@ describe("the Soundwave guide", () => {
     expect(guide.GUIDE_SECTIONS.map((s) => s.text).join("\n")).not.toMatch(/Deep Focus|Pomodoro/);
     expect(guide.searchGuide("my phone can't connect to the pc").map((s) => s.id)).toContain("phone");
     expect(guide.searchGuide("how to get a gemini api key")[0]!.id).toBe("brain");
+    // The modes, and the thing people worry about most when they hear "the agent
+    // will call you sir": that it might start saying it to an audience.
+    expect(textOf("personality")).toMatch(/Settings → Personality/);
+    expect(textOf("personality")).toMatch(/act like my executive assistant/);
+    expect(textOf("personality")).toMatch(/does not make videos that say "sir" to strangers/);
+    expect(textOf("personality")).toMatch(/agent-mode\.json/);
+    expect(guide.GUIDE_IDS).toContain("personality");
+    expect(guide.searchGuide("how do i make it talk more formally").map((s) => s.id)).toContain("personality");
+    expect(guide.searchGuide("what modes can the agent talk in").map((s) => s.id)).toContain("personality");
+    // The top bar and the settings list both have to name the new places.
+    expect(textOf("command-center")).toMatch(/the mode pill/);
+    expect(textOf("settings")).toMatch(/- Personality: how the agent talks/);
+    // And the topic grid is no longer a fixed list the guide could drift from.
+    expect(textOf("make-short")).toMatch(/plus any the agent has found going viral/);
+    expect(textOf("make-short")).not.toMatch(/Dark Mind Tricks|Deep Motivation|Cosmic Horror/);
+    expect(textOf("clips")).toMatch(/queued rather than refused/);
 
     const tool = guide.guideTool<unknown>();
     expect(await tool.run({ section: "zzqx-wuv" }, {})).toMatchObject({ found: false, sections: guide.GUIDE_IDS });

@@ -153,12 +153,12 @@ export function WatchCard() {
   };
 
   return (
-    <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2 font-mono" data-testid="watch-card">
-      <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
+    <div className="rounded-xl border border-surface-hairline bg-panel p-3.5 space-y-2 font-mono" data-testid="watch-card">
+      <div className="flex items-center justify-between border-b border-surface-hairline pb-1.5 text-xs">
         <span className="flex items-center gap-1.5 font-semibold text-gray-200">
           <Eye className="h-3.5 w-3.5 text-emerald-400" />
           Watching creators
-          <span className="text-[9px] font-normal text-gray-500">
+          <span className="text-3xs font-normal text-gray-500">
             {state.watches.length}/{state.max}
           </span>
           <button
@@ -176,7 +176,7 @@ export function WatchCard() {
           </button>
         </span>
         {state.busy ? (
-          <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title={state.busySource ?? ""}>
+          <span className="flex items-center gap-1 text-3xs font-bold text-amber-300" title={state.busySource ?? ""}>
             <Loader2 className="h-3 w-3 animate-spin" />
             RENDERING
           </span>
@@ -184,7 +184,7 @@ export function WatchCard() {
       </div>
 
       {openInfo && (
-        <p className="text-[10px] leading-snug text-gray-400" data-testid="watch-info-text">
+        <p className="text-3xs leading-snug text-gray-400" data-testid="watch-info-text">
           The PC checks each channel every ~{state.checkEveryMinutes} minutes while Soundwave is running, and cuts{" "}
           {state.defaultClips === 1 ? "a short" : `${state.defaultClips} shorts`} out of every video posted from then on — the same pipeline as “Shorts
           from a video”, posted into the chat as they're ready. One video renders at a time. Videos already up are skipped unless you press the scissors
@@ -193,13 +193,13 @@ export function WatchCard() {
       )}
 
       {state.watches.length === 0 ? (
-        <p className="rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1.5 text-[10px] text-gray-500">
+        <p className="rounded border border-surface-border bg-panel px-2 py-1.5 text-3xs text-gray-500">
           Nothing watched yet. Paste a creator's @handle below and every new video they post gets cut into shorts by itself.
         </p>
       ) : (
         <div className="space-y-1.5">
           {state.watches.map((w) => (
-            <div key={w.id} className="rounded-lg border border-[#24252D] bg-[#050506] p-2 space-y-1.5" data-testid={`watch-row-${w.id}`}>
+            <div key={w.id} className="rounded-lg border border-surface-border bg-surface-subtle p-2 space-y-1.5" data-testid={`watch-row-${w.id}`}>
               <div className="flex items-center justify-between gap-1.5">
                 <a
                   href={w.url}
@@ -209,7 +209,7 @@ export function WatchCard() {
                   title={`Open ${w.name} on YouTube`}
                 >
                   <Youtube className="h-3 w-3 shrink-0 text-red-500" />
-                  <span className="truncate text-[11px] font-bold text-gray-100">{w.name}</span>
+                  <span className="truncate text-2xs font-bold text-gray-100">{w.name}</span>
                   <ExternalLink className="h-2.5 w-2.5 shrink-0 text-gray-500" />
                 </a>
                 <div className="flex shrink-0 items-center gap-1">
@@ -244,7 +244,7 @@ export function WatchCard() {
                 </div>
               </div>
 
-              <p className="text-[10px] leading-snug text-gray-400">
+              <p className="text-3xs leading-snug text-gray-400">
                 {w.clips} short{w.clips === 1 ? "" : "s"} per video
                 {w.focus ? ` · looking for ${w.focus}` : ""}
                 {w.clippedCount ? ` · ${w.clippedCount} clipped` : ""}
@@ -253,20 +253,20 @@ export function WatchCard() {
               </p>
 
               {w.lastClipped && (
-                <p className="truncate text-[9px] text-gray-500" title={w.lastClipped.title}>
+                <p className="truncate text-3xs text-gray-500" title={w.lastClipped.title}>
                   Last: {w.lastClipped.title}
                 </p>
               )}
               {w.lastError && (
-                <p className="truncate rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[9px] text-amber-200/90" title={w.lastError}>
+                <p className="truncate rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-3xs text-amber-200/90" title={w.lastError}>
                   ✗ {w.lastError}
                 </p>
               )}
 
               {editing === w.id && (
-                <div className="space-y-1.5 border-t border-[#24252D]/70 pt-1.5" data-testid={`watch-plan-${w.id}`}>
+                <div className="space-y-1.5 border-t border-surface-border/70 pt-1.5" data-testid={`watch-plan-${w.id}`}>
                   <div className="flex items-center gap-1.5">
-                    <label className="w-20 text-[9px] text-gray-400">
+                    <label className="w-20 text-3xs text-gray-400">
                       Shorts
                       <input
                         type="number"
@@ -275,10 +275,10 @@ export function WatchCard() {
                         value={draftClips}
                         onChange={(e) => setDraftClips(Math.min(state.maxClips, Math.max(1, Number(e.target.value) || 1)))}
                         data-testid={`watch-clips-${w.id}`}
-                        className="mt-0.5 w-full rounded border border-[#24252D] bg-[#0A0A0C] px-1.5 py-1 text-[10px] text-white focus:border-emerald-500 focus:outline-none"
+                        className="mt-0.5 w-full rounded border border-surface-border bg-panel px-1.5 py-1 text-3xs text-white focus:border-emerald-500 focus:outline-none"
                       />
                     </label>
-                    <label className="flex-1 text-[9px] text-gray-400">
+                    <label className="flex-1 text-3xs text-gray-400">
                       Look for (optional)
                       <input
                         value={draftFocus}
@@ -286,7 +286,7 @@ export function WatchCard() {
                         maxLength={300}
                         placeholder='e.g. "the funny bits"'
                         data-testid={`watch-focus-${w.id}`}
-                        className="mt-0.5 w-full rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
+                        className="mt-0.5 w-full rounded border border-surface-border bg-panel px-2 py-1 text-3xs text-white placeholder-gray-600 focus:border-emerald-500 focus:outline-none"
                       />
                     </label>
                     <IconButton
@@ -329,7 +329,7 @@ export function WatchCard() {
           aria-label="A creator's @handle or channel link"
           data-testid="watch-add-input"
           disabled={state.watches.length >= state.max}
-          className="w-full rounded border border-[#24252D] bg-[#050506] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/60 focus:outline-none disabled:opacity-50"
+          className="w-full rounded border border-surface-border bg-surface-subtle px-2 py-1 text-2xs text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/60 focus:outline-none disabled:opacity-50"
         />
         <IconButton
           label="Watch this channel"
@@ -343,10 +343,10 @@ export function WatchCard() {
       </div>
 
       {state.watches.length >= state.max && (
-        <p className="text-[9px] text-gray-500">That's the limit of {state.max} — stop watching one to add another.</p>
+        <p className="text-3xs text-gray-500">That's the limit of {state.max} — stop watching one to add another.</p>
       )}
       {(error ?? note) && (
-        <p className={`text-[10px] leading-snug ${error ? "text-amber-300" : "text-gray-500"}`} data-testid="watch-note">
+        <p className={`text-3xs leading-snug ${error ? "text-amber-300" : "text-gray-500"}`} data-testid="watch-note">
           {error ?? note}
         </p>
       )}

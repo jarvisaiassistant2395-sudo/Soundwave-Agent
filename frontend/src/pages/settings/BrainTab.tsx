@@ -1,3 +1,4 @@
+import { SettingsCard as Card } from "../../components/ui/SettingsCard";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppWindow,
@@ -38,18 +39,6 @@ import {
 // The agent thinks with Google Gemini, using the person's own API key (free
 // from Google AI Studio). The key is saved on this PC only and never shown
 // again. Server side: server/src/routes/brain.ts + lib/brain.
-
-function Card({ title, icon, children, className }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("rounded-card border border-gray-800 bg-panel p-5 sm:p-6", className)}>
-      <div className="mb-5 flex items-center gap-2">
-        {icon && <span className="text-blue-400">{icon}</span>}
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}
 
 function ago(iso: string | null): string {
   if (!iso) return "";

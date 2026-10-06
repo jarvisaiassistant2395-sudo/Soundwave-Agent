@@ -4,7 +4,9 @@
 //   DELETE /api/v1/brain/key            forget the saved key                         │ the desktop
 //   POST   /api/v1/brain/test           { apiKey?, model? } → does Gemini answer?    │ app's own
 //   GET    /api/v1/brain/models         models this key can chat with                │ window only
-//   GET    /api/v1/brain/abilities?app= what the agent can do on this PC            ┘
+//   GET    /api/v1/brain/abilities?app= what the agent can do on this PC            │
+//   GET    /api/v1/brain/mode         how it talks now, and every mode to choose    │
+//   PUT    /api/v1/brain/mode         { mode } or { asked: "be formal" }            ┘
 //   GET    /api/v1/brain/pc             this PC's live stats (Command Center card) — desktop app only
 
 import { Router } from "express";
@@ -35,6 +37,8 @@ import {
   type GenerateRequest,
 } from "../lib/brain/gemini.js";
 import { searchRefused } from "../lib/brain/chat.js";
+import { agentModeStatus, saveAgentMode } from "../lib/agentMode.js";
+import { detectMode, isAgentMode } from "../lib/brain/core/persona.js";
 import { clearGeminiCache, cacheSize } from "../lib/brain/cache.js";
 import { findApp, listStartApps, pcStatus } from "../lib/brain/pc.js";
 
@@ -177,6 +181,41 @@ router.get("/models", settingsOnly, async (_req, res) => {
       error: err instanceof GeminiError ? describeGeminiError(err, brain.model) : (err as Error).message,
     });
   }
+});
+
+// ── How the agent talks ─────────────────────────────────────────────────────
+// Readable anywhere the Command Center is (the pill in the header shows it),
+// but changing it is a settings action, so it follows the same desktop-app rule
+// as the key and the model.
+router.get("/mode", (_req, res) => {
+  res.json(agentModeStatus());
+});
+
+const modeSchema = z
+  .object({
+    /** The mode's own id, when the picker sent one. */
+    mode: z.string().trim().max(40).optional(),
+    /** Or the words the person used — "be formal", "talk like my executive assistant". */
+    asked: z.string().trim().max(120).optional(),
+  })
+  .refine((b) => Boolean(b.mode || b.asked), { message: "Say which mode, or what you want it to sound like." });
+
+router.put("/mode", settingsOnly, validate({ body: modeSchema }), (req, res, next) => {
+  const body = req.body as z.infer<typeof modeSchema>;
+  // A phrase is resolved here rather than trusted to the caller, so the pill,
+  // Settings and the agent's own tool all answer the same words the same way.
+  const wanted = body.mode && isAgentMode(body.mode) ? body.mode : detectMode(body.mode ?? body.asked ?? "");
+  if (!wanted) {
+    return next(
+      new ApiError(
+        400,
+        "UNKNOWN_MODE",
+        `That isn't a mode I know. The ones there are: ${agentModeStatus().modes.map((m) => m.name).join(", ")}.`,
+      ),
+    );
+  }
+  saveAgentMode(wanted);
+  res.json(agentModeStatus());
 });
 
 // The same live facts the agent's get_pc_status tool reads — the Command

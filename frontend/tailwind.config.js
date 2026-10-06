@@ -15,6 +15,10 @@ export default {
           elevated: "#111114",
           hover: "#191A20",
           border: "rgba(255, 255, 255, 0.09)",
+          // A quieter border for dividers inside a card, so a panel can have an
+          // edge and its rows can have one too without competing. The same value
+          // index.css's .surface-card has always used, now named.
+          hairline: "rgba(255, 255, 255, 0.07)",
         },
         accent: {
           DEFAULT: "#2563EB",
@@ -48,7 +52,17 @@ export default {
         ],
       },
       fontSize: {
-        // Strict modern SaaS typographic scale
+        // Strict modern SaaS typographic scale.
+        //
+        // 3xs and 2xs are the Command Center's dense chrome: status badges,
+        // metadata lines and control labels, where the screen has to fit an orb,
+        // a chat, a dock and four cards at once. They exist so those sizes are
+        // named and deliberate rather than 126 hand-typed `text-[Npx]` values
+        // scattered through one file — and so 10px is the floor. Nothing in the
+        // app is set below it any more; 8px and 9px were unreadable on anything
+        // that isn't a retina laptop.
+        "3xs": ["10px", { lineHeight: "14px", letterSpacing: "0em" }],
+        "2xs": ["11px", { lineHeight: "16px", letterSpacing: "-0.005em" }],
         xs: ["12px", { lineHeight: "16px", letterSpacing: "-0.005em" }],
         sm: ["13px", { lineHeight: "18px", letterSpacing: "-0.01em" }],
         base: ["14px", { lineHeight: "20px", letterSpacing: "-0.01em" }],

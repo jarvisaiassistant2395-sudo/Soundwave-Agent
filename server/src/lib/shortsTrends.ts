@@ -23,7 +23,7 @@
 // Nothing here calls Gemini, so refreshing trends costs no AI quota at all.
 // The scripts and the agent read the result exactly like the old search digest.
 
-import { NICHES } from "./brain/core/viral.js";
+import { NICHES, matchNiche } from "./brain/core/viral.js";
 import { searchVideos } from "./ytdlp.js";
 
 /** One Short seen in this week's popular results. */
@@ -415,6 +415,96 @@ export function topTopics(top: TrendingShort[], max = 6): string[] {
     .sort((a, b) => b[1].size * (wordViews.get(b[0]) ?? 0) - a[1].size * (wordViews.get(a[0]) ?? 0))
     .slice(0, max)
     .map(([w]) => w);
+}
+
+// ── Niche leads: what is climbing outside the list ──────────────────────────
+
+/**
+ * A topic this week's popular Shorts are climbing on that none of the standing
+ * niches covers — the raw material for proposing a new one.
+ *
+ * Two free signals feed it, and neither spends a token:
+ *   • the general searches (`#shorts`, `viral shorts`), which are the only part
+ *     of the scan not aimed at a niche we already have, so what they turn up is
+ *     outside the list by construction;
+ *   • the day's Google trending searches (lib/googleTrends.ts), which are whole
+ *     phrases and answer what is about to break before it has Shorts at all.
+ *
+ * A candidate still has to clear two bars before it is offered: the title must
+ * not read as a niche we already cover (matchNiche, so "the psychology of…" is
+ * not "new" just because a general search found it), and for Shorts it must be
+ * climbing across at least three different channels — one channel's gimmick is
+ * not a niche. What comes back is the evidence itself, titles and numbers, so
+ * the agent can name and shape a real niche from it rather than from a word.
+ */
+export interface NicheLead {
+  /** The topic as the scan saw it: a word from Shorts titles, or a trending search. */
+  topic: string;
+  from: "youtube" | "google-trends";
+  /** Distinct channels climbing on it (0 for a Google Trends search). */
+  channels: number;
+  /** Views behind it — summed for a Shorts topic, 0 for a search. */
+  views: number;
+  /** Best views-per-hour seen on it, when YouTube gave an age. */
+  velocity?: number;
+  /** The actual Shorts, so a person can look before accepting anything. */
+  examples: Array<{ title: string; url: string; views: number; channel?: string }>;
+}
+
+/** How many different channels a Shorts topic must be climbing on to count. */
+const MIN_LEAD_CHANNELS = 3;
+
+export function nicheLeads(shorts: TrendingShort[], googleTrends: string[] = [], max = 6): NicheLead[] {
+  const nicheNames = new Set(NICHES.map((n) => n.name));
+  // Only the searches that weren't aimed at a niche we already have, and only
+  // ones whose own title doesn't read as one of ours.
+  const outside = shorts.filter((s) => s.views > 0 && !nicheNames.has(s.query) && !matchNiche(s.title));
+
+  const byWord = new Map<string, { channels: Set<string>; views: number; velocity: number; examples: TrendingShort[] }>();
+  for (const s of outside) {
+    const words = new Set(
+      s.title
+        .toLowerCase()
+        .replace(/#[\p{L}\p{N}_]+/gu, " ")
+        .split(/[^\p{L}\p{N}']+/u)
+        .filter((w) => w.length >= 4 && !STOP.has(w) && !/^\d+$/.test(w)),
+    );
+    for (const w of words) {
+      const got = byWord.get(w) ?? { channels: new Set<string>(), views: 0, velocity: 0, examples: [] };
+      got.channels.add(s.channel ?? s.id);
+      got.views += s.views;
+      got.velocity = Math.max(got.velocity, s.velocity ?? 0);
+      got.examples.push(s);
+      byWord.set(w, got);
+    }
+  }
+
+  const leads: NicheLead[] = [...byWord.entries()]
+    .filter(([, v]) => v.channels.size >= MIN_LEAD_CHANNELS)
+    .sort((a, b) => b[1].channels.size * b[1].views - a[1].channels.size * a[1].views || b[1].velocity - a[1].velocity)
+    .slice(0, max)
+    .map(([topic, v]) => ({
+      topic,
+      from: "youtube" as const,
+      channels: v.channels.size,
+      views: v.views,
+      ...(v.velocity > 0 ? { velocity: v.velocity } : {}),
+      examples: v.examples
+        .slice()
+        .sort((a, b) => b.views - a.views)
+        .slice(0, 3)
+        .map((s) => ({ title: s.title, url: s.url, views: s.views, ...(s.channel ? { channel: s.channel } : {}) })),
+    }));
+
+  // The day's searches are phrases and cost nothing, so they go first: a topic
+  // people are suddenly searching is earlier than one already on Shorts.
+  const searched: NicheLead[] = googleTrends
+    .map((t) => String(t ?? "").trim())
+    .filter((t) => t.length >= 3 && !matchNiche(t) && !leads.some((l) => l.topic === t.toLowerCase()))
+    .slice(0, max)
+    .map((topic) => ({ topic, from: "google-trends" as const, channels: 0, views: 0, examples: [] }));
+
+  return [...searched, ...leads].slice(0, max);
 }
 
 /** The findings the script writer and the agent read. 3–8 lines, most useful first. */

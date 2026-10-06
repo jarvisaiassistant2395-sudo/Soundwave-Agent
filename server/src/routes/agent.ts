@@ -7,7 +7,13 @@ import { resolveYtDlpPath } from "../lib/ytdlp.js";
 import { getStore } from "../lib/store.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../lib/orbitalBackground.js";
 import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, startShortJob } from "./agentShort.js";
-import { nicheCatalog } from "../lib/brain/core/viral.js";
+import {
+  decideNicheProposal,
+  discoveredNicheCounts,
+  fullNicheCatalog,
+  listNicheProposals,
+  removeDiscoveredNiche,
+} from "../lib/discoveredNiches.js";
 import { TREND_REFRESH_DAYS, refreshTrends, trendsStatus } from "../lib/trends.js";
 import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, noteVoiceFailure, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
 import { isLocalVoiceId, synthesizeLocalVoice } from "../lib/kokoro.js";
@@ -446,11 +452,47 @@ router.get("/status", async (_req, res) => {
   });
 });
 
-// GET /niches — the researched niches, their hook shapes and sample scripts.
-// One source of truth: brain/core/viral.ts (the same recipes the script
-// writer is given, and the same samples the no-key fallback speaks).
+// GET /niches — what the Generate tab shows: the nine researched niches, plus
+// the ones the agent found and the person accepted, plus the proposals still
+// waiting on that decision.
+// Two sources, one answer: brain/core/viral.ts is the researched floor (the same
+// recipes the script writer is given and the same samples the no-key fallback
+// speaks), and lib/discoveredNiches.ts is what has been added since. The leads
+// come from the trend scout's last free scan — the same ones the agent saw when
+// it proposed, so the card can show the evidence rather than an assertion.
 router.get("/niches", (_req, res) => {
-  res.json({ niches: nicheCatalog() });
+  res.json({
+    niches: fullNicheCatalog(),
+    proposals: listNicheProposals("pending"),
+    counts: discoveredNicheCounts(),
+    leads: trendsStatus().nicheLeads,
+  });
+});
+
+// The agent proposes; the person decides. Accepting is what makes a discovered
+// niche real — from then on the script engine writes for it (resolveNiche) and
+// it sits in the Generate tab next to the researched nine.
+router.post("/niches/proposals/:id/accept", optionalAuth, (req, res) => {
+  const decided = decideNicheProposal(String(req.params.id ?? ""), "accepted");
+  if (!decided) return res.status(404).json({ ok: false, error: "There's no proposal by that name — it may have been decided already." });
+  res.json({ ok: true, proposal: decided, niches: fullNicheCatalog(), proposals: listNicheProposals("pending"), counts: discoveredNicheCounts() });
+});
+
+router.post("/niches/proposals/:id/dismiss", optionalAuth, (req, res) => {
+  const decided = decideNicheProposal(String(req.params.id ?? ""), "dismissed");
+  if (!decided) return res.status(404).json({ ok: false, error: "There's no proposal by that name — it may have been decided already." });
+  // Told to the agent too, so it doesn't propose the same thing again next scan.
+  res.json({ ok: true, proposal: decided, proposals: listNicheProposals("pending"), counts: discoveredNicheCounts() });
+});
+
+// Taking one back off the tab. Only a discovered niche can be removed: the nine
+// researched ones are the floor the script engine is built on.
+router.delete("/niches/:id", optionalAuth, (req, res) => {
+  const id = String(req.params.id ?? "");
+  if (!removeDiscoveredNiche(id)) {
+    return res.status(400).json({ ok: false, error: "That's one of the researched niches, or it isn't on the tab — those can't be removed." });
+  }
+  res.json({ ok: true, niches: fullNicheCatalog(), counts: discoveredNicheCounts() });
 });
 
 // GET /trends — what the scout last found going viral on Shorts (lib/trends.ts).

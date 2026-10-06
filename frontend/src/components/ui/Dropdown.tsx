@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { Check } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 export interface DropdownItem {
   key: string;
   label: string;
+  /** One line under the label, for items that need explaining before they're picked. */
+  hint?: string;
+  /** Marks the item that is currently in force. */
+  selected?: boolean;
   icon?: ReactNode;
   danger?: boolean;
   onClick?: () => void;
@@ -51,6 +56,7 @@ export function Dropdown({ trigger, items, align = "right", label }: DropdownPro
             aria-label={label}
             className={cn(
               "absolute z-20 mt-2 w-56 overflow-hidden rounded-card border border-gray-700 bg-panel py-1 shadow-2xl",
+              items.some((i) => i.hint) && "w-72",
               align === "right" ? "right-0" : "left-0",
             )}
           >
@@ -63,13 +69,18 @@ export function Dropdown({ trigger, items, align = "right", label }: DropdownPro
                   setOpen(false);
                   item.onClick?.();
                 }}
+                aria-current={item.selected ? "true" : undefined}
                 className={cn(
-                  "flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm transition-colors hover:bg-gray-800 disabled:opacity-40",
-                  item.danger ? "text-red-400" : "text-gray-200",
+                  "flex w-full items-start gap-2.5 px-3.5 py-2.5 text-left text-sm transition-colors hover:bg-gray-800 disabled:opacity-40",
+                  item.danger ? "text-red-400" : item.selected ? "text-white" : "text-gray-200",
                 )}
               >
-                {item.icon && <span className="shrink-0">{item.icon}</span>}
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {item.icon && <span className="mt-0.5 shrink-0">{item.icon}</span>}
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block truncate", item.selected && "font-semibold")}>{item.label}</span>
+                  {item.hint && <span className="mt-0.5 block text-xs leading-snug text-gray-500">{item.hint}</span>}
+                </span>
+                {item.selected && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />}
               </button>
             ))}
           </motion.div>

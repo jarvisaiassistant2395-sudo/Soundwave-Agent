@@ -21,6 +21,7 @@ import {
 import { FALLBACK_MODEL, brainHealth, markSearchUnavailable, noteBrainError, noteBrainOk, type ActiveBrain } from "./settings.js";
 import { toolsFor, type AgentTool, type ToolContext, type ToolEffects } from "./tools.js";
 import { agentInstruction, plainReply, type MemoryForPrompt } from "./prompt.js";
+import { loadAgentMode } from "../agentMode.js";
 import { memoryForPrompt } from "../memory.js";
 import { DEFAULT_SECONDS } from "./core/viral.js";
 import { DEFAULT_AGENT_VOICE } from "../edgeTts.js";
@@ -91,7 +92,7 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
       tools,
       ctx,
       instruction: ({ tools: names, webSearch }) =>
-        agentInstruction({ tools: names, webSearch, now: deps.now(), surface: input.via === "phone" ? "phone" : "pc", memory }),
+        agentInstruction({ tools: names, webSearch, now: deps.now(), surface: input.via === "phone" ? "phone" : "pc", memory, mode: loadAgentMode() }),
       generate: deps.generate,
       signal: input.signal,
       onSearchRefused: () => markSearchUnavailable(),

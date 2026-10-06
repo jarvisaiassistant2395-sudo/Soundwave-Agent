@@ -42,14 +42,14 @@ Other pages in the left sidebar: Overview (dashboard), Projects (every short), V
     summary: "every part of the main screen: top bar, left cards, orb and dock buttons, conversation, chips",
     text: `The Command Center has a top bar and three columns.
 
-Top bar (left to right): the assistant's name, "Online", the brain pill (shows the Gemini model, "Add Gemini key" or "Gemini: problem" — click it to open Settings → Brain), the clock and date, the voice picker (the Soundwave voice for replies and shorts), the "unused Orbital videos" counter (click it for the background history), and the gear button (Assistant Configuration).
+Top bar (left to right): the assistant's name, "Online", the mode pill (how the agent is talking — click it to change; see "How the agent talks"), the brain pill (shows the Gemini model, "Add Gemini key" or "Gemini: problem" — click it to open Settings → Brain), the clock and date, the voice picker (the Soundwave voice for replies and shorts), the "unused Orbital videos" counter (click it for the background history), and the gear button (Assistant Configuration).
 
 Left column (scrolls on its own):
 - System Stats: live CPU, memory and disk of this PC (refresh button).
 - Orbital NCG Backgrounds: how many channel videos are still unused, how many were used (never reused), the last imported background, a link to youtube.com/@OrbitalNCG, a clock button for the history and a refresh button that re-checks the channel for new uploads.
 - YouTube Automation: shows the linked channel (or "NOT LINKED"), the Auto-Post switch, the default visibility, "Post to YouTube" for the latest video, and "Setup" (opens the YouTube settings).
 - Latest Rendered Video (after the first short): a player, "Download Short (MP4)" and "1-Click Post to YouTube Shorts".
-- Shorts from a Video: a YouTube link or a file on this PC, how many clips and (optionally) what to look for — the same cut-the-best-bits job the agent does in chat, one button to start it. Hidden when Soundwave isn't running as the desktop app (the cutting happens on this PC).
+- Shorts from a Video: a YouTube link or a file on this PC, how many clips and (optionally) what to look for — the same cut-the-best-bits job the agent does in chat, one button to start it. While something is cutting, the header shows "CUTTING" and how many videos are "QUEUED"; the button stays usable, because a second video joins the queue instead of being turned away. Hidden when Soundwave isn't running as the desktop app (the cutting happens on this PC).
 - System Uptime: how long the PC has been on, session and command counters, system load.
 
 Center: the thinking orb (click it to talk) with a status line under it, and the dock with four buttons — film icon (1-Click Viral Short Generator), microphone (tap to talk, hold for push-to-talk), workflow icon (Ghost Operator macros) and gear (Assistant Configuration).
@@ -64,7 +64,7 @@ Assistant Configuration (gear) has five tabs: General & Voice (assistant name, S
     summary: "how to start a short (chat, Generate button, generator window) and what happens step by step",
     text: `Three ways to make a short:
 1. Ask in the chat (PC or phone): "make a short about black holes". Add details if you like — audience, tone, facts to include ("for kids", "mention the event horizon"). The agent passes them on to the script.
-2. The film button in the dock, the "🎬 Make Short" chip or "Generate Short" in the sidebar open the 1-Click Viral Short Generator: pick a niche (Psychology & Dark Mind Tricks, Mind-Bending Facts, Untold History, Money & Wealth, AI & Future Tech, Deep Motivation, Cosmic Horror) or type a custom topic, choose the narrator voice and resolution (720p renders fastest, 1080p is sharper), optionally tick "Automatically post to YouTube Shorts after rendering", then press "Generate Short".
+2. The film button in the dock, the "🎬 Make Short" chip or "Generate Short" in the sidebar open the 1-Click Viral Short Generator: pick a topic from the grid (the researched niches, plus any the agent has found going viral and you accepted — those are marked NEW; press a topic's "i" to read what it's about) or type a custom topic, choose the narrator voice and resolution (720p renders fastest, 1080p is sharper), optionally tick "Automatically post to YouTube Shorts after rendering", then press "Generate Short".
 3. From the phone app, by typing or talking.
 
 What happens (a few minutes; a progress bar shows each step):
@@ -91,7 +91,9 @@ It then cuts each moment into a vertical Short: the video cropped to 9:16, the s
 
 Rendering takes a few minutes per clip; the clips are posted in this chat as they're ready, and can be watched, downloaded and uploaded to YouTube from here (Settings → YouTube & Shorts). This runs on the PC, so it needs Soundwave AI running — the phone asks the PC for it, like every short. The speech engine (whisper.cpp, the same one voice input uses) writes the captions; without it the clips are still cut, just without captions, and a video with no speech (music, gameplay) is cut without them too.
 
-Only one video renders at a time (this and the normal shorts share that). Nothing is ever posted anywhere by itself.`,
+One video renders at a time (this and the normal shorts share that), but a second one is queued rather than refused: the card says where it landed, it starts by itself when the renderer is free, and only a full queue (eight waiting) turns one away. If Soundwave is closed mid-cut, the unfinished jobs are marked as failed when it starts again and one line in the chat says so — nothing is left showing "processing" forever.
+
+If a moment couldn't be listened to (the sound wouldn't decode, the speech engine was missing), the chat says how many and why, rather than quietly treating them as silence. Nothing is ever posted anywhere by itself.`,
   },
   {
     id: "watch-channel",
@@ -203,6 +205,34 @@ Free limits: Google gives each model a number of free requests per day (they res
 Common errors: "the key isn't valid" — copy it again from AI Studio; "free requests are used up" — wait for the reset or pick another model; "per-minute limit" — wait a minute; "overloaded" — try again shortly; "Google doesn't offer the Gemini API here" — the account's country isn't supported. The brain pill in the Command Center turns amber when something's wrong; Settings → Brain shows Google's exact message.
 
 Privacy: your messages and the recent conversation go to Google with your key (on the free tier Google may use them to improve its products). The key is stored only on your PC (in %APPDATA%\\Soundwave AI\\data\\brain.json) — and on your paired phones if "Chat from the phone when this PC is off" is on. Without a key the agent still makes shorts, with built-in scripts.`,
+  },
+  {
+    id: "personality",
+    title: "How the agent talks (modes and Settings → Personality)",
+    summary: "the six modes, the header pill, asking in chat, where it's saved, and what a mode never changes",
+    text: `The agent can answer in six registers: the same assistant, the same tools, the same facts, a different way of talking.
+
+- Professional: an executive assistant. Formal and exact, addresses you as "sir" — unless you ask to be called something else, which always wins — leads with the outcome and closes with the next step or the decision it needs.
+- Friendly: warm and easygoing. The default, and how it has always talked.
+- Concise: the answer and nothing else — no greeting, no "here's what I found", no offer of more help. Built for talking to it by voice, where every extra word is a second you wait.
+- Coach: direct and in your corner. Names the real obstacle, ends on one concrete next action, and refers back to what you told it you'd do.
+- Witty: dry humour — a proper answer first, then one light line if there's a natural place for it. Drops the humour entirely when you're annoyed or something has gone wrong.
+- Narrator: measured and image-led, for shaping hooks, scripts, openings and stories.
+
+Three ways to change it:
+1. The mode pill in the Command Center's top bar (just before the Gemini pill) — one click, all six with a line each.
+2. Settings → Personality: the same six as cards, each saying how it addresses you.
+3. Just say it: "be more formal", "act like my executive assistant", "keep it short", "stop with the jokes", "go back to normal". The agent switches itself and confirms in the new register; the pill follows, so you can see which mode answered. If what you said doesn't clearly name one, it asks rather than guesses.
+
+Saved on this PC in %APPDATA%\\Soundwave AI\\data\\agent-mode.json, so it survives a restart. Setting AGENT_MODE=professional before the first run starts a fresh install in that mode.
+
+What a mode never changes:
+- Your shorts and their narration. Those are written for whoever watches them, so they keep the researched hooks and beat structure in every mode — a Professional agent does not make videos that say "sir" to strangers.
+- The morning briefing, which tools it has, its memory, or the rule against inventing a fact.
+- The voice that reads replies aloud — that's the voice picker in the top bar and Settings → Voice & Desktop.
+- When the register doesn't fit the moment (bad news, an error, a frustrating question) the agent drops it and answers plainly.
+
+On a server rather than your own PC, the mode belongs to whoever runs it: the pill shows which one is in force but can't change it.`,
   },
   {
     id: "chat-tools",
@@ -375,6 +405,7 @@ Other Morning Setup settings (Settings → Morning Setup): the city for the weat
     text: `Settings (sidebar):
 - Profile: your name and password.
 - Brain: the Gemini API key, model, thinking level, web search, and what the agent can do.
+- Personality: how the agent talks — the six modes, what each is for, and what a mode never changes.
 - Billing: your plan's limits (resolution, watermark, video size).
 - Preferences: the agent voice, the thinking orb style, "Download my data".
 - Voice & Desktop: microphone test, send when I stop talking, sound cues, speak replies aloud, the voice shortcut (Ctrl+Shift+Space by default), keep running in the tray, start with Windows, notifications.
