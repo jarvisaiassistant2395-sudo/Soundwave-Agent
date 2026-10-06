@@ -188,15 +188,22 @@ try {
 } catch (err) {
   await fail(`couldn't prepare the fake microphone recording with ${ffmpeg}: ${err.message}`);
 }
-// A small video with speech in it, for "make shorts out of this video": the
-// same JFK clip as a 13-second file (the agent really listens to it).
+// A small video with speech in it, for "make shorts out of this video": the JFK
+// clip looped into a 24-second file, because whisper.cpp's sample is only 11
+// seconds and **the clipper refuses to cut a clip out of anything shorter than
+// 12 seconds** (brain/core/clips.ts MIN_CLIP_SECONDS — a Short needs room for a
+// whole moment, not a fragment). The old version asked for 13 seconds with
+// `-shortest`, which silently produced the *shorter* of the two inputs: an 11
+// second file that could only ever exercise the refusal (run 37396470441 died
+// here). Looping the speech is deliberate — the file has to be long enough for
+// the moment the picker names (0–13 s), and `-t` alone cuts it there.
 const clipSource = path.join(desktopDir, "e2e-clip-source.mp4");
 try {
   execFileSync(ffmpeg, [
     "-hide_banner", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i", "color=c=0x1A1A2E:s=640x360:r=30",
-    "-i", sample,
-    "-shortest", "-t", "13",
+    "-stream_loop", "2", "-i", sample,
+    "-t", "24",
     "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k",
     clipSource,
@@ -1082,7 +1089,7 @@ try {
     annotate(
       "notice",
       "Desktop E2E: shorts from a video",
-      `“${path.basename(clipSource)}” (13 s, speech from whisper.cpp's sample) → the agent listened, picked the moment, cut it vertical with captions and posted it: ${Math.round(clipJob.bytes / 1024)} KB MP4 at ${clipSrc}.`,
+      `“${path.basename(clipSource)}” (24 s of looped speech from whisper.cpp's sample) → the agent listened, picked the moment, cut it vertical with captions and posted it: ${Math.round(clipJob.bytes / 1024)} KB MP4 at ${clipSrc}.`,
     );
   }
   await main.screenshot({ path: path.join(shotsDir, "12-clip-from-video.png"), timeout: 15_000 }).catch(() => {});
