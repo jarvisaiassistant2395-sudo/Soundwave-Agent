@@ -299,6 +299,43 @@ sell you a video team that lives on your PC, learns your audience, and never
 meters a minute — and we charge less for it than they charge for the clipper
 alone.
 
+## Where this stands (October 2026)
+
+All six moves are implemented in this tree:
+
+1. **Publish → measure → learn** — `server/src/lib/postSchedule.ts` + `routes/posts.ts`:
+   schedule a finished clip, it posts from the PC at the chosen time, per-upload
+   stats are read back and stored next to the clip, and the interest model uses
+   them when choosing the next cuts. Agent tools `schedule_short`,
+   `list_scheduled_posts`, `cancel_scheduled_post`, `my_short_performance`.
+2. **First-run wizard** — `frontend/src/pages/Setup.tsx` (link Google → free
+   Gemini key, tested in place → connect YouTube in one press → pick a voice →
+   say something), reachable again from Settings → Brain.
+3. **Packaging** — plans are metered in **minutes of video and clips**
+   (`server/src/lib/metering.ts`); characters are an internal fair-use guard.
+   Free = 60 min/mo, watermark, clips kept 7 days. Pro = **$15/mo ($144/yr)**
+   against Opus Clip's $29/300-min tier, Enterprise stays **$39**. Founder
+   lifetime **$199, first 100** (`STRIPE_PRICE_LIFETIME`, `FOUNDER_SEATS`).
+   Subscribers from before the repricing keep their price.
+4. **Auto-update** — `desktop/src/update.cjs` + `electron-updater`: edition-aware
+   channels (retail → `latest`, Dev → `dev`, and neither can be pointed at the
+   other), checked on launch and every six hours, with a Restart & update button.
+   CI publishes `latest.yml` + the installer to a public releases-only feed repo.
+   Signing remains a purchase, not a task — the switch to verify downloaded
+   updates' signatures is one line in `desktop/electron-builder.yml`.
+5. **Look** — five caption styles and a brand kit (`server/src/lib/brand.ts`,
+   `<data>/brand.json`, Settings → Brand), applied by the clip renderer and
+   settable by voice (`set_caption_style`).
+6. **The page** — `frontend/src/pages/Landing.tsx` leads with "Your footage
+   never leaves your PC" and the comparison; `Pricing.tsx` follows it.
+
+**One correction to the figures below.** The comparison was drafted as
+"≈ $55–80/mo assembled". Re-checked against each vendor's own page in October
+2026, the five subscriptions a creator actually assembles come to **$106/mo at
+monthly rates** (Opus Clip Pro $29 + ElevenLabs Creator $22 + ChatGPT Plus $20 +
+Wispr Flow Pro $15 + Manus $20; ~$15 less if every one is billed yearly). The
+landing page prints that total with the check date instead of the estimate.
+
 ## Sources (checked October 2026)
 
 - Opus Clip plans and limits — therundown.ai/tools/opus-clip (checked 28 Aug 2026), quso.ai/blog/opus-clip-pricing, castmagic.io/blog/opus-clip-pricing

@@ -5,6 +5,12 @@ import { Check, ChevronDown, Minus } from "lucide-react";
 import { Navbar } from "../components/layout/Navbar";
 import { cn } from "../lib/cn";
 
+// ── The full pricing page ───────────────────────────────────────────────────
+// Reached from the landing page's "View full pricing", so it says the same
+// thing: what a plan buys is minutes of video and clips, the work happens on
+// the person's PC, and the free tier is the same shape as the category's.
+// Prices and limits mirror server/src/lib/plans.ts — change them there first.
+
 interface FeatureRow {
   label: string;
   free: string | boolean;
@@ -13,38 +19,50 @@ interface FeatureRow {
 }
 
 const FEATURES: FeatureRow[] = [
-  { label: "Characters per month", free: "10,000", pro: "200,000", enterprise: "2,000,000" },
-  { label: "Voices", free: "All 6 voices", pro: "All voices + future", enterprise: "All voices + future" },
-  { label: "Subtitle styling", free: "Basic (3 fonts)", pro: "Full (20+ fonts)", enterprise: "Full + shared presets" },
-  { label: "Video export resolution", free: "720p", pro: "Up to 1080p", enterprise: "Up to 4K" },
+  { label: "Video processed per month", free: "60 minutes", pro: "300 minutes", enterprise: "1,200 minutes" },
+  { label: "Clips per month", free: "30", pro: "Unlimited", enterprise: "Unlimited" },
+  { label: "Finished clips kept for", free: "7 days", pro: "As long as you like", enterprise: "As long as you like" },
   { label: "Watermark", free: "Yes", pro: "No", enterprise: "No" },
-  { label: "Projects", free: "3 local", pro: "Unlimited + cloud save", enterprise: "Unlimited + cloud save" },
+  { label: "Caption styles & brand kit", free: "All five styles", pro: "All five styles", enterprise: "All five styles" },
+  { label: "Export resolution", free: "720p", pro: "Up to 1080p", enterprise: "Up to 4K" },
+  { label: "Voice studio (10 neural voices)", free: "Yes", pro: "Yes", enterprise: "Yes" },
+  { label: "Voice cloning", free: true, pro: true, enterprise: true },
+  { label: "Publish & schedule to YouTube", free: true, pro: true, enterprise: true },
+  { label: "Performance read-back", free: true, pro: true, enterprise: true },
+  { label: "Cloud project save", free: "Local only", pro: true, enterprise: true },
+  { label: "API access", free: false, pro: false, enterprise: true },
   { label: "Export queue", free: "Standard", pro: "Priority", enterprise: "Priority" },
-  { label: "API access", free: false, pro: false, enterprise: "Video export API" },
   { label: "Dedicated support", free: false, pro: false, enterprise: true },
-  { label: "SSO", free: false, pro: false, enterprise: "Coming soon" },
 ];
 
 const FAQS = [
   {
-    q: "Why is the character limit higher than other TTS tools?",
-    a: "Microsoft Neural voices are generated on our servers with no model downloads or GPU required on your device, so the cost per character stays low and we pass that on to you.",
+    q: "Where does my video actually go?",
+    a: "Nowhere. The clipping, the captions, the narration and the PC agent all run on your Windows PC using ffmpeg, whisper.cpp and the voice models Soundwave installs once. The only thing that leaves your machine is the Short you explicitly publish, uploaded straight to your own YouTube channel.",
   },
   {
-    q: "Does my audio ever leave my device?",
-    a: "For TTS generation, never. Audio is synthesized entirely in your browser. The only time audio touches our servers is if you explicitly initiate a video export, where FFmpeg composites it with your background video and subtitles.",
+    q: "What is metered, then?",
+    a: "Minutes of video processed and clips made, per calendar month. A 60-minute episode costs 60 of your minutes whether it produces 5 clips or 20 — the input length, not the output, which is how the rest of the category counts it too. Source files you never clip cost nothing.",
   },
   {
-    q: "What happens if I exceed my character limit?",
-    a: "Generation is paused until the next billing cycle, or you can upgrade your plan to continue immediately. The limit is enforced server-side via usage reports — your text itself is never sent to us.",
+    q: "What happens when I run out?",
+    a: "The run is refused before it starts, with the date your allowance resets — so nothing is half-rendered and nothing is wasted. Upgrade and the next clip works immediately; clips already made stay yours (on Free, for the seven days they were always going to be kept).",
   },
   {
-    q: "Do I need to install or download anything?",
-    a: "No. Voices are synthesized on our servers with Microsoft Neural voices and streamed straight to your browser — no model downloads, no GPU, no API keys.",
+    q: "Do I need an API key or an account with anyone else?",
+    a: "You link a Google account to use the app, and the assistant runs on a free AI Studio key you create and own. Nothing else — no per-character billing, no cloud storage bill, no GPU rental. That is what makes the Founder lifetime possible.",
+  },
+  {
+    q: "Does it have to be running to post my clip?",
+    a: "Yes. The schedule lives on your PC, so Soundwave has to be open at that moment (the window can be closed to the tray — it keeps working and can start with Windows). It is the honest price of keeping your footage local.",
+  },
+  {
+    q: "I subscribed before the plans changed. What happens to me?",
+    a: "Nothing. Stripe keeps billing the price you signed up at, and the Billing tab says \"Price held\" so it is clear that is deliberate. Only new subscriptions pay today's prices.",
   },
   {
     q: "Can I cancel anytime?",
-    a: "Yes. Cancel from the billing portal at any time. Your access continues until the end of the billing period.",
+    a: "Yes, from the billing portal. Your plan runs to the end of the period you paid for, and anything you already exported is yours — it was made on your machine.",
   },
 ];
 
@@ -61,7 +79,7 @@ export function Pricing() {
     {
       name: "Free",
       monthly: 0,
-      desc: "For trying things out.",
+      desc: "An hour of video a month, and the whole studio to try it with.",
       cta: "Open Soundwave",
       to: "/agent",
       highlight: false,
@@ -69,8 +87,9 @@ export function Pricing() {
     },
     {
       name: "Pro",
-      monthly: 12,
-      desc: "For creators shipping voice content.",
+      monthly: 15,
+      annual: 12,
+      desc: "300 minutes of video, unlimited clips — the tier a weekly show needs.",
       cta: "Subscribe Now",
       to: "/agent",
       highlight: true,
@@ -79,11 +98,12 @@ export function Pricing() {
     {
       name: "Enterprise",
       monthly: 39,
-      desc: "For teams at scale.",
+      annual: 31.2,
+      desc: "1,200 minutes, 4K exports, API access. For the ones who never stop.",
       cta: "Contact Sales",
       to: "/agent",
       highlight: false,
-      badge: "BEST VALUE",
+      badge: null,
     },
   ];
 
@@ -93,8 +113,10 @@ export function Pricing() {
       <div className="mx-auto max-w-6xl px-4 pb-24 pt-32 sm:px-6 lg:px-8">
         <div className="text-center">
           <h1 className="text-4xl font-extrabold text-white sm:text-5xl">Simple, honest pricing</h1>
-          <p className="mx-auto mt-4 max-w-xl text-gray-400">
-            TTS runs on your device, so we charge for the things that cost us: storage, video rendering, and features.
+          <p className="mx-auto mt-4 max-w-2xl text-gray-400">
+            Priced in minutes of video, like everything else in this category — except these minutes are processed on your
+            own PC. Your footage is never uploaded, so there is no storage bill to pass on and no reason to meter your
+            clips.
           </p>
 
           <div className="mt-8 inline-flex items-center gap-3 rounded-full border border-gray-700 bg-panel p-1">
@@ -108,31 +130,24 @@ export function Pricing() {
               onClick={() => setAnnual(true)}
               className={cn("rounded-full px-4 py-1.5 text-sm font-medium transition-all", annual ? "bg-gray-800 text-white" : "text-gray-400")}
             >
-              Annual <span className="text-emerald-400">−20%</span>
+              Annual <span className="text-emerald-400">two months free</span>
             </button>
           </div>
         </div>
 
         <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-3">
           {plans.map((p) => {
-            const price = annual ? p.monthly * 0.8 : p.monthly;
+            const price = annual && "annual" in p && p.annual ? p.annual : p.monthly;
             return (
               <div
                 key={p.name}
                 className={cn(
                   "relative rounded-card border p-7",
-                  p.highlight
-                    ? "border-transparent bg-panel shadow-glow lg:scale-105"
-                    : "border-gray-800 bg-panel",
+                  p.highlight ? "border-transparent bg-panel shadow-glow lg:scale-105" : "border-gray-800 bg-panel",
                 )}
               >
                 {p.badge && (
-                  <div
-                    className={cn(
-                      "absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-0.5 text-xs font-semibold text-white",
-                      p.highlight ? "bg-gradient-to-r from-blue-500 to-violet-500" : "bg-gray-700",
-                    )}
-                  >
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-blue-500 to-violet-500 px-3 py-0.5 text-xs font-semibold text-white">
                     {p.badge}
                   </div>
                 )}
@@ -144,6 +159,9 @@ export function Pricing() {
                 </div>
                 {annual && p.monthly > 0 && (
                   <p className="mt-1 text-xs text-emerald-400">Billed annually (${(price * 12).toFixed(0)}/yr)</p>
+                )}
+                {!annual && p.monthly > 0 && "annual" in p && p.annual && (
+                  <p className="mt-1 text-xs text-gray-500">${p.annual}/mo if billed yearly</p>
                 )}
                 <Link
                   to={p.to}
@@ -160,6 +178,23 @@ export function Pricing() {
             );
           })}
         </div>
+
+        <div className="mx-auto mt-8 max-w-3xl rounded-card border border-blue-500/30 bg-blue-500/[0.06] p-5 text-center">
+          <p className="text-sm text-gray-300">
+            <span className="font-semibold text-white">Founder lifetime — $199, once, the first 100 buyers.</span> Everything
+            Enterprise gives, for good, with no renewal. It is only possible because your marginal cost here is your own
+            Google key and your own CPU — the one thing a cloud clipper can't copy.
+          </p>
+          <Link to="/settings/billing" className="mt-3 inline-block text-sm font-medium text-blue-300 hover:text-blue-200">
+            See how many seats are left →
+          </Link>
+        </div>
+
+        {!annual && (
+          <p className="mt-6 text-center text-sm text-gray-500">
+            Subscribed before October 2026? You keep the price you signed up at — nothing to do.
+          </p>
+        )}
 
         {/* Feature comparison */}
         <div className="mt-16 overflow-x-auto rounded-card border border-gray-800 bg-panel">
@@ -184,6 +219,9 @@ export function Pricing() {
             </tbody>
           </table>
         </div>
+        <p className="mt-3 text-center text-xs text-gray-500">
+          Character limits still exist under the hood as a fair-use guard, but nothing you buy is measured in characters.
+        </p>
 
         {/* FAQ */}
         <div className="mx-auto mt-16 max-w-3xl">
