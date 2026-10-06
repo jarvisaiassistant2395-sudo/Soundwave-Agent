@@ -109,6 +109,9 @@ Say "Preflight"
 if (-not (Test-Path (Join-Path $serverDir "package.json"))) { throw "run this from a checkout of the Soundwave repository" }
 $nodeVersion = (& node --version) 2>$null
 if (-not $nodeVersion) { throw "Node.js is not on PATH — install Node 20 or newer (https://nodejs.org)" }
+# CI builds on Node 20; anything older fails later and more confusingly.
+$nodeMajor = [int]($nodeVersion.TrimStart("v").Split(".")[0])
+if ($nodeMajor -lt 20) { throw "Node $nodeVersion is too old — this needs Node 20 or newer (CI uses 20)" }
 Note "node $nodeVersion"
 Note "repository $repoRoot"
 $version = (Get-Content (Join-Path $desktopDir "package.json") -Raw | ConvertFrom-Json).version
