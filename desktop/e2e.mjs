@@ -1051,8 +1051,21 @@ try {
     await fail(`the clips request never started cutting (${err.message}). Last chat: ${await chatNow()}`);
   }
   ok("the agent took the video and started cutting a short out of it");
+  // Eight minutes, not four. The hidden wake window has been listening on the
+  // fake microphone since startup, so whisper is periodically the wake word's
+  // rather than the clipper's — and the clipper asks as a *background* caller,
+  // which the speech engine refuses instead of queueing behind the person's own
+  // voice. It then retries (four attempts, 1.5 s apart) and, when a moment still
+  // can't be heard, says so out loud in the chat and picks from the rest rather
+  // than quietly treating it as silence. All of that is correct and is what the
+  // run should be exercising; it also costs time, and on a two-core runner that
+  // is already rendering three ffmpeg passes it pushed the clip past four
+  // minutes (run 37507330144, whose transcript shows exactly this: "Couldn't
+  // listen to 1 of the 5 most promising moment (The speech engine is busy with
+  // something you asked for.)"). No assertion changes — a clip that never comes
+  // still fails the run, it just gets the time a busy machine needs.
   try {
-    await main.waitForFunction(() => /Clip 1 of 1/.test(document.body.innerText), null, { timeout: 240_000, polling: 1000 });
+    await main.waitForFunction(() => /Clip 1 of 1/.test(document.body.innerText), null, { timeout: 480_000, polling: 1000 });
   } catch {
     const shown = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
     await fail(`the clip never appeared in the chat: ${shown.slice(-400)}`);
