@@ -25,6 +25,11 @@ import { fileURLToPath } from "node:url";
 
 const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 const shotsDir = path.join(desktopDir, "e2e-shots");
+// The Command Center's composer. Matched by its label, not its placeholder:
+// "Message…" was reworded to "Ask anything, or say what to make…" when Chat &
+// Files landed, and this test spent a cycle waiting for the old placeholder,
+// which no longer exists anywhere in the app.
+const AGENT_COMPOSER = 'input[aria-label="Message the assistant"]';
 const EXPECT = /ask not what your country/i;
 const started = Date.now();
 const since = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
@@ -639,7 +644,7 @@ try {
   const pill = (await main.textContent('[data-testid="brain-pill"]'))?.trim();
   if (!/Gemini 3\.8 Flash/.test(pill ?? "")) await fail(`Command Center: the brain pill says "${pill}"`);
   const question = "hello from the end-to-end test";
-  const agentInput = 'input[placeholder="Message…"]';
+  const agentInput = AGENT_COMPOSER;
   await main.waitForSelector(agentInput, { state: "visible", timeout: 20_000 });
   await main.fill(agentInput, question);
   // `page.press(selector, ...)` has intermittently hung here after `fill`
@@ -790,14 +795,14 @@ try {
    */
   const askAgent = async (text) => {
     try {
-      const selector = 'input[placeholder="Message…"]';
+      const selector = AGENT_COMPOSER;
       await main.waitForSelector(selector, { state: "visible", timeout: 20_000 });
       await main.fill(selector, text);
       await main.keyboard.press("Enter");
     } catch (err) {
       const state = await main
         .evaluate(() => {
-          const el = document.querySelector('input[placeholder="Message…"]');
+          const el = document.querySelector(AGENT_COMPOSER);
           const r = el ? el.getBoundingClientRect() : null;
           const mid = r
             ? document.elementFromPoint(Math.min(Math.max(r.x + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.y + r.height / 2, 0), innerHeight - 1))
@@ -965,7 +970,7 @@ try {
   // The agent downloads or reads the file, listens with whisper.cpp, picks the
   // moment and renders a vertical clip with captions — watch it in the chat.
   await open(main, `${appBase}/agent`);
-  await main.waitForSelector('input[placeholder="Message…"]', { timeout: 30_000 });
+  await main.waitForSelector(AGENT_COMPOSER, { timeout: 30_000 });
   // The same job has to be findable without knowing to ask for it: the card on
   // the Command Center is the visible half of make_shorts_from_video.
   const clipsCard = await main.evaluate(() => {
@@ -1042,8 +1047,8 @@ try {
   if (watchesBefore >= 0 && (watchList.watches ?? []).length !== watchesBefore) {
     await fail(`a refused handle changed the watch list (${watchesBefore} → ${(watchList.watches ?? []).length}): ${JSON.stringify(watchList.watches).slice(0, 300)}`);
   }
-  await main.fill('input[placeholder="Message…"]', `cut 1 clip out of this video: ${clipSource}`);
-  await main.press('input[placeholder="Message…"]', "Enter");
+  await main.fill(AGENT_COMPOSER, `cut 1 clip out of this video: ${clipSource}`);
+  await main.press(AGENT_COMPOSER, "Enter");
   // The clips pipeline starts in the background; if its first line never shows,
   // say what the chat actually contains instead of a bare 60 s timeout.
   const chatNow = () =>

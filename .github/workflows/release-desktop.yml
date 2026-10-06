@@ -60,6 +60,7 @@ jobs:
         run: npm run typecheck
 
       - name: Test backend
+        id: backend-tests
         working-directory: server
         shell: pwsh
         run: |
@@ -77,7 +78,7 @@ jobs:
       # into annotations, the one place GitHub always shows whoever is reading
       # the run: which test failed, and why.
       - name: Name the failing backend tests
-        if: failure()
+        if: failure() && steps.backend-tests.outcome == 'failure'
         working-directory: server
         shell: pwsh
         run: |
@@ -222,6 +223,7 @@ jobs:
         run: npm ci
 
       - name: Test the desktop shell's helpers (settings, voice bar placement, DLL gate)
+        id: desktop-tests
         working-directory: desktop
         shell: pwsh
         run: |
@@ -238,7 +240,7 @@ jobs:
       # actually failed (the unindented one is only the file it lives in), and
       # the "error:" block under it is the reason.
       - name: Name the failing desktop test (if any)
-        if: failure()
+        if: failure() && steps.desktop-tests.outcome == 'failure'
         working-directory: desktop
         shell: pwsh
         run: |
