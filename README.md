@@ -306,12 +306,26 @@ the app doesn't ask for cookies or passwords.
 a video file already on the PC — "cut the best bits out of this", "3 clips from
 this video, the part about pricing". The agent downloads it (links), listens to
 it with the same whisper.cpp engine voice input uses, picks the moments that
-stand on their own (Gemini when there's a key; otherwise the loudest talking),
-and renders each as a vertical Short: the video cropped to 9:16, the sound
-exactly as recorded, captions of what is said burned in. `lib/videoClips.ts` +
-`brain/core/clips.ts` (pure rules: windows, scoring, picking, caption timing).
-Each clip is a normal export job — Watch, download or upload it from the chat.
-One video renders at a time, shorts included.
+stand on their own, and renders each as a vertical Short: the video cropped to
+9:16, the sound exactly as recorded, captions of what is said burned in.
+`lib/videoClips.ts` + `brain/core/clips.ts` (pure rules: windows, scoring,
+picking, caption timing).
+
+**Where viewers actually were** (desktop 1.5.10): for a YouTube link the clipper
+no longer judges a moment by how lively it sounds. It reads YouTube's own
+most-replayed curve for that video (yt-dlp's `heatmap` — the seconds real
+viewers rewound), the top comments that name a timecode ("2:14 had me
+crying", weighted by likes), and what is getting views on Shorts this week
+(the saved trend digest's real view counts). Those become an interest score per
+moment (`brain/core/interest.ts`, pure and unit-tested), which decides who gets
+listened to first (speech recognition is the slow part), which moments become
+clips, and *how they are ordered* — the strongest clip is posted and played
+first. Each clip carries the percentage and the sentence behind it in the chat
+("Viewers replayed this part: 96% of the video's own peak (around 4:58)", "A
+comment points here…"), and the clip itself begins at the measured moment
+rather than at the start of the talking around it. A video YouTube has no data
+for behaves exactly as it did before. One video renders at a time, shorts
+included.
 
 **Alarms on the phone** (desktop 1.5.2 / phone 1.3.2): ask the agent for one
 ("set an alarm for 6:30", "wake me in 20 minutes") and it arms a real alarm on

@@ -289,3 +289,89 @@ describe("yt-dlp self-update (YTDLP_AUTO_UPDATE)", () => {
     expect(err.message).not.toContain("start_windows.bat");
   });
 });
+
+// ── What the audience actually did ──────────────────────────────────────────
+// The clipper's measured half. `heatmap` is YouTube's own most-replayed curve,
+// printed by yt-dlp as JSON on one line; the rest are the video's real numbers.
+// The shape below is what yt-dlp 2026.08 prints, field order included.
+describe("view signals", () => {
+  const HEAT = [
+    { start_time: 0, end_time: 5, value: 0.21 },
+    { start_time: 295, end_time: 300, value: 0.97 },
+  ];
+  const SIGNALS = [
+    JSON.stringify(HEAT),
+    JSON.stringify([{ start_time: 0, end_time: 120, title: "Intro" }, { start_time: 120, end_time: 600, title: "The good bit" }]),
+    "1200000",
+    "40000",
+    "5000",
+    "20260801",
+    "600",
+    "250000",
+  ].join("\n") + "\n";
+  const commentsReply = JSON.stringify([
+    { text: "4:58 is the part everyone quotes", like_count: 1500 },
+    { text: "no timestamp here", like_count: 900 },
+    { text: "99:99 not a time", like_count: 2 },
+  ]) + "\n";
+
+  it("reads the heat map, the chapters and the video's real numbers in one pass", async () => {
+    fake.reply = () => ({ code: 0, stdout: SIGNALS });
+    const signals = await ytdlp.fetchViewSignals(URL_);
+    expect(signals.heat).toEqual([
+      { start: 0, end: 5, value: 0.21 },
+      { start: 295, end: 300, value: 0.97 },
+    ]);
+    expect(signals.chapters).toEqual([
+      { start: 0, end: 120, title: "Intro" },
+      { start: 120, end: 600, title: "The good bit" },
+    ]);
+    expect(signals.stats).toMatchObject({ views: 1_200_000, likes: 40_000, comments: 5_000, channelViews: 250_000 });
+    // The upload date is turned into an age, which is what the momentum score needs.
+    expect(signals.stats.ageHours).toBeGreaterThan(0);
+    expect(signals.notes).toEqual([]);
+    // One cheap pass — no comments unless asked for (they cost a second extraction).
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]!.join(" ")).toContain("--skip-download");
+    expect(fake.calls[0]!.join(" ")).toContain("%(heatmap)j");
+    expect(fake.calls[0]!.join(" ")).not.toContain("--write-comments");
+  });
+
+  it("reads the top comments only when asked, and keeps the ones with timestamps", async () => {
+    fake.reply = (args) => (args.includes("--write-comments") ? { code: 0, stdout: commentsReply } : { code: 0, stdout: SIGNALS });
+    const signals = await ytdlp.fetchViewSignals(URL_, { comments: true, onProgress: () => {} });
+    expect(fake.calls).toHaveLength(2);
+    const commentArgs = fake.calls[1]!;
+    expect(commentArgs).toContain("--write-comments");
+    // Top comments, not every page of them: the ones with a timecode are liked.
+    expect(extractorArgs(commentArgs)).toBe("youtube:comment_sort=top;max_comments=60,0,0,0,1");
+    expect(signals.anchors).toEqual([{ atSec: 298, likes: 1500, text: "4:58 is the part everyone quotes" }]);
+    // 99:99 is not a timecode, and the comment without one is not an anchor.
+    expect(signals.anchors.every((a) => a.atSec <= 600)).toBe(true);
+  });
+
+  it("skips the comments pass when there is nothing to read", async () => {
+    fake.reply = (args) =>
+      args.includes("--write-comments")
+        ? { code: 0, stdout: commentsReply }
+        : { code: 0, stdout: SIGNALS.replace("\n5000\n", "\n3\n") }; // 3 comments
+    const signals = await ytdlp.fetchViewSignals(URL_, { comments: true });
+    expect(fake.calls).toHaveLength(1);
+    expect(signals.anchors).toEqual([]);
+  });
+
+  it("says why when YouTube publishes no replay curve, instead of failing", async () => {
+    fake.reply = () => ({ code: 0, stdout: SIGNALS.replace(JSON.stringify(HEAT), "NA") });
+    const signals = await ytdlp.fetchViewSignals(URL_);
+    expect(signals.heat).toEqual([]);
+    expect(signals.notes?.join(" ")).toMatch(/most-replayed curve/);
+  });
+
+  it("degrades to no measured signals when yt-dlp cannot answer at all", async () => {
+    fake.reply = () => RELOAD;
+    const signals = await ytdlp.fetchViewSignals(URL_, { comments: true });
+    expect(signals).toMatchObject({ heat: [], anchors: [], trends: [], stats: {} });
+    expect(signals.notes?.join(" ")).toMatch(/Couldn't read YouTube's replay/);
+    // A video with no signals must never stop the clipper: this resolves.
+  });
+});

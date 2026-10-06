@@ -62,9 +62,9 @@ export function rankWindows(windows: VideoWindow[], scores: number[]): number[] 
 }
 
 /** How long a clip should be: the window, or the longest a Short may be. */
-export function clipLength(window: VideoWindow, durationSec: number): number {
+export function clipLength(window: VideoWindow, durationSec: number, minSeconds = MIN_CLIP_SECONDS, maxSeconds = MAX_CLIP_SECONDS): number {
   const available = Math.min(durationSec - window.start, window.end - window.start);
-  return Math.max(MIN_CLIP_SECONDS, Math.min(MAX_CLIP_SECONDS, available));
+  return Math.max(minSeconds, Math.min(maxSeconds, available));
 }
 
 /**
@@ -84,12 +84,22 @@ export function buildPickerAsk(
   snippets: Array<string | null>,
   count: number,
   focus?: string,
+  /**
+   * What the audience actually did, one entry per window (see
+   * brain/core/interest.ts). Optional: without it this is the same prompt it
+   * has always been, which is what a video with no published replay data gets.
+   */
+  evidence?: Array<string[] | undefined>,
 ): { system: string; user: string } {
+  const hasEvidence = Boolean(evidence?.some((lines) => lines && lines.length));
   const system = [
     "You are a short-form video editor. You are given windows of a long video, in order, with what is said in each one.",
     `Pick the ${clampCount(count)} best moments to cut into vertical YouTube Shorts (each ${MIN_CLIP_SECONDS}–${MAX_CLIP_SECONDS} seconds).`,
     "Choose moments that stand on their own: a hook, a surprising fact, a strong opinion, a laugh, a clear explanation — not introductions, housekeeping or half-finished thoughts.",
     "Prefer moments where the speaker's own words make the point; the captions are burned in, so the words matter.",
+    hasEvidence
+      ? "Where a window says MEASURED, that is real audience data — YouTube's own most-replayed curve, comments that name a timecode, or words that match what is getting views this week. It outranks your own impression of the words: prefer a window with measured interest over one without, and say which measured signal you used in the reason."
+      : "",
     focus?.trim() ? `The person asked for: ${focus.trim()}` : "",
     'Answer with JSON only: [{"start": <seconds from the start of the video>, "end": <seconds>, "title": "<max 60 characters, no quotes>", "reason": "<one short sentence: why this moment works>"}]',
   ]
@@ -105,7 +115,9 @@ export function buildPickerAsk(
         : snippet === null
           ? "(could not be listened to — judge it on its place in the video alone)"
           : "(no speech heard — music, silence or background)";
-      return `${i + 1}. ${clockRange(w)} — ${tail}`;
+      const measured = (evidence?.[i] ?? []).filter(Boolean);
+      const measuredText = measured.length ? ` MEASURED: ${measured.join("; ")}.` : "";
+      return `${i + 1}. ${clockRange(w)} — ${tail}${measuredText}`;
     })
     .join("\n");
   const user = [
@@ -156,6 +168,116 @@ export function parsePickerReply(text: string, durationSec: number, count: numbe
     if (pick) picks.push(pick);
   }
   return withoutOverlaps(picks, count);
+}
+
+export interface ScoredWindow {
+  window: VideoWindow;
+  /** How much this moment is worth — measured interest, the sound, or both. */
+  score: number;
+}
+
+/**
+ * Turns scored candidate moments into up to `count` clip ranges that do not
+ * share footage, best moment first.
+ *
+ * This is the step that makes "clip the parts people actually watched" work: a
+ * measured peak and the talking stretch around it overlap, and the old rules
+ * (drop anything that overlaps) threw one of them away. Here the better-scoring
+ * candidate keeps its place and the other is *moved* past it — sharing a
+ * moment's footage between two clips is what is forbidden, not cutting two
+ * neighbouring moments. A candidate that cannot keep a full clip after being
+ * moved is dropped, and `preset` ranges (the model's own picks, which carry
+ * titles and reasons) are respected as if already chosen.
+ */
+export function selectClips(
+  candidates: ScoredWindow[],
+  durationSec: number,
+  count: number,
+  opts: { minSeconds?: number; maxSeconds?: number; gapSec?: number; preset?: VideoWindow[] } = {},
+): VideoWindow[] {
+  const minSeconds = opts.minSeconds ?? MIN_CLIP_SECONDS;
+  const maxSeconds = opts.maxSeconds ?? MAX_CLIP_SECONDS;
+  const gap = opts.gapSec ?? 1.5;
+  const want = clampCount(count);
+  const taken: VideoWindow[] = [...(opts.preset ?? [])]
+    .map((w) => ({ start: round3(Math.max(0, w.start)), end: round3(Math.min(durationSec, Math.max(w.start, w.end))) }))
+    .filter((w) => w.end > w.start)
+    .sort((a, b) => a.start - b.start);
+
+  /** Does this range share footage with anything already chosen? */
+  const clashes = (range: VideoWindow) => taken.some((other) => range.start < other.end + gap && range.end > other.start - gap);
+  const fit = (from: number, to: number): VideoWindow | null => {
+    const start = Math.max(0, Math.min(from, durationSec));
+    const end = Math.min(durationSec, Math.max(to, start));
+    if (end - start < minSeconds) return null;
+    const range = { start: round3(start), end: round3(end) };
+    return clashes(range) ? null : range;
+  };
+
+  /**
+   * Where a candidate's clip goes. In order of preference: where the candidate
+   * is (a clip at the end of the video is allowed to be shorter than a full
+   * one rather than dragged backwards into footage another clip already uses),
+   * then just after what is in the way, then just before it. Nothing that fits
+   * is a dropped moment, not a fragment.
+   */
+  const place = (window: VideoWindow): VideoWindow | null => {
+    const length = clipLength(window, durationSec, minSeconds, maxSeconds);
+    const natural = fit(window.start, window.start + length);
+    if (natural) return natural;
+    const blocker = taken.find((other) => window.start < other.end + gap && window.start + length > other.start - gap);
+    if (blocker) {
+      const after = fit(blocker.end + gap, blocker.end + gap + length);
+      if (after) return after;
+      // End just short of what is in the way: the clip keeps the moment it can
+      // and gives up the overlap, rather than the moment being dropped.
+      const beforeEnd = blocker.start - gap;
+      const before = fit(beforeEnd - length, beforeEnd);
+      if (before) return before;
+    }
+    return null;
+  };
+
+  const chosen: Array<{ window: VideoWindow; score: number }> = [];
+  const ranked = [...candidates].sort((a, b) => b.score - a.score || a.window.start - b.window.start);
+  for (const candidate of ranked) {
+    // `taken` holds the preset ranges and every clip chosen so far — the number
+    // of clips already decided is exactly its length.
+    if (taken.length >= want) break;
+    const clip = place(candidate.window);
+    if (!clip) continue;
+    chosen.push({ window: clip, score: candidate.score });
+    taken.push(clip);
+    taken.sort((a, b) => a.start - b.start);
+  }
+  return chosen.map((entry) => entry.window);
+}
+
+/**
+ * Nudges overlapping picks apart instead of dropping them: the later one starts
+ * just after the earlier one ends, so two clips taken from neighbouring moments
+ * (a measured peak and the talking that overlaps it) both survive with no
+ * shared footage. A pick that cannot keep a full clip after being moved is
+ * dropped — a truncated fragment is worse than one fewer short.
+ *
+ * This exists because candidate windows are allowed to overlap once measured
+ * peaks join them (see mergeWindows), while a finished clip must not.
+ */
+export function trimOverlaps(picks: ClipPick[], durationSec: number, minSeconds = MIN_CLIP_SECONDS, gapSec = 1.5): ClipPick[] {
+  const sorted = [...picks].sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: ClipPick[] = [];
+  for (const pick of sorted) {
+    const previous = out[out.length - 1];
+    let start = Math.max(0, pick.start);
+    if (previous && start < previous.end + gapSec) start = previous.end + gapSec;
+    let end = Math.max(start, pick.end);
+    // Keep the pick's own length where the video allows it.
+    const wanted = Math.max(minSeconds, Math.min(MAX_CLIP_SECONDS, pick.end - pick.start));
+    if (end - start < wanted) end = Math.min(durationSec, start + wanted);
+    if (end - start < minSeconds) continue;
+    out.push({ ...pick, start: round3(start), end: round3(end) });
+  }
+  return out;
 }
 
 /**
@@ -543,6 +665,50 @@ export function candidateWindows(runs: SpeechRun[], durationSec: number, opts: {
     .slice(0, cap)
     .map((x) => x.w)
     .sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Speech windows and the audience's own peaks in one candidate list, in video
+ * order. Only *the same moment twice* is collapsed: a window whose middle sits
+ * within a couple of seconds of another's is a duplicate (the heat peak inside
+ * a talking stretch), while overlapping but different moments are both kept —
+ * two peaks twenty seconds apart are two clips, even when the talking around
+ * them overlaps. Clips are pulled apart later, in trimOverlaps.
+ *
+ * This is how a measured peak becomes a candidate even when nobody talks over
+ * it: the audio used to be the only thing that could nominate a moment.
+ */
+export function mergeWindows(windows: VideoWindow[], durationSec: number, max = MAX_CANDIDATES): VideoWindow[] {
+  const clean = windows
+    .map((w) => ({ start: Math.max(0, Math.min(w.start, w.end)), end: Math.min(durationSec, Math.max(w.start, w.end)) }))
+    .filter((w) => w.end - w.start >= 1)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: VideoWindow[] = [];
+  for (const w of clean) {
+    // A window inside another is the same moment, described less precisely
+    // (candidateWindows already returns a wide window and one of its halves).
+    const contained = merged.find((k) => k.start <= w.start + 1 && k.end >= w.end - 1);
+    if (contained) {
+      contained.start = round3(Math.min(contained.start, w.start));
+      contained.end = round3(Math.max(contained.end, w.end));
+      continue;
+    }
+    // It may also *contain* earlier windows, which then say nothing extra.
+    for (let i = merged.length - 1; i >= 0; i--) {
+      const k = merged[i]!;
+      if (w.start <= k.start + 1 && w.end >= k.end - 1) merged.splice(i, 1);
+    }
+    merged.push({ start: round3(w.start), end: round3(w.end) });
+  }
+  if (merged.length <= max) return merged;
+  // Over the cap: the widest windows carry the most material, keep those.
+  const keep = new Set(
+    [...merged]
+      .sort((a, b) => b.end - b.start - (a.end - a.start))
+      .slice(0, max)
+      .map((w) => w.start),
+  );
+  return merged.filter((w) => keep.has(w.start)).sort((a, b) => a.start - b.start);
 }
 
 /** What the profile (and the words, when they were heard) says about a window. */

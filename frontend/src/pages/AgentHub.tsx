@@ -4,7 +4,8 @@ import {
   Sparkles, 
   Download, 
   RefreshCw, 
-  Film, 
+  Film,
+  Flame, 
   Volume2, 
   Cpu, 
   Clock, 
@@ -2236,6 +2237,19 @@ export function AgentHub() {
                         <Film className="h-3.5 w-3.5 text-cyan-400" />
                         Short
                       </span>
+                      {/* Clipped shorts carry the measured interest behind them —
+                          YouTube's own replay data, comments and this week's
+                          trends. The number is checkable on YouTube itself, so
+                          it is shown rather than hidden in a tooltip alone. */}
+                      {typeof msg.interest === "number" && msg.interest > 0 && (
+                        <span
+                          className="flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300"
+                          title={msg.interestReason || "Measured audience interest for this moment"}
+                        >
+                          <Flame className="h-2.5 w-2.5" />
+                          {msg.interest}% interest
+                        </span>
+                      )}
                     </div>
 
                     <div className="relative rounded-lg overflow-hidden border border-white/10 bg-black max-h-52 flex justify-center items-center">

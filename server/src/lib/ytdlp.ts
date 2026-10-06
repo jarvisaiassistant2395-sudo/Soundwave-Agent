@@ -4,6 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { config, resolveFfmpegPath } from "../config.js";
 import { ytDlpJsRuntime } from "./jsRuntime.js";
+import {
+  commentAnchors,
+  parseHeatmap,
+  type CommentAnchor,
+  type HeatPoint,
+  type VideoStats,
+  type ViewSignals,
+} from "./brain/core/interest.js";
 
 // ── YouTube import via yt-dlp ───────────────────────────────────────────────
 // Lets users attach a compositing background straight from a YouTube URL,
@@ -493,6 +501,182 @@ export async function fetchMetadata(url: string, timeoutMs?: number): Promise<Yt
     channel: channel || "",
     channelUrl: channelUrl || "",
   };
+}
+
+/** The most comments we will read for one video: the top few are the ones with
+ * timestamps, and each page of comments costs a YouTube round trip. */
+const COMMENT_LIMIT = 60;
+
+/** Comments are a second extraction pass; give it longer than the cheap one but
+ * still stop rather than let a clip job hang on YouTube. */
+const COMMENT_TIMEOUT_MS = 90_000;
+
+/**
+ * What the audience did with this video — YouTube's own numbers.
+ *
+ * The `heatmap` is the "most replayed" curve YouTube computes from real
+ * playback data: a list of points whose `value` is the normalised intensity.
+ * It is the single most honest answer to "which part of this video do people
+ * actually care about", so the clipper builds windows on its peaks. Comments
+ * give the same answer in words, when people bothered to write a timecode.
+ *
+ * Everything here is best-effort by design: a video with too few views has no
+ * heat map, comments need a second (slower) pass, and a private or
+ * age-restricted video answers nothing at all. None of that is a reason to
+ * refuse to cut clips — the caller gets whatever was readable and a note
+ * explaining the rest, so the chat can be honest instead of quiet.
+ */
+export async function fetchViewSignals(
+  url: string,
+  opts: { comments?: boolean; timeoutMs?: number; onProgress?: (note: string) => void; channelViews?: number | null } = {},
+): Promise<ViewSignals> {
+  const notes: string[] = [];
+  const timeoutMs = opts.timeoutMs ?? Math.min(config.ytDlpTimeoutMs, 60_000);
+
+  // One cheap pass for the numbers YouTube already publishes. Printed one field
+  // per line and parsed right-anchored, like fetchMetadata, so a multi-line
+  // value can never shift the fields after it. `heatmap` and `chapters` come
+  // out as JSON on a single line (`NA` when YouTube has none for this video).
+  let stdout = "";
+  try {
+    const result = await runWithClientFallback(
+      url,
+      (base) => [
+        ...base,
+        "--skip-download",
+        "--print",
+        [
+          "%(heatmap)j",
+          "%(chapters)j",
+          "%(view_count)s",
+          "%(like_count)s",
+          "%(comment_count)s",
+          "%(upload_date)s",
+          "%(duration)s",
+          "%(channel_follower_count)s",
+        ].join("\n"),
+        url,
+      ],
+      timeoutMs,
+    );
+    stdout = result.stdout;
+  } catch (err) {
+    // The video itself may still download fine (metadata does its own retry);
+    // this pass is an extra, so it degrades to "no measured signals".
+    notes.push(`Couldn't read YouTube's replay and view data for this video (${(err as Error).message}). Picking on the sound and words instead.`);
+    return { heat: [], anchors: [], trends: [], stats: {}, notes };
+  }
+
+  const lines = stdout.split("\n").map((l) => l.trim());
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  // Right-anchored: the last line is the last field, whatever came before it.
+  const channelViewsRaw = lines.pop();
+  const durationRaw = lines.pop();
+  const uploadRaw = lines.pop();
+  const commentsRaw = lines.pop();
+  const likesRaw = lines.pop();
+  const viewsRaw = lines.pop();
+  const chaptersRaw = lines.pop();
+  const heatRaw = lines.pop();
+
+  const num = (raw: string | undefined): number | null => {
+    const n = Number.parseFloat((raw ?? "").replace(/,/g, ""));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const json = (raw: string | undefined): unknown => {
+    if (!raw || raw === "NA") return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const heat: HeatPoint[] = parseHeatmap(json(heatRaw));
+  const chaptersRawList = json(chaptersRaw);
+  const chapters = Array.isArray(chaptersRawList)
+    ? chaptersRawList
+        .map((c) => {
+          const entry = c as { start_time?: unknown; end_time?: unknown; title?: unknown };
+          const start = Number(entry.start_time);
+          const end = Number(entry.end_time);
+          return {
+            start: Number.isFinite(start) ? start : 0,
+            end: Number.isFinite(end) ? end : 0,
+            title: typeof entry.title === "string" ? entry.title.slice(0, 120) : "",
+          };
+        })
+        .filter((c) => c.title)
+    : [];
+
+  const views = num(viewsRaw);
+  const likes = num(likesRaw);
+  const comments = num(commentsRaw);
+  const duration = num(durationRaw) ?? 0;
+  const uploadDate = (uploadRaw ?? "").trim();
+  let ageHours: number | null = null;
+  if (/^\d{8}$/.test(uploadDate)) {
+    const uploaded = Date.UTC(Number(uploadDate.slice(0, 4)), Number(uploadDate.slice(4, 6)) - 1, Number(uploadDate.slice(6, 8)));
+    const hours = (Date.now() - uploaded) / 3_600_000;
+    if (Number.isFinite(hours) && hours >= 0) ageHours = Math.round(hours);
+  }
+  const stats: VideoStats = {
+    views,
+    likes,
+    comments,
+    ageHours,
+    channelViews: opts.channelViews ?? num(channelViewsRaw),
+  };
+
+  if (!heat.length) {
+    notes.push(
+      (views ?? 0) >= 1_000
+        ? "YouTube hasn't published a most-replayed curve for this video yet — it needs more watch data. Picking from the sound and the words."
+        : "This video has too few views for YouTube to publish a most-replayed curve yet. Picking from the sound and the words.",
+    );
+  } else {
+    opts.onProgress?.(`YouTube's own most-replayed data: ${heat.length} points of real audience behaviour.`);
+  }
+
+  // Comments: a second, slower extraction. Only when asked (the caller knows
+  // whether this video is worth the wait) and only when there is something to
+  // read — a video with three comments has nothing to add.
+  let anchors: CommentAnchor[] = [];
+  if (opts.comments && (comments ?? 0) >= 10 && duration > 0) {
+    try {
+      opts.onProgress?.("Reading the top comments for moments people pointed at…");
+      const commentResult = await runWithClientFallback(
+        url,
+        (base) => [
+          ...base,
+          "--skip-download",
+          "--write-comments",
+          "--extractor-args",
+          `youtube:comment_sort=top;max_comments=${COMMENT_LIMIT},0,0,0,1`,
+          "--print",
+          "%(comments)j",
+          url,
+        ],
+        Math.max(timeoutMs, COMMENT_TIMEOUT_MS),
+      );
+      const rawComments = json(commentResult.stdout.trim()) ?? json(commentResult.stdout.split("\n").pop() ?? "");
+      if (Array.isArray(rawComments)) {
+        anchors = commentAnchors(
+          rawComments.map((c) => {
+            const entry = c as { text?: unknown; like_count?: unknown; likes?: unknown };
+            return { text: entry?.text, likes: entry?.like_count ?? entry?.likes };
+          }),
+          duration,
+        );
+        if (anchors.length) opts.onProgress?.(`${anchors.length} comment${anchors.length === 1 ? "" : "s"} point at a specific moment.`);
+        else notes.push("The top comments don't point at any specific moment (nobody wrote a timecode).");
+      }
+    } catch (err) {
+      notes.push(`Couldn't read the comments (${((err as Error).message || "").replace(/\s+/g, " ").slice(0, 160)}). Picking without them.`);
+    }
+  }
+
+  return { heat, anchors, trends: [], stats, chapters, notes };
 }
 
 export interface YtChannelVideo {

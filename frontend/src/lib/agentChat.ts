@@ -53,6 +53,13 @@ export interface ChatMessage {
   jobState?: "started" | "done" | "failed";
   /** Topic of the short (for job messages). */
   topic?: string;
+  /**
+   * Clipped shorts only: how much measured audience interest this clip carries
+   * (0–100, from YouTube's own replay curve, comments and this week's trends),
+   * and the sentence(s) that justify it.
+   */
+  interest?: number;
+  interestReason?: string;
   /** The person said this (voice input) rather than typed it. */
   viaVoice?: boolean;
   /** When it was said (ms since epoch) — orders the conversation across windows and the phone. */

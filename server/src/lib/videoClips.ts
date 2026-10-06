@@ -37,10 +37,20 @@ import { appendToConversation } from "./conversation.js";
 import { newMessageId, chatTime } from "./chatMessages.js";
 import { emitJob } from "../routes/export.js";
 import { isReadableMediaFile } from "./mediaFile.js";
-import { fetchMetadata, parseYouTubeUrl } from "./ytdlp.js";
+import { fetchMetadata, fetchViewSignals, parseYouTubeUrl } from "./ytdlp.js";
 import { importYouTubeLink } from "./youtubeImport.js";
 import { probeMedia, resolveFfmpegPath, runFfmpegExport, type ExportSettings, type SubtitleStyleInput } from "./ffmpeg.js";
 import { STT_SAMPLE_RATE, SttError, encodeWav, resolveWhisper, transcribe, whisperBudgetMs } from "./stt.js";
+import {
+  heatWindows,
+  interestBrief,
+  rankByInterest,
+  snapToInterest,
+  trendTerms,
+  windowInterest,
+  type ViewSignals,
+} from "./brain/core/interest.js";
+import { loadTrendDigest } from "./trends.js";
 import {
   DEFAULT_CLIPS,
   MAX_CLIPS,
@@ -52,6 +62,9 @@ import {
   captionCues,
   candidateWindows,
   clipFileName,
+  mergeWindows,
+  selectClips,
+  trimOverlaps,
   clock,
   clockRange,
   createProfileAccumulator,
@@ -499,10 +512,16 @@ function runFfmpeg(args: string[], opts: { collectStdout?: boolean } = {}): Prom
  * nothing was said, and `null` when it couldn't be listened to — see
  * buildPickerAsk, which tells the model those two apart.
  */
-async function askPicker(windows: VideoWindow[], snippets: Array<string | null>, count: number, focus?: string): Promise<string> {
+async function askPicker(
+  windows: VideoWindow[],
+  snippets: Array<string | null>,
+  count: number,
+  focus?: string,
+  evidence?: Array<string[] | undefined>,
+): Promise<string> {
   const brain = activeBrain();
   if (!brain) return "";
-  const ask = buildPickerAsk(windows, snippets, count, focus);
+  const ask = buildPickerAsk(windows, snippets, count, focus, evidence);
   const models = [...new Set([brain.model, FALLBACK_MODEL])];
   for (const model of models) {
     try {
@@ -565,6 +584,21 @@ async function fetchSource(source: Source, onProgress?: (s: string) => void): Pr
 interface ClipJob {
   id: string;
   report: (pct: number, step: string) => Promise<void>;
+}
+
+/** Windows and picks are matched by where they start and end. */
+function interestKey(window: { start: number; end: number }): string {
+  return `${window.start.toFixed(2)}–${window.end.toFixed(2)}`;
+}
+
+/** The saved trend digest, or nothing: a missing/corrupt file must never stop a clip job. */
+function safeTrendDigest(): ReturnType<typeof loadTrendDigest> {
+  try {
+    return loadTrendDigest();
+  } catch (err) {
+    console.warn(`[clips] trend digest unreadable: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 /** Fails every job in a run with one message, and says so in the chat. */
@@ -649,6 +683,33 @@ async function runClips(run: QueuedClips): Promise<void> {
 
   await all(10, "Listening to the video…");
 
+  // ── What the audience actually did (measured, not guessed) ────────────────
+  // Started now and collected after the sound has been profiled, so the
+  // YouTube round trips overlap the PCM pass instead of adding to it. Three
+  // real signals, all best-effort:
+  //   • YouTube's own most-replayed curve (yt-dlp's `heatmap`) — where viewers
+  //     rewound, i.e. the parts they care about;
+  //   • the top comments that name a timecode ("2:14 had me crying");
+  //   • this week's trending terms, from the digest the trend scout already
+  //     saved (real view counts of popular Shorts), matched against the words.
+  // A video with none of this clips exactly as it did before.
+  const digest = safeTrendDigest();
+  const trends = digest?.top?.length ? trendTerms(digest.top, { max: 8 }) : [];
+  const signalsPromise: Promise<ViewSignals | null> =
+    source.kind === "youtube"
+      ? fetchViewSignals(source.url, {
+          // The comments pass is slower and needs a second extraction; worth it
+          // for a video people actually commented on, and the function itself
+          // skips it when the count is trivial.
+          comments: true,
+          timeoutMs: Math.min(config.ytDlpTimeoutMs, 60_000),
+          onProgress: (note) => void all(11, note),
+        }).catch((err: unknown) => {
+          console.warn(`[clips] view signals for ${source.url} failed: ${(err as Error).message}`);
+          return null;
+        })
+      : Promise.resolve(null);
+
   // Where the moments are: read the whole video's sound once — streamed to disk
   // and profiled on the way past, never held in memory — find the places
   // someone talks (opening on an onset, closing on a pause, not on a grid
@@ -661,18 +722,51 @@ async function runClips(run: QueuedClips): Promise<void> {
     return;
   }
 
+  const measured = await signalsPromise;
+  const viewSignals: ViewSignals | null =
+    measured || trends.length
+      ? { heat: measured?.heat ?? [], anchors: measured?.anchors ?? [], trends, stats: measured?.stats ?? {}, chapters: measured?.chapters, notes: measured?.notes }
+      : null;
+  for (const line of interestBrief(viewSignals).slice(0, 4)) say(`✂️ ${line}`);
+
   try {
     const profile = pcm.profile;
     const runs = speechRuns(profile);
     const fromSpeech = candidateWindows(runs, total);
-    const windows = fromSpeech.length ? fromSpeech : planWindows(total);
+    // The audience's own peaks are candidates too, even when nobody talks over
+    // them: the heat map is the only signal that points at a moment the audio
+    // never would have nominated (a visual reveal, a silent reaction).
+    const fromHeat = viewSignals ? heatWindows(viewSignals.heat, total) : [];
+    const fallback = fromSpeech.length || fromHeat.length ? [] : planWindows(total);
+    const windows = mergeWindows([...fromSpeech, ...fromHeat, ...fallback], total);
     let scores = windows.map((w) => momentScore(momentFeatures(w, profile)));
+    // Measured interest per window, from the audience's data alone (the words
+    // are not heard yet, so trend matching happens again once they are).
+    const measuredInterest = windows.map((w) => (viewSignals ? windowInterest(w, { signals: viewSignals }).score : 0));
+    /**
+     * One number to rank a moment by: the better of what the sound and words
+     * say, and what the audience measurably did — with the measurement allowed
+     * to win outright. A replay peak nobody talks over still becomes a clip
+     * (that is what the audience asked for), and a strong talking hook is never
+     * dragged down by a mediocre heat value. With no measured data this is
+     * exactly the score it always was.
+     */
+    const combinedRank = (i: number) => Math.min(1, Math.max(scores[i]!, 1.05 * (measuredInterest[i] ?? 0)));
+    const listenRank = combinedRank;
     const listening = Math.min(windows.length, MAX_PICK_TRANSCRIPTS);
     say(
       fromSpeech.length
-        ? `✂️ Found ${windows.length} moment${windows.length === 1 ? "" : "s"} where someone is talking in “${source.name}” — listening to the most promising ${listening}.`
-        : `✂️ No speech stood out in “${source.name}” — searching ${windows.length} even window${windows.length === 1 ? "" : "s"}.`,
-      { actionOutput: fromSpeech.length ? "Cut points follow speech, not a fixed grid" : "No speech measured — the search falls back to even windows" },
+        ? `✂️ Found ${windows.length} moment${windows.length === 1 ? "" : "s"} worth checking in “${source.name}”${fromHeat.length ? ` (${fromHeat.length} of them from YouTube's own most-replayed data)` : ""} — listening to the most promising ${listening}.`
+        : fromHeat.length
+          ? `✂️ No speech stood out in “${source.name}”, but YouTube's own replay data marks ${fromHeat.length} moment${fromHeat.length === 1 ? "" : "s"} people rewound — starting there.`
+          : `✂️ No speech stood out in “${source.name}” — searching ${windows.length} even window${windows.length === 1 ? "" : "s"}.`,
+      {
+        actionOutput: fromHeat.length
+          ? "Candidate moments come from the sound and from YouTube's most-replayed curve"
+          : fromSpeech.length
+            ? "Cut points follow speech, not a fixed grid"
+            : "No speech measured — the search falls back to even windows",
+      },
     );
 
     const engine = speechEngine();
@@ -690,13 +784,14 @@ async function runClips(run: QueuedClips): Promise<void> {
     let unheard = 0;
     let unheardWhy = "";
     if (canListen) {
-      const ranked = rankWindows(windows, scores).slice(0, MAX_PICK_TRANSCRIPTS);
+      const ranked = [...windows.keys()].sort((a, b) => listenRank(b) - listenRank(a)).slice(0, MAX_PICK_TRANSCRIPTS);
       for (let i = 0; i < ranked.length; i++) {
-        const w = windows[ranked[i]!]!;
+        const index = ranked[i]!;
+        const w = windows[index]!;
         await all(12 + Math.round((i / ranked.length) * 26), `Listening to the video… ${Math.round((i / ranked.length) * 100)}%`);
         const heard = await listen(pcm, w.start, w.end);
-        if (heard.kind === "said") snippets[ranked[i]!] = heard.text;
-        else if (heard.kind === "silent") snippets[ranked[i]!] = "";
+        if (heard.kind === "said") snippets[index] = heard.text;
+        else if (heard.kind === "silent") snippets[index] = "";
         else {
           unheard++;
           unheardWhy = heard.reason;
@@ -719,20 +814,127 @@ async function runClips(run: QueuedClips): Promise<void> {
     // boundaries), topped up with the best-scoring moments, then in video order
     // so the chat reads like the video does.
     await all(40, "Choosing the best moments…");
-    const reply = await askPicker(windows, snippets, count, run.focus);
+    // The measured evidence goes to the picker with the windows, so it can
+    // choose *and* say which real signal it used.
+    const windowEvidence = windows.map((w, i) =>
+      viewSignals ? windowInterest(w, { signals: viewSignals, text: snippets[i] ?? undefined }).evidence : undefined,
+    );
+    const reply = await askPicker(windows, snippets, count, run.focus, windowEvidence);
     const modelPicks: ClipPick[] = (reply ? parsePickerReply(reply, total, count) : []).map((pick) => {
       const snapped = snapToSpeech(pick, runs, 2.5, total);
       return { ...pick, start: snapped.start, end: snapped.end };
     });
-    const localPicks = pickMoments(windows, scores, total, count).map((pick) => {
+    // Measured interest, recomputed now that the words are known — this is the
+    // version that counts for ranking, because it can match trending terms.
+    const interestOf = new Map<string, { score: number; evidence: string[] }>();
+    for (const [i, w] of windows.entries()) {
+      if (!viewSignals) break;
+      const { score, evidence } = windowInterest(w, { signals: viewSignals, text: snippets[i] ?? undefined });
+      interestOf.set(interestKey(w), { score, evidence });
+    }
+    /**
+     * The measured interest behind a pick. Model picks are snapped onto speech
+     * boundaries, so they rarely match a window exactly — fall back to the
+     * window the pick's middle sits in (or the nearest one within a clip's
+     * reach), which is the moment it was actually chosen from.
+     */
+    const interestFor = (pick: { start: number; end: number }) => {
+      const exact = interestOf.get(interestKey(pick));
+      if (exact) return exact;
+      const middle = (pick.start + pick.end) / 2;
+      let best: { score: number; evidence: string[] } | undefined;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (const w of windows) {
+        const entry = interestOf.get(interestKey(w));
+        if (!entry) continue;
+        const distance = middle < w.start ? w.start - middle : middle > w.end ? middle - w.end : 0;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = entry;
+        }
+      }
+      return bestDistance <= 15 ? best : undefined;
+    };
+
+    const interestByIndex = windows.map((w, i) => interestOf.get(interestKey(w))?.score ?? measuredInterest[i] ?? 0);
+    const pickScores = scores.map((s, i) => Math.min(1, Math.max(s, 1.05 * interestByIndex[i]!)));
+    const localPicks = pickMoments(windows, pickScores, total, count).map((pick) => {
       const index = windows.findIndex((w) => w.start === pick.start);
       return index >= 0 ? { ...pick, reason: momentReason(features[index]!) } : pick;
     });
-    const finalPicks = inVideoOrder(withoutOverlaps([...modelPicks, ...localPicks], count));
+    // ── Which moments become clips ────────────────────────────────────────
+    // Two kinds of candidate, each carrying its own score:
+    //   • one per measured peak — the audience's own list of moments, scored on
+    //     their measured interest alone;
+    //   • the speech windows the audio found, scored on the sound and words
+    //     (momentScore) lifted by their measured interest, if any.
+    // The model's own picks are respected first (they carry titles and reasons),
+    // then one greedy pass places the rest without two clips sharing footage.
+    const peakCandidates: Array<{ window: VideoWindow; score: number }> = viewSignals
+      ? heatWindows(viewSignals.heat, total, { max: count }).map((w) => {
+          const measuredHere = interestOf.get(interestKey(w))?.score ?? windowInterest(w, { signals: viewSignals }).score;
+          return { window: w, score: Math.min(1, 1.05 * measuredHere) };
+        })
+      : [];
+    const measuredPeaks = peakCandidates.length > 0;
+    const windowCandidates: Array<{ window: VideoWindow; score: number }> = windows.map((w, i) => ({
+      window: w,
+      score: pickScores[i]!,
+    }));
+    const modelPreset = withoutOverlaps([...modelPicks], count).map((p) => ({ start: p.start, end: p.end }));
+    const ranges = measuredPeaks
+      ? selectClips([...peakCandidates, ...windowCandidates], total, count, {
+          minSeconds: MIN_CLIP_SECONDS,
+          maxSeconds: MAX_CLIP_SECONDS,
+          preset: modelPreset,
+        })
+      : // Nothing measured: the long-standing path, unchanged, topped up by the
+        // model's picks as it always was.
+        withoutOverlaps([...modelPicks, ...pickMoments(windows, pickScores, total, count)], count).map((p) => ({ start: p.start, end: p.end }));
+
+    /** A range the model chose keeps its title and reason; the rest are ours. */
+    const forRange = (range: VideoWindow): ClipPick => {
+      const spoken = [...modelPicks, ...localPicks].find((p) => Math.abs(p.start - range.start) <= 3);
+      if (spoken) return { ...spoken, start: range.start, end: range.end };
+      const index = windows.findIndex((w) => (w.start + w.end) / 2 >= range.start && (w.start + w.end) / 2 <= range.end);
+      const reason = index >= 0 && !measuredPeaks ? momentReason(features[index]!) : "";
+      return { start: range.start, end: range.end, title: "", reason };
+    };
+
+    // A clip begins where the audience's attention was: anchored onto the peak
+    // or the comment, then pulled onto a speech boundary when one is within
+    // reach so the captions still line up. Anchoring moves the range, so the
+    // finished clips are pulled apart once more — a fragment is dropped rather
+    // than rendered.
+    const anchoredPicks = trimOverlaps(ranges.map(forRange), total, MIN_CLIP_SECONDS)
+      .slice(0, count)
+      .map((pick) => {
+        const anchored = snapToInterest(pick, viewSignals, { minSeconds: MIN_CLIP_SECONDS, maxSeconds: MAX_CLIP_SECONDS, durationSec: total });
+        const snapped = snapToSpeech({ ...pick, start: anchored.start, end: anchored.end }, runs, 2.5, total);
+        return { ...pick, start: snapped.start, end: snapped.end };
+      });
+    const contentPicks = trimOverlaps(anchoredPicks, total, MIN_CLIP_SECONDS).slice(0, count);
+    // Best measured interest first, so the person watches the strongest clip
+    // while the rest render. Videos with no measured data keep the video's own
+    // order, exactly as before.
+    const rankedPicks = contentPicks
+      .map((pick) => ({ pick, interest: interestFor(pick)?.score ?? 0 }))
+      .sort((a, b) => b.interest - a.interest || a.pick.start - b.pick.start)
+      .map((entry) => entry.pick);
+    const finalPicks = rankedPicks.length && Math.max(...rankedPicks.map((p) => interestFor(p)?.score ?? 0)) > 0
+      ? rankedPicks
+      : inVideoOrder(rankedPicks);
     await all(44, `Cutting ${finalPicks.length === 1 ? "the clip" : `${finalPicks.length} clips`}…`);
+    if (finalPicks.length > 1 && finalPicks.some((p) => (interestFor(p)?.score ?? 0) > 0)) {
+      say("✂️ Clips arrive strongest first: the order is YouTube's own replay and comment data, then the sound and the words.", {
+        actionOutput: "Ordered by measured interest, not by where the moment sits in the video",
+      });
+    }
 
     for (let i = 0; i < finalPicks.length; i++) {
       const pick = finalPicks[i]!;
+      const measured = interestFor(pick);
+      const interestPct = measured ? Math.round(measured.score * 100) : 0;
       const job = jobs[i];
       if (!job) break;
       const length = Math.min(MAX_CLIP_SECONDS, Math.max(MIN_CLIP_SECONDS, pick.end - pick.start));
@@ -744,7 +946,20 @@ async function runClips(run: QueuedClips): Promise<void> {
       const outPath = path.join(uploads, clipFileName(i, pick.title, base));
 
       try {
-        await store.updateJob(job.id, { settings: { topic: title, resolution: dims, range: clockRange(range), source: source.url, step: "Cutting the moment…" } as never });
+        await store.updateJob(job.id, {
+          settings: {
+            topic: title,
+            resolution: dims,
+            range: clockRange(range),
+            source: source.url,
+            step: "Cutting the moment…",
+            // Why this clip and not another: the measured interest (0–100) and
+            // the evidence line, so the card can show a badge the person can
+            // check against YouTube itself.
+            ...(interestPct > 0 ? { interest: interestPct } : {}),
+            ...(measured?.evidence.length ? { interestReason: measured.evidence[0]!.slice(0, 200) } : {}),
+          } as never,
+        });
         await job.report(50, "Cutting the moment…");
         // The cut is an intermediate: keep it visually lossless (crf 18) so the
         // final composite isn't re-compressing an already soft picture.
@@ -814,13 +1029,18 @@ async function runClips(run: QueuedClips): Promise<void> {
         // where it is: the desktop chat plays it in line (the phone's Watch
         // button reads the job id). Without the URL the clip could only be read
         // about, never watched.
-        say(`✂️ Clip ${i + 1} of ${finalPicks.length} — “${title}” (${clockRange(range)} of “${source.name}”)${pick.reason ? `\n${pick.reason}` : ""}`, {
+        const interestLine = measured?.evidence.length
+          ? `\n${measured.evidence.slice(0, 2).join("\n")}${interestPct > 0 ? ` — ${interestPct}% measured interest` : ""}`
+          : "";
+        say(`✂️ Clip ${i + 1} of ${finalPicks.length} — “${title}” (${clockRange(range)} of “${source.name}”)${pick.reason ? `\n${pick.reason}` : ""}${interestLine}`, {
           jobId: job.id,
           jobState: "done",
           topic: title,
           tag: "AUDIO",
           videoUrl: outputUrl,
           downloadUrl: outputUrl,
+          ...(interestPct > 0 ? { interest: interestPct } : {}),
+          ...(measured?.evidence.length ? { interestReason: measured.evidence.slice(0, 2).join(" · ") } : {}),
           actionOutput: `From ${source.url}\n${note}`,
         });
       } catch (err) {

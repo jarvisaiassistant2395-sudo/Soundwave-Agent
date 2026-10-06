@@ -27,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   isReadableMediaFile: vi.fn(() => true),
   getActiveShortJobs: vi.fn(),
   spawn: vi.fn(),
+  fetchMetadata: vi.fn(),
+  fetchViewSignals: vi.fn(),
+  importYouTubeLink: vi.fn(),
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -51,6 +54,19 @@ vi.mock("../src/lib/ffmpeg.js", async (importOriginal) => {
 vi.mock("../src/lib/mediaFile.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/mediaFile.js")>();
   return { ...actual, isReadableMediaFile: mocks.isReadableMediaFile };
+});
+vi.mock("../src/lib/ytdlp.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/ytdlp.js")>();
+  return {
+    ...actual,
+    // Kept real: parseYouTubeUrl (the source check) and YtDlpError.
+    fetchMetadata: mocks.fetchMetadata,
+    fetchViewSignals: mocks.fetchViewSignals,
+  };
+});
+vi.mock("../src/lib/youtubeImport.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/youtubeImport.js")>();
+  return { ...actual, importYouTubeLink: mocks.importYouTubeLink };
 });
 vi.mock("../src/routes/agentShort.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/routes/agentShort.js")>();
@@ -210,6 +226,20 @@ beforeEach(async () => {
   pcmChunks = chunkUp(video.buffer, 64 * 1024);
   mocks.spawn.mockImplementation(fakeFfmpeg as never);
   mocks.getActiveShortJobs.mockReturnValue([]);
+  // No measured audience data unless a test asks for it: the pipeline then runs
+  // exactly as it did before this feature existed.
+  mocks.fetchViewSignals.mockResolvedValue({ heat: [], anchors: [], trends: [], stats: {}, notes: [] });
+  mocks.fetchMetadata.mockResolvedValue({ title: "Talk", duration: 40, webpageUrl: "https://www.youtube.com/watch?v=test", channel: "Ch", channelUrl: "https://www.youtube.com/@Ch" });
+  mocks.importYouTubeLink.mockImplementation(async (url: string) => ({
+    fileKey: "key",
+    filePath: sourceFile,
+    name: "Talk.mp4",
+    size: 4096,
+    duration: 40,
+    url,
+    meta: { title: "Talk", duration: 40, webpageUrl: url, channel: "Ch", channelUrl: "" },
+    section: null,
+  }));
   mocks.resolveWhisper.mockReturnValue({
     setup: { cli: "whisper-cli", model: "/m/ggml-base.en.bin", modelName: "base.en" },
     problem: null,
@@ -382,6 +412,118 @@ describe("listening to a moment", () => {
     expect(text).toContain("no speech engine on this PC");
     expect(text).toContain("Voice input isn't set up yet");
     expect(exportCalls[0]!.subtitles).toHaveLength(0);
+  });
+});
+
+// ── Clipping what the audience actually watched ─────────────────────────────
+// The measured half of the clipper: YouTube's own most-replayed curve decides
+// which moment gets a clip (and which clip the person sees first), with the
+// top comments that name a timecode alongside it. Everything here is stubbed at
+// the yt-dlp boundary — the parsing itself is pinned in ytdlp_clients.test.ts.
+
+describe("clipping on measured interest", () => {
+  const YT_URL = "https://www.youtube.com/watch?v=MeasuredVid";
+  const heat = (points: Array<{ start: number; end: number; value: number }>) => points;
+
+  it("turns a replay peak into a clip and says the audience pointed at it", async () => {
+    // One spike, in the back quarter of the video: 32–40 s. The audio here is
+    // the talking-then-silence fixture, so the peak sits in the silent tail —
+    // exactly the moment the old, sound-only clipper would never have chosen.
+    mocks.fetchViewSignals.mockResolvedValue({
+      heat: heat([{ start: 30, end: 40, value: 0.98 }]),
+      anchors: [{ atSec: 34, likes: 1500, text: "0:34 is the part everyone quotes" }],
+      trends: [],
+      stats: { views: 900_000, likes: 20_000, comments: 800, ageHours: 30 },
+      notes: [],
+    });
+    await clips.startClipsJob({ video: YT_URL, count: 1, userId: "measured-1" });
+    await settle(() => exportCalls.length > 0, "the clip to render");
+    await settle(() => queueIdle(), "the run to finish");
+
+    // The clip is on the measured moment, not on the loudest talking.
+    const cut = spawnLog.find((args) => args.includes("-ss") && args.includes("-an"));
+    expect(cut).toBeTruthy();
+    const at = Number(cut![cut!.indexOf("-ss") + 1]);
+    const length = Number(cut![cut!.indexOf("-t") + 1]);
+    // The clip begins at the measured moment, not at the start of the talking
+    // stretch around it (that would be 14), and it covers the replayed part.
+    expect(at).toBeGreaterThanOrEqual(20);
+    expect(at + length).toBeGreaterThanOrEqual(38);
+
+    // The person is told the measured facts, and where they came from.
+    const text = chatText();
+    expect(text).toMatch(/most-replayed/);
+    expect(text).toMatch(/comment points at/i);
+    expect(text).toMatch(/0:34/);
+    expect(text).toMatch(/900k views/);
+
+    // And the job carries the score, so the card can show it.
+    const [job] = await db.listJobs("measured-1");
+    const settings = job!.settings as { interest?: number; interestReason?: string };
+    expect(settings.interest).toBeGreaterThan(0);
+    expect(settings.interestReason).toMatch(/replayed|comment/i);
+  });
+
+  it("renders the strongest measured clip first, whatever order the moments sit in", async () => {
+    // Two peaks: a weak one early (5–15 s) and the strongest at the very end.
+    // The chat used to read in video order; with measured data the best clip
+    // dominates the top of the list so the person watches it while the rest render.
+    mocks.fetchViewSignals.mockResolvedValue({
+      heat: heat([
+        { start: 5, end: 15, value: 0.62 },
+        { start: 25, end: 35, value: 0.99 },
+      ]),
+      anchors: [{ atSec: 30, likes: 4000, text: "0:30 is unreal", }],
+      trends: [],
+      stats: { views: 2_000_000, ageHours: 20 },
+      notes: [],
+    });
+    await clips.startClipsJob({ video: YT_URL, count: 2, userId: "measured-2" });
+    await settle(() => exportCalls.length >= 2, "both clips to render");
+    await settle(() => queueIdle(), "the run to finish");
+
+    const starts = spawnLog
+      .filter((args) => args.includes("-ss") && args.includes("-an"))
+      .map((args) => Number(args[args.indexOf("-ss") + 1]));
+    expect(starts.length).toBeGreaterThanOrEqual(2);
+    // Clip 1 covers the 25–35 s peak; the weaker peak's clip comes after it.
+    expect(starts[0]).toBeGreaterThanOrEqual(15);
+    expect(starts[0]).toBeLessThanOrEqual(30);
+    expect(starts[1]).toBeLessThanOrEqual(10);
+    expect(chatText()).toMatch(/strongest first|measured interest/i);
+
+    const jobs = await db.listJobs("measured-2");
+    const interests = jobs.map((j) => (j.settings as { interest?: number }).interest ?? 0);
+    expect(interests[0]).toBeGreaterThan(interests[1] ?? 0);
+    // Every clip that came from a measured peak carries the reason it exists.
+    expect(jobs.every((j) => typeof (j.settings as { interestReason?: string }).interestReason === "string")).toBe(true);
+  });
+
+  it("changes nothing when YouTube publishes no replay data", async () => {
+    // A video with no measured signals at all: the old behaviour, unchanged.
+    mocks.fetchViewSignals.mockResolvedValue({
+      heat: [],
+      anchors: [],
+      trends: [],
+      stats: {},
+      notes: ["This video has too few views for YouTube to publish a most-replayed curve yet. Picking from the sound and the words."],
+    });
+    await clips.startClipsJob({ video: YT_URL, count: 1, userId: "measured-3" });
+    await settle(() => exportCalls.length > 0, "the clip to render");
+    await settle(() => queueIdle(), "the run to finish");
+    const [job] = await db.listJobs("measured-3");
+    expect((job!.settings as { interest?: number }).interest).toBeUndefined();
+    // The note is passed on rather than swallowed.
+    expect(chatText()).toMatch(/too few views|most-replayed curve/);
+  });
+
+  it("keeps cutting when the signals lookup itself fails", async () => {
+    mocks.fetchViewSignals.mockRejectedValue(new Error("TLS/SSL connection has been closed (EOF)"));
+    await clips.startClipsJob({ video: YT_URL, count: 1, userId: "measured-4" });
+    await settle(() => exportCalls.length > 0, "the clip to render");
+    await settle(() => queueIdle(), "the run to finish");
+    expect(exportCalls).toHaveLength(1);
+    expect((await db.listJobs("measured-4"))[0]!.status).toBe("COMPLETED");
   });
 });
 

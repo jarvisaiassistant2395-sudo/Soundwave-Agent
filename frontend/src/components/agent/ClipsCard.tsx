@@ -24,6 +24,12 @@ interface ClipsStatus {
  * finished clips into the conversation. Hidden on a server without the desktop
  * app (that's where ffmpeg, yt-dlp and the speech engine live).
  *
+ * What it cuts is no longer a guess about what sounds lively: when the source is
+ * a YouTube link, the server reads YouTube's own most-replayed curve for the
+ * video, the top comments that name a timecode, and this week's trending terms,
+ * and the clips come back in order of that measured interest — each one with the
+ * number and the sentence behind it in the chat.
+ *
  * One video renders at a time, but asking for a second one is not a dead end:
  * the server queues it and says where it landed, and this card stays usable and
  * shows the queue. Only a *full* queue disables the button — refusing early
@@ -130,7 +136,7 @@ export function ClipsCard() {
       <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
         <span
           className="flex items-center gap-1.5 font-semibold text-gray-200"
-          title="The agent listens to the whole video, finds where someone is talking and makes a point, and cuts clips that open on a hook and end on a pause — no random 45-second chunks."
+          title="The agent listens to the whole video, finds where someone is talking and makes a point, and cuts clips that open on a hook and end on a pause — no random 45-second chunks. For a YouTube link it also reads YouTube's own most-replayed curve, the top comments with timecodes, and this week's trending Shorts, and ranks the clips by that measured interest."
         >
           <Scissors className="h-3.5 w-3.5 text-fuchsia-400" />
           Shorts from a video
