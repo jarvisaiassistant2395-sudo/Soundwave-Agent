@@ -8,6 +8,7 @@ import type { Request, RequestHandler } from "express";
 import { requireAuth, optionalAuth } from "../middleware/auth.js";
 import { notFromApp } from "../middleware/localApp.js";
 import { ApiError } from "../middleware/error.js";
+import { rollMonthOver } from "../lib/metering.js";
 import { usageLimiter, uploadLimiter } from "../lib/security.js";
 import { getStore } from "../lib/store.js";
 import { PLANS, type Plan } from "../lib/plans.js";
@@ -43,10 +44,11 @@ export async function getQuotaFor(userId: string) {
   const now = new Date();
   let used = user.charactersUsedThisMonth;
   if (now >= resetDate) {
-    // New billing month — reset.
-    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+    // New billing month — everything resets together (characters, minutes of
+    // video, clips). One boundary, one function: a second copy of this here
+    // is how counters drift apart.
+    await rollMonthOver(userId, user.characterResetDate);
     used = 0;
-    await store.updateUser(userId, { charactersUsedThisMonth: 0, characterResetDate: next.toISOString() });
   }
   return { used, limit, resetDate: resetDate.toISOString(), plan, allowed: used < limit };
 }

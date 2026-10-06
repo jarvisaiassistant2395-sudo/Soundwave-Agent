@@ -15,7 +15,7 @@ import type { AddressInfo, Socket } from "node:net";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { config } from "../../config.js";
 import { agentChat } from "../../routes/agent.js";
-import { resolveJobVideoFile } from "../../routes/export.js";
+import { resolveJobVideoFile } from "../jobFiles.js";
 import { SttError, getSttStatus, transcribe } from "../stt.js";
 import { normalizeVoiceId, synthesizeEdgeTTS } from "../edgeTts.js";
 import { chatTime, newMessageId, openJobs, replyToMessage, type ChatMessage, type ChatReply } from "../chatMessages.js";

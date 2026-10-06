@@ -10,6 +10,7 @@ import { dimensionsFor } from "../lib/plans.js";
 import { synthesizeEdgeTTS } from "../lib/edgeTts.js";
 import { isLocalVoiceId, localVoiceLabel, synthesizeLocalVoice } from "../lib/kokoro.js";
 import { runFfmpegExport, type ExportSettings, type SubtitleCueInput, type SubtitleStyleInput } from "../lib/ffmpeg.js";
+import { recordUsage, requireRoom, watermarkFor } from "../lib/metering.js";
 import { config } from "../config.js";
 import {
   ORBITAL_CHANNEL_NAME,
@@ -384,7 +385,8 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       // render is fine if the picture is better); 720p keeps the faster one.
       quality: dims.height >= 1920 ? "high" : "medium",
       fps: 60,
-      watermark: false,
+      // Free shorts carry the mark (lib/plans.ts); Pro and above are clean.
+      watermark: await watermarkFor(params.userId || "agent-local"),
       audioVolume: 1.0,
       fadeIn: 0,
       fadeOut: 0.3,
@@ -502,6 +504,10 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       } as any,
     });
 
+    // Counted only now, on a finished clip: the month's allowance is spent on
+    // video the person actually got, never on a render that failed.
+    await recordUsage(userId, { videoSeconds: ttsResult.duration, clips: 1 }).catch(() => undefined);
+
     emitJob(jobId, {
       status: "COMPLETED",
       progress: 100,
@@ -595,6 +601,10 @@ export async function startShortJob(params: Omit<BuildShortOptions, "existingJob
   const aspect = "9:16" as const;
   const dims = dimensionsFor(params.resolution || "1080p", aspect);
   const seconds = params.seconds && params.seconds > 0 ? Math.round(params.seconds) : DEFAULT_SCRIPT_SECONDS;
+
+  // What this costs the month: the finished length, and one clip. Checked
+  // before the first Gemini call, so an over-plan run costs nobody anything.
+  await requireRoom(userId, { videoSeconds: seconds, clips: 1 });
   const job = await store.createJob({
     projectId: null,
     userId,

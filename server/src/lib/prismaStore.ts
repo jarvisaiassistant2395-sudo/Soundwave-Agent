@@ -66,6 +66,9 @@ export class PrismaStore implements DataStore {
         ...(patch.stripeCustomerId !== undefined ? { stripeCustomerId: patch.stripeCustomerId } : {}),
         ...(patch.stripeSubscriptionId !== undefined ? { stripeSubscriptionId: patch.stripeSubscriptionId } : {}),
         ...(patch.charactersUsedThisMonth !== undefined ? { charactersUsedThisMonth: patch.charactersUsedThisMonth } : {}),
+        ...(patch.subscriptionStartedAt !== undefined ? { subscriptionStartedAt: patch.subscriptionStartedAt ? new Date(patch.subscriptionStartedAt) : null } : {}),
+        ...(patch.videoSecondsUsedThisMonth !== undefined ? { videoSecondsUsedThisMonth: patch.videoSecondsUsedThisMonth } : {}),
+        ...(patch.clipsUsedThisMonth !== undefined ? { clipsUsedThisMonth: patch.clipsUsedThisMonth } : {}),
         ...(patch.characterResetDate !== undefined ? { characterResetDate: s2d(patch.characterResetDate)! } : {}),
         ...(patch.totalAudioDurationSeconds !== undefined ? { totalAudioDurationSeconds: patch.totalAudioDurationSeconds } : {}),
       },
@@ -75,6 +78,10 @@ export class PrismaStore implements DataStore {
   async deleteUserSoft(id: string): Promise<void> {
     await this.prisma.user.update({ where: { id }, data: { deletedAt: new Date() } });
     await this.prisma.session.deleteMany({ where: { userId: id } });
+  }
+  async listUsers(): Promise<StoredUser[]> {
+    const rows = await this.prisma.user.findMany({ where: { deletedAt: null } });
+    return rows.map(mapUser);
   }
   async countUsers(): Promise<number> {
     return this.prisma.user.count({ where: { deletedAt: null } });
@@ -340,7 +347,11 @@ function mapUser(u: any): StoredUser {
     stripeCustomerId: u.stripeCustomerId,
     stripeSubscriptionId: u.stripeSubscriptionId,
     lifetimeSince: d2s(u.lifetimeSince),
+    subscriptionStartedAt: d2s(u.subscriptionStartedAt),
     charactersUsedThisMonth: u.charactersUsedThisMonth,
+    // Older rows predate metering; zero is the honest reading.
+    videoSecondsUsedThisMonth: u.videoSecondsUsedThisMonth ?? 0,
+    clipsUsedThisMonth: u.clipsUsedThisMonth ?? 0,
     characterResetDate: d2s(u.characterResetDate) ?? new Date().toISOString(),
     totalAudioDurationSeconds: u.totalAudioDurationSeconds,
     createdAt: d2s(u.createdAt)!,

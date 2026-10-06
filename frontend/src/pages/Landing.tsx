@@ -318,14 +318,14 @@ export function Landing() {
           <div className="text-center">
             <h2 className="text-3xl font-bold text-white sm:text-4xl">Simple Pricing</h2>
             <p className="mx-auto mt-3 max-w-xl text-gray-400">
-              Start free. Upgrade when you need more characters, higher resolutions, and cloud sync.
+              Start free. Upgrade when you need more minutes of video, higher resolutions, and cloud sync.
             </p>
           </div>
           <div className="mx-auto mt-12 grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-3">
             {[
-              { name: "Free", price: "$0", desc: "10K chars / month", highlight: false, cta: "Open Soundwave", to: "/agent" },
-              { name: "Pro", price: "$15", desc: "200K chars / month", highlight: true, cta: "Subscribe Now", to: "/agent" },
-              { name: "Enterprise", price: "$39", desc: "2M chars / month", highlight: false, cta: "Contact Sales", to: "/pricing" },
+              { name: "Free", price: "$0", desc: "60 min of video / month", highlight: false, cta: "Open Soundwave", to: "/agent" },
+              { name: "Pro", price: "$15", desc: "300 min of video / month", highlight: true, cta: "Subscribe Now", to: "/agent" },
+              { name: "Enterprise", price: "$39", desc: "1,200 min of video / month", highlight: false, cta: "Contact Sales", to: "/pricing" },
               { name: "Founder lifetime", price: "$199", desc: "once — everything, for good", highlight: false, cta: "See Billing", to: "/settings/billing" },
             ].map((p) => (
               <div

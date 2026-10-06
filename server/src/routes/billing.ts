@@ -77,6 +77,11 @@ async function planPayload() {
       name: p.name,
       monthlyPrice: p.monthlyPrice,
       annualPricePerMonth: p.annualPricePerMonth,
+      // What a creator is buying. The character limit still governs abuse, but
+      // it is not what the page sells (see lib/metering.ts).
+      videoMinutesPerMonth: p.videoMinutesPerMonth,
+      clipsPerMonth: p.clipsPerMonth,
+      clipRetentionDays: p.clipRetentionDays,
       characterLimit: p.characterLimit,
       maxResolution: p.maxResolution,
       watermark: p.watermark,
@@ -93,6 +98,30 @@ async function planPayload() {
     },
     lifetime: await lifetimeOffer(),
   };
+}
+
+/**
+ * Did this account subscribe before the plans were repackaged? Then it keeps
+ * the price it signed up at. Stripe is the one billing them, so there is
+ * nothing to change here — what matters is that the app says so plainly and
+ * never treats them as a new buyer.
+ *
+ * A subscription with no recorded start date is one that predates this field,
+ * i.e. certainly an old one. Only subscriptions our own webhook recorded carry
+ * a date, and those are the new ones.
+ */
+export function grandfatheredPlan(user: StoredUser): boolean {
+  if (!user.stripeSubscriptionId || user.lifetimeSince) return false;
+  if (effectivePlan(user.plan) === "FREE") return false;
+  const started = user.subscriptionStartedAt ? Date.parse(user.subscriptionStartedAt) : 0;
+  const changed = Date.parse(config.pricingChangedAt);
+  return !Number.isFinite(changed) || started < changed;
+}
+
+/** Stripe's `created` (seconds) → ISO, falling back to now. */
+function createdIso(object: Record<string, unknown>): string {
+  const created = typeof object.created === "number" ? object.created : null;
+  return created ? new Date(created * 1000).toISOString() : new Date().toISOString();
 }
 
 /**
@@ -189,10 +218,10 @@ router.get("/status", requireAuth, async (req, res, next) => {
     const user = req.user!;
     if (personalEdition) {
       // Nothing to sell and nothing to check: this is the owner's own PC.
-      return res.json({ plan: effectivePlan(user.plan), configured: false, personal: true, customer: false, subscription: null });
+      return res.json({ plan: effectivePlan(user.plan), configured: false, personal: true, customer: false, subscription: null, grandfathered: false });
     }
     if (!stripeConfigured()) {
-      return res.json({ plan: user.plan, configured: false, subscription: null, customer: Boolean(user.stripeCustomerId), lifetime: Boolean(user.lifetimeSince) });
+      return res.json({ plan: user.plan, configured: false, subscription: null, customer: Boolean(user.stripeCustomerId), lifetime: Boolean(user.lifetimeSince), grandfathered: grandfatheredPlan(user) });
     }
     let view: ReturnType<typeof subscriptionView> | null = null;
     try {
@@ -204,6 +233,7 @@ router.get("/status", requireAuth, async (req, res, next) => {
         configured: true,
         subscription: null,
         customer: Boolean(user.stripeCustomerId),
+        grandfathered: grandfatheredPlan(user),
         problem: (err as Error).message,
       });
     }
@@ -211,6 +241,7 @@ router.get("/status", requireAuth, async (req, res, next) => {
       plan: view?.plan ?? user.plan,
       configured: true,
       lifetime: Boolean(user.lifetimeSince),
+      grandfathered: grandfatheredPlan(user),
       customer: Boolean(user.stripeCustomerId),
       subscription: view
         ? {
@@ -462,6 +493,9 @@ async function applyEvent(event: StripeEvent): Promise<string> {
     const patch: Partial<StoredUser> = {};
     if (customerId && had.customerId !== customerId) patch.stripeCustomerId = customerId;
     if (subscriptionId && had.subscriptionId !== subscriptionId) patch.stripeSubscriptionId = subscriptionId;
+    // A subscription bought today is a new subscription: dated, so the old-price
+    // rule can never mistake it for one from before the repricing.
+    if (subscriptionId && !user.subscriptionStartedAt) patch.subscriptionStartedAt = createdIso(object);
     if (Object.keys(patch).length) await store.updateUser(user.id, patch);
     // The plan itself comes from the subscription (its price says which plan) —
     // read it now rather than guessing from the session.
@@ -486,6 +520,7 @@ async function applyEvent(event: StripeEvent): Promise<string> {
     const customerId = customerIdOf(sub);
     const patch: Partial<StoredUser> = { plan: view.plan, stripeSubscriptionId: view.plan === "FREE" ? null : sub.id };
     if (customerId && user.stripeCustomerId !== customerId) patch.stripeCustomerId = customerId;
+    if (view.plan !== "FREE" && !user.subscriptionStartedAt) patch.subscriptionStartedAt = createdIso(sub as unknown as Record<string, unknown>);
     await store.updateUser(user.id, patch);
     return `subscription ${view.status} → ${view.plan}`;
   }

@@ -30,6 +30,26 @@ export interface QuotaStatus {
   allowed: boolean;
 }
 
+/** One metered thing: minutes of video, or clips. limit null = no ceiling. */
+export interface MeterLine {
+  used: number;
+  limit: number | null;
+  allowed: boolean;
+}
+
+/** What the account has used this month — the numbers the pricing page sells. */
+export interface UsageMeter {
+  plan: Plan;
+  monthlyPrice: number;
+  videoMinutes: MeterLine;
+  clips: MeterLine;
+  /** The fair-use guard, kept in the payload but not the headline. */
+  characters: { used: number; limit: number; allowed: boolean };
+  resetDate: string;
+  watermark: boolean;
+  retentionDays: number | null;
+}
+
 export type ToastType = "success" | "error" | "warning" | "info";
 export interface Toast {
   id: string;

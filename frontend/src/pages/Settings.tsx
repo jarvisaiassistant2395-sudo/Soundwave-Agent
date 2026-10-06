@@ -29,6 +29,7 @@ import { http } from "../lib/api";
 import { cn } from "../lib/cn";
 import { formatNumber } from "../lib/format";
 import { PLANS, type Plan } from "../lib/plans";
+import type { UsageMeter } from "../lib/types";
 import { Button } from "../components/ui/Button";
 import { KokoroSetupNotice } from "../components/KokoroSetupNotice";
 import { TextField } from "../components/ui/TextField";
@@ -239,12 +240,16 @@ type BillingStatus = {
   configured: boolean;
   /** Bought once, never renewed (the Founder lifetime). */
   lifetime?: boolean;
+  /** Subscribed before the plans were repackaged: keeps the old price. */
+  grandfathered?: boolean;
   /** The owner's own build: no payments anywhere (see the desktop editions). */
   personal?: boolean;
   customer: boolean;
   subscription: SubscriptionSummary | null;
   problem?: string;
 };
+
+type UsagePayload = { meter: UsageMeter | null; quota: { used: number; limit: number } };
 
 type LifetimeOffer = {
   available: boolean;
@@ -278,6 +283,8 @@ function BillingTab() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [offer, setOffer] = useState<LifetimeOffer | null>(null);
+  // What this month has actually used, in the units the plans are sold in.
+  const [meter, setMeter] = useState<UsageMeter | null>(null);
   const [cadence, setCadence] = useState<"monthly" | "annual">("monthly");
   const [busy, setBusy] = useState<"checkout" | "portal" | "dev" | null>(null);
   /** Waiting for the person to finish in their browser. */
@@ -294,7 +301,11 @@ function BillingTab() {
 
   const loadBilling = async () => {
     try {
-      const s = await http.get<BillingStatus>("/billing/status");
+      const [s, usage] = await Promise.all([
+        http.get<BillingStatus>("/billing/status"),
+        http.get<UsagePayload>("/user/usage").catch(() => null),
+      ]);
+      if (usage?.meter) setMeter(usage.meter);
       setStatus(s);
       if (s.personal) {
         // Nothing was ever bought or billed in this build, so there is no
@@ -467,11 +478,23 @@ function BillingTab() {
               ) : (
                 <Badge tone="gradient">{planDef.monthlyPrice === 0 ? "Free" : `${money(planDef.monthlyPrice * 100, "usd")}/mo`}</Badge>
               )}
+              {status?.grandfathered && !personal && <Badge tone="gray">Price held</Badge>}
               {sub?.cancelAtPeriodEnd && <Badge tone="gray">Ends {day(sub.currentPeriodEnd)}</Badge>}
             </div>
             <p className="mt-1 text-sm text-gray-400">
-              {formatNumber(used)} / {formatNumber(limit)} characters this month
+              {meter
+                ? `${meter.videoMinutes.used} / ${meter.videoMinutes.limit} minutes of video this month`
+                : `${formatNumber(used)} / ${formatNumber(limit)} characters this month`}
             </p>
+            {meter && (
+              <p className="mt-0.5 text-xs text-gray-500">
+                {meter.clips.limit === null ? `${meter.clips.used} clips · no ceiling` : `${meter.clips.used} / ${meter.clips.limit} clips`}
+                {meter.watermark ? " · clips carry Soundwave's mark" : ""}
+                {meter.retentionDays ? ` · clips expire after ${meter.retentionDays} days` : ""}
+                {" · resets "}
+                {day(meter.resetDate)}
+              </p>
+            )}
             {sub && !sub.cancelAtPeriodEnd && sub.currentPeriodEnd && plan !== "FREE" && (
               <p className="mt-1 text-xs text-gray-500">Renews {day(sub.currentPeriodEnd)}</p>
             )}
@@ -484,6 +507,9 @@ function BillingTab() {
           <div className="flex flex-wrap items-center gap-2">
             {personal && <span className="text-xs text-gray-500">This build has no payments in it — nothing here to buy.</span>}
             {!personal && status?.lifetime && <span className="text-xs text-gray-500">Nothing renews and nothing is owed — this plan is yours for good.</span>}
+            {!personal && status?.grandfathered && !status?.lifetime && (
+              <span className="text-xs text-gray-500">You subscribed before the plans changed, so you keep your price — it stays what it was.</span>
+            )}
             {!personal && !status?.lifetime && configured && nextPlan && (
               <Button size="sm" onClick={() => void upgrade(nextPlan)} loading={busy === "checkout"} disabled={Boolean(waiting)}>
                 Upgrade to {PLANS[nextPlan].name}
@@ -535,8 +561,9 @@ function BillingTab() {
       {personal && (
         <Card title="Your own build" icon={<Sparkles className="h-4 w-4" />}>
           <p className="text-sm text-gray-300">
-            This is the build with no payments in it, installed for your own use. Everything is open — {formatNumber(PLANS.ENTERPRISE.characterLimit)} characters a
-            month, {PLANS.ENTERPRISE.maxResolution} exports, no watermark, cloud projects and API keys — and no card, invoice or subscription exists anywhere in it.
+            This is the build with no payments in it, installed for your own use. Everything is open — {PLANS.ENTERPRISE.videoMinutesPerMonth} minutes of video a
+            month, unlimited clips, {PLANS.ENTERPRISE.maxResolution} exports, no watermark, cloud projects and API keys — and no card, invoice or subscription
+            exists anywhere in it.
           </p>
         </Card>
       )}
@@ -572,8 +599,12 @@ function BillingTab() {
                     </p>
                   </div>
                   <ul className="mt-3 space-y-1 text-xs text-gray-400">
-                    <li>{formatNumber(def.characterLimit)} characters a month</li>
+                    <li>
+                      <span className="font-medium text-gray-200">{def.videoMinutesPerMonth} minutes</span> of video a month
+                    </li>
+                    <li>{def.clipsPerMonth === null ? "Unlimited clips" : `${def.clipsPerMonth} clips a month`}</li>
                     <li>Up to {def.maxResolution}{def.watermark ? "" : " · no watermark"}</li>
+                    {def.clipRetentionDays !== null && <li>Clips kept {def.clipRetentionDays} days</li>}
                     {def.cloudSave && <li>Cloud projects</li>}
                     {def.apiAccess && <li>API access</li>}
                   </ul>

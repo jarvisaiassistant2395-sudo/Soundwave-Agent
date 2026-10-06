@@ -21,7 +21,18 @@ export interface StoredUser {
   stripeSubscriptionId: string | null;
   /** When a Founder lifetime was bought. Its presence is what makes it a lifetime. */
   lifetimeSince?: string | null;
+  /**
+   * When the current subscription began. Absent on subscriptions that predate
+   * this field — which is exactly what makes them grandfathered (see
+   * routes/billing.ts `grandfatheredPlan`).
+   */
+  subscriptionStartedAt?: string | null;
   charactersUsedThisMonth: number;
+  /** Video processed this month (meters/plans): source length for a clipping
+   *  run, finished length for a script-to-short. */
+  videoSecondsUsedThisMonth?: number;
+  /** Clips finished this month. */
+  clipsUsedThisMonth?: number;
   characterResetDate: string;
   totalAudioDurationSeconds: number;
   createdAt: string;
@@ -123,6 +134,9 @@ export interface DataStore {
   /** How many accounts already hold a Founder lifetime (the seat cap). */
   countLifetimeUsers(): Promise<number>;
   updateUser(id: string, patch: Partial<StoredUser>): Promise<StoredUser | null>;
+  /** Every live account. Used by the expiry sweep and by anything that has to
+   *  reason about the whole install (not by request paths). */
+  listUsers(): Promise<StoredUser[]>;
   deleteUserSoft(id: string): Promise<void>;
   countUsers(): Promise<number>;
   // sessions
@@ -274,6 +288,10 @@ export class JsonStore implements DataStore {
   }
   async countUsers(): Promise<number> {
     return this.db.users.filter((u) => !u.deletedAt).length;
+  }
+  async listUsers(): Promise<StoredUser[]> {
+    // The same objects the store mutates — callers must not write to them.
+    return this.db.users.filter((u) => !u.deletedAt);
   }
   async countLifetimeUsers(): Promise<number> {
     return this.db.users.filter((u) => !u.deletedAt && Boolean(u.lifetimeSince)).length;

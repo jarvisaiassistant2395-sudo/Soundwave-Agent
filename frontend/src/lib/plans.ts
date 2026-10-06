@@ -5,6 +5,13 @@ export interface PlanDefinition {
   name: string;
   monthlyPrice: number;
   annualPricePerMonth: number;
+  /** Minutes of video processed per calendar month — the headline number. */
+  videoMinutesPerMonth: number;
+  /** Clips per month; null = no ceiling. */
+  clipsPerMonth: number | null;
+  /** Days a finished clip is kept; null = kept. */
+  clipRetentionDays: number | null;
+  /** The fair-use guard (server side), not the thing being sold. */
   characterLimit: number;
   maxVideoMb: number;
   exportsPerHour: number;
@@ -20,7 +27,10 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     name: "Free",
     monthlyPrice: 0,
     annualPricePerMonth: 0,
-    characterLimit: 10_000,
+    videoMinutesPerMonth: 60,
+    clipsPerMonth: 30,
+    clipRetentionDays: 7,
+    characterLimit: 150_000,
     maxVideoMb: 100,
     exportsPerHour: 2,
     maxResolution: "720p",
@@ -33,7 +43,10 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     name: "Pro",
     monthlyPrice: 15,
     annualPricePerMonth: 12,
-    characterLimit: 200_000,
+    videoMinutesPerMonth: 300,
+    clipsPerMonth: null,
+    clipRetentionDays: null,
+    characterLimit: 1_000_000,
     maxVideoMb: 500,
     exportsPerHour: 20,
     maxResolution: "1080p",
@@ -46,7 +59,10 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     name: "Enterprise",
     monthlyPrice: 39,
     annualPricePerMonth: 31.2,
-    characterLimit: 2_000_000,
+    videoMinutesPerMonth: 1_200,
+    clipsPerMonth: null,
+    clipRetentionDays: null,
+    characterLimit: 5_000_000,
     maxVideoMb: 2048,
     exportsPerHour: 100,
     maxResolution: "4K",

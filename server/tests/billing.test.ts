@@ -546,6 +546,20 @@ describe("the Founder lifetime", () => {
     expect(res.body.lifetime).toBe(true);
   });
 
+  it("tells the browser when an account keeps its old price", async () => {
+    const { user, cookies } = await account("old@example.com");
+    // A subscription from before the repricing: no start date was recorded then.
+    await (await store.getStore()).updateUser(user.id, { plan: "PRO", stripeSubscriptionId: "sub_old" });
+
+    const held = await local(request(app).get("/api/v1/billing/status").set("Cookie", cookies));
+    expect(held.body.grandfathered).toBe(true);
+
+    // A subscription bought today is dated, and pays today's price.
+    await (await store.getStore()).updateUser(user.id, { subscriptionStartedAt: new Date().toISOString() });
+    const fresh = await local(request(app).get("/api/v1/billing/status").set("Cookie", cookies));
+    expect(fresh.body.grandfathered).toBe(false);
+  });
+
   it("can't be switched on through the development route", async () => {
     const { cookies } = await account("devroute@example.com");
     const res = await local(

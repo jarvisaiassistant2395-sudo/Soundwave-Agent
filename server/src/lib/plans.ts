@@ -5,6 +5,17 @@ export interface PlanDefinition {
   name: string;
   monthlyPrice: number; // USD
   annualPricePerMonth: number;
+  /** Minutes of video processed per calendar month — the number on the pricing page. */
+  videoMinutesPerMonth: number;
+  /** Clips made per month; null = no ceiling (Pro and up). */
+  clipsPerMonth: number | null;
+  /** Days a finished clip is kept; null = kept for as long as the app is installed. */
+  clipRetentionDays: number | null;
+  /**
+   * A fair-use guard, not the product: it stops one account from being a whole
+   * agency on someone else's Gemini key. Deliberately generous — nobody should
+   * ever hit it while doing what their plan says they can do.
+   */
   characterLimit: number;
   maxVideoMb: number;
   exportsPerHour: number;
@@ -23,7 +34,12 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     name: "Free",
     monthlyPrice: 0,
     annualPricePerMonth: 0,
-    characterLimit: 10_000,
+    // The same shape as the category: an hour a month, a watermark, and clips
+    // that go away after a week.
+    videoMinutesPerMonth: 60,
+    clipsPerMonth: 30,
+    clipRetentionDays: 7,
+    characterLimit: 150_000,
     maxVideoMb: 100,
     exportsPerHour: 2,
     maxResolution: "720p",
@@ -37,9 +53,14 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   PRO: {
     id: "PRO",
     name: "Pro",
-    monthlyPrice: 12,
-    annualPricePerMonth: 9.6,
-    characterLimit: 200_000,
+    monthlyPrice: 15,
+    annualPricePerMonth: 12,
+    // 300 minutes is exactly Opus Clip's $29 tier — at half the price, with
+    // the assistant, the voice studio and the PC agent included.
+    videoMinutesPerMonth: 300,
+    clipsPerMonth: null,
+    clipRetentionDays: null,
+    characterLimit: 1_000_000,
     maxVideoMb: 500,
     exportsPerHour: 20,
     maxResolution: "1080p",
@@ -55,7 +76,10 @@ export const PLANS: Record<Plan, PlanDefinition> = {
     name: "Enterprise",
     monthlyPrice: 39,
     annualPricePerMonth: 31.2,
-    characterLimit: 2_000_000,
+    videoMinutesPerMonth: 1_200,
+    clipsPerMonth: null,
+    clipRetentionDays: null,
+    characterLimit: 5_000_000,
     maxVideoMb: 2048,
     exportsPerHour: 100,
     maxResolution: "4K",

@@ -739,11 +739,22 @@ State-changing requests require the `X-CSRF-Token` header matching the
 
 | | Free | Pro | Enterprise |
 | --- | --- | --- | --- |
-| Characters / month | 10k | 200k | 2M |
+| Price | $0 | $15/mo ($12/mo billed yearly) | $39/mo |
+| Video processed / month | 60 min | 300 min | 1,200 min |
+| Clips / month | 30, kept 7 days | Unlimited | Unlimited |
 | Max export | 720p · watermark | 1080p | 4K · no watermark |
 | Cloud project save | Local only | ✓ | ✓ |
 | API access | — | — | ✓ |
 | Exports / hour | 2 | 20 | 100 |
+
+There is also a **Founder lifetime** — one payment of $199, everything
+Enterprise gives, capped at the first 100 buyers. It is only possible because a
+user's marginal cost here is their own Gemini key and their own CPU, which is
+the one business model a cloud clipper cannot copy. Subscribers who bought
+before the October 2026 repricing keep the price they signed up at.
+
+The character limits are still there, but as the fair-use guard they always
+were (`server/src/lib/metering.ts`), not as the thing being sold.
 
 The Windows app is built in two editions from one tree (see
 `docs/RELEASING.md`): the sold **Soundwave AI**, and **Soundwave AI — Dev**, the

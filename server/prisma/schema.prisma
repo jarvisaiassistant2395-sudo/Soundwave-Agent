@@ -51,9 +51,15 @@ model User {
   plan                        Plan      @default(FREE)
   // A Founder lifetime: one payment, no renewal. Presence = it was bought.
   lifetimeSince               DateTime?
+  // When the live subscription started; null on subscriptions made before this
+  // was recorded, which is how the old price is recognised (routes/billing.ts).
+  subscriptionStartedAt       DateTime?
   stripeCustomerId            String?
   stripeSubscriptionId        String?
   charactersUsedThisMonth     Int       @default(0)
+  // Metered what-you-buy: minutes of video processed and clips made (lib/metering.ts).
+  videoSecondsUsedThisMonth   Int       @default(0)
+  clipsUsedThisMonth          Int       @default(0)
   characterResetDate          DateTime
   totalAudioDurationSeconds   Float     @default(0)
   createdAt                   DateTime  @default(now())

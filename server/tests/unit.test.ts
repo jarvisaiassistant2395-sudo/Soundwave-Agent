@@ -34,10 +34,19 @@ describe("plans", () => {
     expect(resolutionAllowed("ENTERPRISE", "4K")).toBe(true);
   });
 
-  it("has sensible quotas", () => {
-    expect(PLANS.FREE.characterLimit).toBe(10_000);
-    expect(PLANS.PRO.characterLimit).toBe(200_000);
-    expect(PLANS.ENTERPRISE.characterLimit).toBe(2_000_000);
+  it("sells minutes and clips, with characters as the fair-use guard", () => {
+    expect(PLANS.FREE.videoMinutesPerMonth).toBe(60);
+    expect(PLANS.PRO.videoMinutesPerMonth).toBe(300);
+    expect(PLANS.ENTERPRISE.videoMinutesPerMonth).toBe(1_200);
+    // Free's clips expire and carry the mark; nothing above Free does.
+    expect(PLANS.FREE.clipRetentionDays).toBe(7);
+    expect(PLANS.PRO.clipRetentionDays).toBeNull();
+    expect(PLANS.FREE.watermark).toBe(true);
+    // The guard has to be comfortably above what the minutes allow, or a
+    // person doing exactly what the plan promises would hit it.
+    for (const plan of [PLANS.FREE, PLANS.PRO, PLANS.ENTERPRISE]) {
+      expect(plan.characterLimit).toBeGreaterThanOrEqual(plan.videoMinutesPerMonth * 1_000);
+    }
   });
 });
 

@@ -42,6 +42,7 @@ import { importYouTubeLink } from "./youtubeImport.js";
 import { probeMedia, resolveFfmpegPath, runFfmpegExport, type ExportSettings } from "./ffmpeg.js";
 // How a clip's captions look: the person's own style, or the house default.
 import { captionStyleFor } from "./brand.js";
+import { recordUsage, requireRoom, watermarkFor } from "./metering.js";
 import { STT_SAMPLE_RATE, SttError, encodeWav, resolveWhisper, transcribe, whisperBudgetMs } from "./stt.js";
 import {
   heatWindows,
@@ -215,6 +216,20 @@ function rendererFree(): boolean {
  * in-memory mirror of a small file), because the UI card polls it and the tools
  * ask before they speak.
  */
+/**
+ * The plan in force when a clip was rendered is not stored on the job, so the
+ * answer is asked for at render time — the same moment the person sees the
+ * result. Cached for a few seconds because a run makes several clips.
+ */
+const watermarkCache = new Map<string, { value: boolean; at: number }>();
+async function carriesWatermark(userId: string): Promise<boolean> {
+  const hit = watermarkCache.get(userId);
+  if (hit && Date.now() - hit.at < 15_000) return hit.value;
+  const value = await watermarkFor(userId).catch(() => false);
+  watermarkCache.set(userId, { value, at: Date.now() });
+  return value;
+}
+
 export function clipsBusy(): { busy: boolean; source?: string; queued?: number; waitingFor?: string[] } {
   const view = queueView(loadRunState());
   return {
@@ -1004,7 +1019,9 @@ async function runClips(run: QueuedClips): Promise<void> {
           // ceiling, at 1080p 60fps instead of the old 720p 30fps.
           quality: "medium",
           fps: 60,
-          watermark: false,
+          // Free clips carry the mark; Pro and above are clean. Resolved per
+          // run, so an upgrade applies to the next clip, not the next install.
+          watermark: await carriesWatermark(run.userId),
           audioVolume: 1,
           fadeIn: 0,
           fadeOut: 0.3,
@@ -1137,6 +1154,11 @@ export async function startClipsJob(opts: ClipsOptions): Promise<ClipsStarted> {
   const resolution = opts.resolution === "720p" ? "720p" : "1080p";
   const userId = opts.userId || "agent-local";
 
+  // What this run costs the month: the source's length is what gets processed,
+  // and the person asked for `count` clips. Refused before anything is written,
+  // so an over-plan run never starts and never wastes six minutes of encoding.
+  await requireRoom(userId, { videoSeconds: source.duration, clips: count });
+
   const store = await getStore();
   const state = loadRunState();
   const free = rendererFree();
@@ -1178,6 +1200,9 @@ export async function startClipsJob(opts: ClipsOptions): Promise<ClipsStarted> {
   const clipsAhead = state.waiting.length;
   const landing = landingPosition(state);
   const next = enqueue(state, run);
+  // Counted here rather than at the end: the source video has been taken on,
+  // and a person who closes the app mid-render still used the month's minutes.
+  await recordUsage(userId, { videoSeconds: source.duration, clips: count }).catch(() => undefined);
   if (!next) {
     // The queue is full: undo the jobs rather than leave them waiting forever.
     for (const id of jobIds) {

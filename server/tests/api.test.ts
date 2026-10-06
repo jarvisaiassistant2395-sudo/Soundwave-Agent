@@ -2,11 +2,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import fs from "node:fs";
 import { createApp } from "../src/app.js";
+import { PLANS } from "../src/lib/plans.js";
 import { config } from "../src/config.js";
 import { JsonStore, setStoreForTests } from "../src/lib/store.js";
 import { createUserSession, signAccessToken } from "../src/lib/auth.js";
 
 let app: ReturnType<typeof createApp>;
+let store: JsonStore;
 let cookie = "";
 
 function csrfFromCookies(cookies: string): string {
@@ -16,7 +18,7 @@ function csrfFromCookies(cookies: string): string {
 
 beforeAll(async () => {
   fs.rmSync("/tmp/soundwave-test-data", { recursive: true, force: true });
-  const store = new JsonStore();
+  store = new JsonStore();
   await store.init();
   setStoreForTests(store);
   app = createApp();
@@ -53,17 +55,23 @@ describe("the account", () => {
 });
 
 describe("quota enforcement", () => {
-  it("reports usage and enforces the FREE 10k limit", async () => {
+  it("reports usage and stops at the plan's fair-use guard", async () => {
     const csrf = csrfFromCookies(cookie);
+    const me = await store.findUserByEmail("flow@example.com");
+    // An account that has been narrating all month: 500 characters short of
+    // Free's guard (lib/plans.ts). The counter is seeded because a single
+    // report is bounded well below the monthly guard by design.
+    await store.updateUser(me!.id, { charactersUsedThisMonth: PLANS.FREE.characterLimit - 500 });
+
     const res = await request(app)
       .post("/api/v1/tts/usage")
       .set("Cookie", cookie)
       .set("X-CSRF-Token", csrf)
-      .send({ voiceId: "af_heart", characterCount: 9_500, audioDurationSeconds: 120 });
+      .send({ voiceId: "af_heart", characterCount: 400, audioDurationSeconds: 120 });
     expect(res.status).toBe(200);
     expect(res.body.allowed).toBe(true);
 
-    // Exceeds the remaining 500.
+    // Exceeds the remaining 100.
     const over = await request(app)
       .post("/api/v1/tts/usage")
       .set("Cookie", cookie)
@@ -72,6 +80,12 @@ describe("quota enforcement", () => {
     expect(over.status).toBe(403);
     expect(over.body.code).toBe("QUOTA_EXCEEDED");
     expect(over.body.allowed).toBe(false);
+
+    // …and the account page shows how much of the month is left.
+    const usage = await request(app).get("/api/v1/user/usage").set("Cookie", cookie);
+    expect(usage.status).toBe(200);
+    expect(usage.body.quota.used).toBe(PLANS.FREE.characterLimit - 100);
+    expect(usage.body.meter.videoMinutes.limit).toBe(PLANS.FREE.videoMinutesPerMonth);
   });
 
   it("rejects a usage report without CSRF token", async () => {

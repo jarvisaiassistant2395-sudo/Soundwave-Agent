@@ -9,6 +9,7 @@ import { getStore } from "../lib/store.js";
 import { publicUser } from "../lib/auth.js";
 import { PLANS } from "../lib/plans.js";
 import { getQuotaFor } from "./tts.js";
+import { meterFor } from "../lib/metering.js";
 import { config } from "../config.js";
 
 const router = Router();
@@ -58,9 +59,13 @@ router.get("/usage", requireAuth, async (req, res, next) => {
   try {
     const store = await getStore();
     const quota = await getQuotaFor(req.user!.id);
+    const meter = await meterFor(req.user!.id).catch(() => null);
     const logs = await store.listUsageLogs(req.user!.id, 50);
     res.json({
       quota,
+      // Minutes of video processed and clips made this month — the numbers the
+      // pricing page sells, so the account page has to show the same two.
+      meter,
       totalAudioDurationSeconds: req.user!.totalAudioDurationSeconds,
       recentLogs: logs.map((l) => ({
         characterCount: l.characterCount,

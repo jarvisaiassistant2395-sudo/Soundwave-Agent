@@ -14,7 +14,17 @@ function int(key: string, fallback: number): number {
   return Number.isFinite(v) ? v : fallback;
 }
 
+/**
+ * The day the plans were repackaged (Pro $12 → $15, minutes instead of
+ * characters). Subscriptions that started before it keep the price they signed
+ * up at — Stripe keeps billing them, and nothing here ever touches their
+ * subscription. New subscriptions record the day they started, so they can
+ * never be mistaken for old ones.
+ */
+const pricingChangedAt = process.env.PRICING_CHANGED_AT || "2026-10-06";
+
 export const config = {
+  pricingChangedAt,
   env: env.NODE_ENV ?? "development",
   isProd: (env.NODE_ENV ?? "development") === "production",
   // Which build this is (lib/edition.ts): "retail" sells plans, "personal" is

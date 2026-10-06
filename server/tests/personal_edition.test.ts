@@ -124,10 +124,10 @@ describe("everything unlocked", () => {
     const quota = await local(request(app).get("/api/v1/tts/quota").set("Cookie", cookies));
     expect(quota.status).toBe(200);
     expect(quota.body.plan).toBe("ENTERPRISE");
-    expect(quota.body.limit).toBe(2_000_000);
+    expect(quota.body.limit).toBe(5_000_000);
 
     const usage = await local(request(app).get("/api/v1/user/usage").set("Cookie", cookies));
-    expect(usage.body.quota.limit).toBe(2_000_000);
+    expect(usage.body.quota.limit).toBe(5_000_000);
     expect(usage.body.quota.plan).toBe("ENTERPRISE");
   });
 

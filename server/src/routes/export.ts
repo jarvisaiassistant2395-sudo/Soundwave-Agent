@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { resolveJobVideoFile } from "../lib/jobFiles.js";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
@@ -22,18 +23,6 @@ export function emitJob(jobId: string, payload: Record<string, unknown>): void {
 export { jobEvents };
 
 /** The rendered file of a finished job (also served to the phone companion), or null if it's gone. */
-export function resolveJobVideoFile(job: { id: string; settings?: unknown }): { path: string; ext: ".mp4" | ".webm" } | null {
-  const ext = (job.settings as { format?: string } | null | undefined)?.format === "webm" ? ".webm" : ".mp4";
-  const candidates: Array<[string, ".mp4" | ".webm"]> = [
-    [path.join(config.uploadsDir, "jobs", `${job.id}${ext}`), ext],
-    [path.join(config.uploadsDir, `soundwave_short_${job.id}${ext}`), ext],
-    [path.join(config.uploadsDir, `${job.id}${ext}`), ext],
-    [path.join(config.uploadsDir, "jobs", `${job.id}.mp4`), ".mp4"],
-    [path.join(config.uploadsDir, `soundwave_short_${job.id}.mp4`), ".mp4"],
-  ];
-  const hit = candidates.find(([f]) => fs.existsSync(f));
-  return hit ? { path: hit[0], ext: hit[1] } : null;
-}
 
 function isLocalAutomationUser(uid?: string | null): boolean {
   if (!uid) return false;
