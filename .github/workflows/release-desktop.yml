@@ -1,0 +1,346 @@
+# Build the sellable Windows desktop app on a real Windows VM.
+# Trigger: push a tag (v*) to build AND publish a GitHub Release. Pushing app
+#          changes to any branch builds test installers too — uploaded as
+#          workflow artifacts only (Actions run page), nothing is published.
+#          Manual runs work once this file is on the default branch.
+# Produces: SoundwaveAI-Setup-<version>.exe (NSIS installer)
+#           SoundwaveAI-Portable-<version>.exe (single-file portable app)
+#           (both include ffmpeg, yt-dlp and the whisper.cpp speech engine)
+# Signing:  set repo secrets CSC_LINK + CSC_KEY_PASSWORD (base64 .pfx) and
+#           every build is signed automatically — see docs/RELEASING.md.
+name: Release Desktop
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["**"]
+    # Branch pushes only build when the app changed (GitHub ignores path
+    # filters for tag pushes, so every v* tag still builds).
+    paths:
+      - "server/**"
+      - "frontend/**"
+      - "desktop/**"
+      - "scripts/**"
+      - "THIRD-PARTY-NOTICES.txt"
+      - "voiceclone/**"
+      - ".github/workflows/release-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A newer push supersedes an unfinished branch build; tag builds always finish.
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      # One command per step: Windows' pwsh only reports a multi-line script's
+      # LAST exit code, which silently swallowed failing tests before.
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Typecheck backend
+        working-directory: server
+        run: npm run typecheck
+
+      - name: Test backend
+        working-directory: server
+        shell: pwsh
+        run: |
+          # GitHub starts pwsh steps with $ErrorActionPreference = 'stop', which
+          # turns a native command's stderr into a terminating error — a passing
+          # suite that warns would fail the step and lose the log. The exit code
+          # below is vitest's, and it is the one that decides the step.
+          $ErrorActionPreference = "Continue"
+          npm test 2>&1 | Tee-Object -FilePath backend-tests.log
+          exit $LASTEXITCODE
+
+      # A failed run's raw log lives on a host that a person (or an agent)
+      # reading the run from afar may not be able to open, and "Process
+      # completed with exit code 1" names nothing at all. This turns the log
+      # into annotations, the one place GitHub always shows whoever is reading
+      # the run: which test failed, and why.
+      - name: Name the failing backend tests
+        if: failure()
+        working-directory: server
+        shell: pwsh
+        run: |
+          if (-not (Test-Path backend-tests.log)) {
+            Write-Host "::error title=Backend tests::the tests failed before writing a log"
+            exit 0
+          }
+          $all = @(Get-Content backend-tests.log)
+          # The failure markers come first, and they are searched for before
+          # anything else matches: the catch-all pattern this step used to have
+          # matched prose too ("…the end-to-end tests are skipped"), so the
+          # 30-line window a reader sees filled up with passing tests' noise
+          # while the actual failure sat further down the log. Built from char
+          # codes so the marks survive any encoding: × and ❯ are vitest's, →
+          # is its "why" line.
+          $marks = [string][char]0x00D7 + "|" + [string][char]0x276F + "|" + [string][char]0x2192 + "|FAIL|AssertionError|Error:"
+          $named = @($all | Select-String -CaseSensitive -Pattern $marks | Select-Object -First 20)
+          if ($named.Count -eq 0) { $named = @($all | Select-String -CaseSensitive -Pattern 'Test Files|Tests ' | Select-Object -First 10) }
+          if ($named.Count -eq 0) { $named = @($all | Select-Object -Last 30) }
+          foreach ($line in $named) {
+            $text = $line.ToString().Trim() -replace '%', '%25'
+            if ($text.Length -gt 300) { $text = $text.Substring(0, 300) }
+            if ($text) { Write-Host "::error title=Backend tests::$text" }
+          }
+          exit 0
+
+      # The agent's Soundwave voices come from Microsoft's live Edge TTS
+      # service. Check them from a real Windows machine on every build —
+      # non-blocking (a service hiccup shouldn't stop a build), but any
+      # failure shows up as an annotation on the run.
+      - name: Check the Soundwave voices (live Microsoft Edge TTS)
+        working-directory: server
+        continue-on-error: true
+        run: npx tsx scripts/edge-tts-smoke.ts
+
+      - name: Build backend
+        working-directory: server
+        run: npm run build
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend (React → dist)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Fetch runtime binaries (ffmpeg + yt-dlp)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop/bin | Out-Null
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-extract -Force
+          $ff = Get-ChildItem -Recurse -Filter ffmpeg.exe ffmpeg-extract | Select-Object -First 1
+          if (-not $ff) { throw "ffmpeg.exe not found in essentials zip" }
+          Copy-Item $ff.FullName desktop/bin/ffmpeg.exe -Force
+          # yt-dlp from the nightly channel — YouTube fixes land there first and
+          # yt-dlp recommends it for regular users; stable is the fallback. The
+          # app keeps its user-data copy updated after install as well.
+          $ytdlpSources = @(
+            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe",
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+          )
+          $gotYtDlp = $false
+          foreach ($src in $ytdlpSources) {
+            try {
+              Invoke-WebRequest -Uri $src -OutFile desktop/bin/yt-dlp.exe
+              $gotYtDlp = $true
+              break
+            } catch {
+              Write-Warning "yt-dlp download failed from ${src}: $_"
+            }
+          }
+          if (-not $gotYtDlp) { throw "could not download yt-dlp.exe" }
+          Write-Host "yt-dlp $(& desktop/bin/yt-dlp.exe --version)"
+          # ffmpeg is GPLv3: its licence text and a written offer of source must
+          # ship with it. Written here, immediately, so the licence audit step
+          # below (and the packaged app) never sees the binary without its paper.
+          node scripts/write-binary-licenses.mjs
+          Get-ChildItem desktop/bin | Format-Table Name, Length
+
+      # Voice input: whisper.cpp's official Windows build (it picks the best
+      # CPU code path at runtime) + the English base model, both MIT licensed.
+      # Speech is recognized on the customer's PC — nothing is uploaded.
+      # The caption font (assets/fonts, Inter, OFL-1.1) travels with the app in
+      # bin/fonts, where libass loads it from and where the licence audit
+      # expects its OFL text. Copied here, before the audit, so a bundle that
+      # dropped the font or its licence fails the build instead of shipping.
+      - name: Stage the caption font
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force desktop/bin/fonts | Out-Null
+          Copy-Item assets/fonts/* desktop/bin/fonts/ -Force
+          Get-ChildItem desktop/bin/fonts | Select-Object Name, Length
+
+      - name: Fetch the speech engine (whisper.cpp + English model)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $tag = "v1.9.2"
+          $zipSha256 = "49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a"
+          $model = "ggml-base.en-q5_1.bin"
+          $dest = "desktop/bin/whisper"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/ggml-org/whisper.cpp/releases/download/$tag/whisper-bin-x64.zip" -OutFile whisper.zip
+          $zipHash = (Get-FileHash whisper.zip -Algorithm SHA256).Hash.ToLower()
+          if ($zipHash -ne $zipSha256) { throw "whisper-bin-x64.zip checksum mismatch: $zipHash" }
+          Expand-Archive whisper.zip -DestinationPath whisper-extract -Force
+          $cli = Get-ChildItem -Recurse -Filter whisper-cli.exe whisper-extract | Select-Object -First 1
+          if (-not $cli) { throw "whisper-cli.exe not found in whisper-bin-x64.zip" }
+          Copy-Item $cli.FullName $dest -Force
+          # whisper.dll + ggml*.dll (incl. every CPU variant); SDL2 is only for the mic demos.
+          # (The Microsoft C++ runtime DLLs they import are added by the next step.)
+          Get-ChildItem $cli.DirectoryName -Filter *.dll | Where-Object { $_.Name -ne "SDL2.dll" } | Copy-Item -Destination $dest -Force
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ggml-org/whisper.cpp/$tag/LICENSE" -OutFile "$dest/LICENSE-whisper.cpp.txt"
+          Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model" -OutFile "$dest/$model"
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path "$dest/$model"))
+          if ($bytes.Length -lt 40MB -or [System.Text.Encoding]::ASCII.GetString($bytes, 0, 4) -ne "lmgg") { throw "$model doesn't look like a ggml model ($($bytes.Length) bytes)" }
+          $modelSha = (Get-FileHash "$dest/$model" -Algorithm SHA256).Hash.ToLower()
+          $expected = $null
+          try {
+            $entry = Invoke-RestMethod "https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main" | ForEach-Object { $_ } | Where-Object { $_.path -eq $model }
+            $expected = $entry.lfs.oid
+          } catch {
+            Write-Warning "couldn't cross-check the model checksum: $_"
+          }
+          if ($expected -and $expected -ne $modelSha) { throw "$model checksum mismatch: $modelSha vs $expected" }
+          Write-Host "model sha256 $modelSha$(if ($expected) { ' (matches Hugging Face)' })"
+          # A real recording for the voice-input tests (not shipped in the app).
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ggml-org/whisper.cpp/$tag/samples/jfk.wav" -OutFile desktop/jfk.wav
+          Get-ChildItem $dest | Format-Table Name, Length
+
+      # Copies the Microsoft C++ runtime DLLs the engine imports next to it
+      # (app-local), then fails if anything else it needs isn't Windows itself.
+      - name: Check the speech engine runs on a clean PC (every DLL it needs ships with it)
+        working-directory: desktop
+        run: node check-dlls.mjs bin/whisper --copy-runtime-from "$env:WINDIR\System32"
+
+      - name: Install desktop tooling (Electron + electron-builder)
+        working-directory: desktop
+        run: npm ci
+
+      - name: Test the desktop shell's helpers (settings, voice bar placement, DLL gate)
+        working-directory: desktop
+        run: npm test
+
+      # Optional, one-time setup for the shop: create ONE Google OAuth client
+      # (type "Desktop app") for Soundwave itself and save it as the repository
+      # secrets SOUNDWAVE_YOUTUBE_CLIENT_ID / SOUNDWAVE_YOUTUBE_CLIENT_SECRET.
+      # Then customers press "Connect YouTube" once and are done — no Google
+      # Cloud project, no key pasting. Without the secrets this step says so and
+      # the app keeps the honest "paste your own client" path.
+      - name: Bake the one-click YouTube client (only when the secret is set)
+        shell: pwsh
+        env:
+          YT_CLIENT_ID: ${{ secrets.SOUNDWAVE_YOUTUBE_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.SOUNDWAVE_YOUTUBE_CLIENT_SECRET }}
+        run: |
+          if (-not $env:YT_CLIENT_ID -or -not $env:YT_CLIENT_SECRET) {
+            Write-Host "No SOUNDWAVE_YOUTUBE_CLIENT_ID/SECRET set - Connect YouTube will ask for the person's own Google client."
+            exit 0
+          }
+          New-Item -ItemType Directory -Force desktop/config | Out-Null
+          @{ client_id = $env:YT_CLIENT_ID; client_secret = $env:YT_CLIENT_SECRET } |
+            ConvertTo-Json | Set-Content -Encoding utf8 desktop/config/youtube-client.json
+          Write-Host "Baked Soundwave's own Google client: Connect YouTube is one press in this build."
+
+      # The build refuses to ship a component it may not ship (copyleft inside our
+      # code, a non-commercial model or asset, a bundled program without its
+      # licence text), and refreshes THIRD-PARTY-NOTICES.txt from the real trees
+      # rather than from anyone's memory. See scripts/license-audit.mjs.
+      - name: Audit the licences of everything in the installer
+        run: node scripts/license-audit.mjs --write
+
+      - name: Assemble packaged app
+        working-directory: desktop
+        run: node assemble.mjs
+
+      - name: Smoke-test the assembled app on real Windows
+        working-directory: desktop
+        run: node smoke.mjs
+
+      - name: Build installers (NSIS setup + portable)
+        working-directory: desktop
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --publish never
+
+      # yt-dlp's JavaScript runtime (YouTube challenges) is the app binary
+      # itself running as Node — prove the packaged exe can do that.
+      - name: Verify yt-dlp can use the packaged app as its JavaScript runtime
+        working-directory: desktop
+        run: node verify-runtime.mjs
+
+      # Artifacts share the repo's Actions storage quota; when it is full the
+      # upload fails, but the installers still go out through the release below.
+      - name: Upload installer artifacts
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: soundwave-ai-windows
+          path: desktop/release/*.exe
+          # The installer is ~450 MB; keep runs short-lived so the repo's
+          # Actions storage doesn't fill up again (the old account ran out).
+          retention-days: 7
+          if-no-files-found: error
+
+      # Drive the packaged app like a person: fake microphone → the Command
+      # Center's mic and the Ctrl+Shift+Space voice bar → bundled whisper.cpp →
+      # the agent; tray + close-to-tray; the preload bridge.
+      - name: Install the end-to-end test driver (Playwright for Electron)
+        working-directory: desktop
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.63.0
+
+      # The run turns off the two heavy first-run/background jobs itself (the
+      # managed voice install and the Shorts trends scan): both are covered by
+      # their own tests and workflows, and on a two-core runner they starved the
+      # bundled whisper (run 37398031986). See the launch env in desktop/e2e.mjs.
+      - name: End-to-end test of the packaged app (voice input, voice bar, tray)
+        working-directory: desktop
+        run: node e2e.mjs
+
+      - name: Upload end-to-end screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-e2e-screenshots
+          path: desktop/e2e-shots/*.png
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Attach installers to the GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $exes = (Get-ChildItem desktop/release/*.exe).FullName
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:GITHUB_REF_NAME $exes --title "Soundwave AI $env:GITHUB_REF_NAME" --generate-notes
+          } else {
+            gh release upload $env:GITHUB_REF_NAME $exes --clobber
+          }
+
+      # Branch builds: a rolling pre-release (doesn't count against the Actions
+      # artifact quota), recreated each time so it always holds the latest build.
+      - name: Publish installers to the "desktop-build" pre-release (branch builds)
+        if: startsWith(github.ref, 'refs/heads/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "desktop-build"
+          $exes = (Get-ChildItem desktop/release/*.exe).FullName
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          git push origin ":refs/tags/$tag" 2>$null
+          $global:LASTEXITCODE = 0
+          $short = $env:GITHUB_SHA.Substring(0, 7)
+          gh release create $tag $exes --target $env:GITHUB_SHA --prerelease --title "Soundwave AI desktop $version (latest build)" --notes "Built from $env:GITHUB_REF_NAME @ $short. Windows installer (setup) and portable exe."
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          Write-Host "::notice title=Desktop published::$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/tag/$tag"

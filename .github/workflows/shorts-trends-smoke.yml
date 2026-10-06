@@ -1,0 +1,33 @@
+name: Shorts trends live check
+
+# The trend tracker reads YouTube's search through YouTube.js. YouTube changes
+# its layout now and then; this runs a real scan so a break shows up here
+# instead of as an empty Trends card. Never blocks a release.
+on:
+  push:
+    paths:
+      - "server/src/lib/shortsTrends.ts"
+      - "server/src/lib/trends.ts"
+      - "server/package.json"
+      - "server/scripts/shorts-smoke.ts"
+      - ".github/workflows/shorts-trends-smoke.yml"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsx scripts/shorts-smoke.ts

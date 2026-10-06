@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Capacitor (SystemBars, insetsHandling "css") injects --safe-area-inset-*;
+   without viewport-fit=cover they're 0 and the WebView already sits between
+   the status bar and the navigation bar / keyboard. */
+:root {
+  color-scheme: dark;
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  background: #000000;
+  color: #f3f4f6;
+  font-family: Inter, system-ui, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Text people may want to copy. */
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pt-safe {
+  padding-top: var(--sat);
+}
+.pb-safe {
+  padding-bottom: var(--sab);
+}
+#root {
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+  box-sizing: border-box;
+}
+
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+button:focus,
+a:focus,
+textarea:focus,
+input:focus {
+  outline: none;
+}
+button:focus-visible,
+a:focus-visible {
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.55);
+}
+
+/* The mic button while listening */
+@keyframes sw-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+.sw-ring::before,
+.sw-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgba(99, 102, 241, 0.45);
+  animation: sw-ring 1.6s ease-out infinite;
+}
+.sw-ring::after {
+  animation-delay: 0.8s;
+}
+
+@keyframes sw-dots {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+.sw-dots span {
+  animation: sw-dots 1.2s infinite ease-in-out;
+}
+.sw-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.sw-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}

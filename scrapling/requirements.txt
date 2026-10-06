@@ -1,0 +1,22 @@
+# Soundwave's local page reader — the Scrapling sidecar
+#
+# Scrapling (BSD-3-Clause) fetches pages the plain HTTP fetch can't: it speaks
+# with a real browser's TLS fingerprint (curl_cffi, MIT) and, when the heavy
+# optional extra is installed, drives a stealth browser (Camoufox, MPL-2.0).
+# Everything runs on this machine — nothing about the page leaves it.
+#
+#   python3 -m pip install -r requirements.txt      # the fast path
+#   ./install.sh                                     # + this file, in a venv
+#
+# The stealth browser is a separate, much larger download and is NOT installed
+# here on purpose — `scrapling install` (or `python3 -m camoufox fetch`) fetches
+# it if (and only if) the person wants the hard cases. Without it the service
+# still works; it just says so instead of pretending.
+# `[fetchers]` is not optional: plain `scrapling` installs the parsers but its
+# fetchers import playwright/patchright/msgspec, so `from scrapling.fetchers
+# import Fetcher` raises ModuleNotFoundError on a bare install (checked by
+# installing both ways on 2026-10-04). No browser binaries come with it — those
+# are `python3 -m scrapling install`, and only for the stealth path.
+scrapling[fetchers]>=0.4.15,<0.5
+fastapi>=0.110
+uvicorn>=0.27

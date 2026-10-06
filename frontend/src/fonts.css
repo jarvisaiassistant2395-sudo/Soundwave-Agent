@@ -1,0 +1,35 @@
+/* ── The app's own fonts, self-hosted ────────────────────────────────────────
+   Soundwave is a desktop app: it has to look right on a PC that is offline,
+   behind a company proxy, or on a hotel Wi-Fi. So the UI text must not depend on
+   a font CDN. It used to link Google's stylesheet
+   (fonts.googleapis.com/css2?family=Inter…), which is a *render-blocking*
+   third-party request: while it hangs, Chromium's `load` event never fires (CI
+   caught exactly that — `page.reload` timed out with the page already painted),
+   and on a blocked network the app waits on Google to draw its first pixel.
+
+   These are the same families, the same weights the design uses, shipped in the
+   installer by @fontsource (Inter and JetBrains Mono, both SIL OFL-1.1 — see
+   THIRD-PARTY-NOTICES.txt). Only the weights the UI actually uses (400/500/600/
+   700/800) and only the Latin subsets are imported, so the installer carries
+   ~400 KB instead of a network dependency. `latin-ext` is not optional: Serbian
+   place names in the briefing (“Kruševac”) need š/ć/č/ž/đ.
+
+   font-display is `swap` (set by the packages): text paints immediately in the
+   fallback stack from tailwind.config.js and swaps when the font is there. */
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-700.css";
+@import "@fontsource/inter/latin-800.css";
+@import "@fontsource/inter/latin-ext-400.css";
+@import "@fontsource/inter/latin-ext-500.css";
+@import "@fontsource/inter/latin-ext-600.css";
+@import "@fontsource/inter/latin-ext-700.css";
+@import "@fontsource/inter/latin-ext-800.css";
+
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+@import "@fontsource/jetbrains-mono/latin-600.css";
+@import "@fontsource/jetbrains-mono/latin-ext-400.css";
+@import "@fontsource/jetbrains-mono/latin-ext-500.css";
+@import "@fontsource/jetbrains-mono/latin-ext-600.css";

@@ -1,0 +1,3 @@
+# Soundwave AI Python agent dependencies (+ yt-dlp, used by the YouTube link importer)
+yt-dlp>=2024.12.13
+requests>=2.31.0

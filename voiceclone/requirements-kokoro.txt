@@ -1,0 +1,28 @@
+# Minimal packages for the desktop-managed local-voice service:
+# Kokoro narration + MOSS-TTS-Nano ONNX voice cloning. Chatterbox is not
+# downloaded by the packaged first-run setup. MOSS runtime source and ONNX
+# weights are fetched separately from pinned upstream revisions.
+# CPU PyTorch 2.7.0 and matching Torchaudio are installed first by the desktop
+# manager. Kokoro itself is installed separately with --no-deps: its [en] extra
+# pulls GPL phonemizer/espeak-ng, which Soundwave deliberately does not use.
+fastapi
+huggingface-hub
+misaki
+numpy
+num2words
+python-multipart
+# loguru — MIT. `kokoro` declares it and kokoro/model.py imports it at module
+# level; because Kokoro is installed with --no-deps (see the note at the top of
+# voiceclone/requirements.txt), pip never brings it in, and the service used to
+# die with "ModuleNotFoundError: No module named 'loguru'" only after setup had
+# reported success. Listed here explicitly; voiceclone/preflight.py fails the
+# setup if it (or anything else the service imports) is ever missing again.
+loguru>=0.7.2,<1
+spacy
+# Use the Windows certificate store (antivirus HTTPS scanning, company proxies)
+# for model downloads, like the browser does. MIT.
+truststore>=0.9
+transformers==4.57.1
+onnxruntime>=1.20.0,<2
+sentencepiece>=0.1.99,<1
+uvicorn

@@ -1,0 +1,174 @@
+// Soundwave AI — Prisma schema
+// Production target: PostgreSQL. (The development/demo build runs an embedded
+// store; see server/src/lib/store.ts — the schema below is the source of truth
+// for the PostgreSQL deployment, deployed with `prisma migrate deploy`.)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum ProjectType {
+  TTS
+  SUBTITLE
+  VIDEO
+}
+
+enum ProjectStatus {
+  DRAFT
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum StorageType {
+  LOCAL
+  CLOUD
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id                          String    @id @default(uuid())
+  email                       String    @unique
+  emailVerified               Boolean   @default(false)
+  emailVerificationToken      String?
+  emailVerificationExpires    DateTime?
+  passwordHash                String? // null for OAuth-only users
+  passwordResetToken          String?
+  passwordResetExpires        DateTime?
+  name                        String
+  avatarUrl                   String?
+  plan                        Plan      @default(FREE)
+  stripeCustomerId            String?
+  stripeSubscriptionId        String?
+  charactersUsedThisMonth     Int       @default(0)
+  characterResetDate          DateTime
+  totalAudioDurationSeconds   Float     @default(0)
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  deletedAt                   DateTime? // soft delete
+  sessions                    Session[]
+  projects                    Project[]
+  usageLogs                   TTSUsageLog[]
+  exportJobs                  ExportJob[]
+  apiKeys                     ApiKey[]
+  invoices                    Invoice[]
+
+  @@index([email])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String // hashed
+  deviceInfo   String
+  ipAddress    String
+  lastActiveAt DateTime @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([refreshToken])
+}
+
+model Project {
+  id               String        @id @default(uuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  type             ProjectType
+  textContent      String
+  voiceId          String
+  voiceSettings    Json // speed, pitch, volume
+  characterCount   Int
+  subtitleData     Json? // [{start, end, text}]
+  subtitleStyle    Json? // all styling properties
+  videoBackgroundUrl String?
+  audioUrl         String?
+  exportedVideoUrl String?
+  duration         Float?
+  status           ProjectStatus @default(DRAFT)
+  storageType      StorageType   @default(LOCAL)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model TTSUsageLog {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterCount      Int
+  voiceId             String
+  audioDurationSeconds Float
+  generatedAt         DateTime // client-reported timestamp
+  createdAt           DateTime @default(now()) // server-received timestamp
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model ExportJob {
+  id           String     @id @default(uuid())
+  projectId    String?
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       JobStatus  @default(QUEUED)
+  progress     Int        @default(0)
+  settings     Json // resolution, format, quality, fps
+  outputUrl    String?
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([userId])
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  keyHash    String // store hashed, display prefix only
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId])
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeInvoiceId String
+  amount          Int // cents
+  currency        String
+  status          String
+  pdfUrl          String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+}

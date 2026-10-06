@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark from the first frame: no white flash before the app page loads. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/sw_navy</item>
+        <item name="colorPrimaryDark">@color/sw_navy</item>
+        <item name="colorAccent">@color/sw_violet</item>
+        <item name="android:windowBackground">@color/sw_navy</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/sw_navy</item>
+        <item name="android:statusBarColor">@color/sw_navy</item>
+        <item name="android:navigationBarColor">@color/sw_navy</item>
+    </style>
+
+    <!-- Launch: the Soundwave icon on navy (Android 12+ system splash; older: the window background). -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/sw_navy</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:windowBackground">@drawable/splash</item>
+    </style>
+</resources>

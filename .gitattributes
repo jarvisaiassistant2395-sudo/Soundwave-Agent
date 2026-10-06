@@ -1,0 +1,8 @@
+# Windows batch files need CRLF line endings: with LF-only endings cmd.exe can
+# fail to find "goto"/"call" labels. Git keeps LF in the repository and writes
+# CRLF on checkout and into GitHub's "Download ZIP" archives.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must keep LF, or bash trips over the carriage returns.
+*.sh text eol=lf
