@@ -55,7 +55,8 @@ param(
   [switch]$KeepGoing,           # don't stop at the first failure (for diagnosis)
   [string]$YouTubeClientId = "",     # optional: bakes one-press "Connect YouTube"
   [string]$YouTubeClientSecret = "",
-  [string]$PublishTag = ""      # optional: upload the installers to this Release tag
+  [string]$PublishTag = "",     # optional: upload the installers to this Release tag
+  [string]$FfmpegUrl = ""       # optional: a different Windows ffmpeg zip, if gyan.dev is blocked
 )
 
 $ErrorActionPreference = "Stop"
@@ -100,17 +101,74 @@ function Invoke-Stage([string]$Name, [string]$Where, [scriptblock]$Block) {
 }
 
 # Download to a file, with retries - a home connection blips more than CI does.
+#
+# Streamed by hand rather than with Invoke-WebRequest, for one blunt reason: on
+# Windows PowerShell that cmdlet writes nothing at all until the whole file has
+# arrived, so a 100 MB download sits there looking hung with no way to tell it
+# from a dead connection. This one shows a moving line - percent, megabytes,
+# speed - and keeps a heartbeat going every couple of seconds so a slow mirror
+# reads as slow rather than broken.
 function Get-Url([string]$Url, [string]$Out) {
   for ($attempt = 1; $attempt -le 3; $attempt++) {
     try {
-      Invoke-WebRequest -Uri $Url -OutFile $Out -UseBasicParsing -TimeoutSec 300
+      Get-UrlOnce $Url $Out
       return
     } catch {
       if ($attempt -eq 3) { throw "couldn't download $Url - $($_.Exception.Message)" }
-      Warn "attempt $attempt failed for $Url; retrying"
+      Warn "attempt $attempt failed for $Url - $($_.Exception.Message)"
       Start-Sleep -Seconds 3
     }
   }
+}
+
+function Get-UrlOnce([string]$Url, [string]$Out) {
+  $request = [System.Net.WebRequest]::Create($Url)
+  if ($request -is [System.Net.HttpWebRequest]) {
+    $request.AllowAutoRedirect = $true
+    $request.UserAgent = "Soundwave-build"
+    $request.Timeout = 60000            # for the response headers, not the download
+    $request.ReadWriteTimeout = 120000  # per read: a slow-but-moving link survives
+  }
+  $response = $request.GetResponse()
+  $in = $response.GetResponseStream()
+  $out = [System.IO.File]::Create($Out)
+  $buffer = New-Object byte[] 262144
+  $total = $response.ContentLength
+  $done = 0
+  $started = Get-Date
+  $lastShown = -1
+  $lastAt = $started
+  try {
+    while ($true) {
+      $read = $in.Read($buffer, 0, $buffer.Length)
+      if ($read -le 0) { break }
+      $out.Write($buffer, 0, $read)
+      $done += $read
+      $now = Get-Date
+      $pct = if ($total -gt 0) { [int](100 * $done / $total) } else { -1 }
+      if (($pct -ne $lastShown) -or (($now - $lastAt).TotalSeconds -ge 2)) {
+        $lastShown = $pct
+        $lastAt = $now
+        $mb = [math]::Round($done / 1MB, 1)
+        $rate = $done / 1MB / [math]::Max(($now - $started).TotalSeconds, 0.001)
+        if ($total -gt 0) {
+          Write-Host ("`r    {0,3}%  {1,7:N1} of {2,7:N1} MB  {3,5:N1} MB/s " -f $pct, $mb, ($total / 1MB), $rate) -NoNewline -ForegroundColor DarkGray
+        } else {
+          Write-Host ("`r    {0,7:N1} MB  {1,5:N1} MB/s " -f $mb, $rate) -NoNewline -ForegroundColor DarkGray
+        }
+      }
+    }
+  } finally {
+    $out.Close()
+    $in.Close()
+    $response.Close()
+    Write-Host ""
+  }
+  $size = (Get-Item $Out).Length
+  if ($size -le 0) { throw "downloaded nothing" }
+  if ($total -gt 0 -and $size -ne $total) { throw "only received $size of $total bytes" }
+  $secs = [int][math]::Max(((Get-Date) - $started).TotalSeconds, 1)
+  Note "$([math]::Round($size / 1MB, 1)) MB in ${secs}s"
 }
 
 function Assert-File([string]$Path, [int]$MinBytes, [string]$What) {
@@ -151,11 +209,29 @@ if (-not $SkipBinaries) {
   } else {
     $zip = Join-Path $env:TEMP "sw-ffmpeg.zip"
     $extract = Join-Path $env:TEMP "sw-ffmpeg-extract"
-    Get-Url "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" $zip
+    $sources = if ($FfmpegUrl) { @($FfmpegUrl) } else { @(
+      "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+      "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    ) }
+    $got = $false
+    foreach ($url in $sources) {
+      try {
+        Get-Url $url $zip
+        $got = $true
+        Note "from $url"
+        if ($url -notlike "*gyan.dev*") { Warn "this is the fallback build - a GPL ffmpeg, but not the exact one CI ships" }
+        break
+      } catch {
+        Warn "ffmpeg download failed from $url - $($_.Exception.Message)"
+      }
+    }
+    if (-not $got) {
+      throw "could not download ffmpeg. Download any Windows ffmpeg build you trust, put its ffmpeg.exe in $binDir, and run this script again - it will use that one and skip the download."
+    }
     if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
     Expand-Archive -Path $zip -DestinationPath $extract -Force
     $found = Get-ChildItem -Path $extract -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
-    if (-not $found) { throw "ffmpeg.exe was not inside the gyan.dev zip" }
+    if (-not $found) { throw "ffmpeg.exe was not inside the zip that was downloaded" }
     Copy-Item $found.FullName $ffmpegExe -Force
     Remove-Item -Recurse -Force $zip, $extract -ErrorAction SilentlyContinue
     Assert-File $ffmpegExe 1000000 "ffmpeg.exe"
