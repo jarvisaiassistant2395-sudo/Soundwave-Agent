@@ -1,4 +1,4 @@
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+﻿[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $vendorDir = Join-Path $PSScriptRoot "..\vendor\ffmpeg"
 New-Item -ItemType Directory -Force -Path $vendorDir | Out-Null
 $targetExe = Join-Path $vendorDir "ffmpeg.exe"

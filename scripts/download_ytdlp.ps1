@@ -1,4 +1,4 @@
-# Soundwave AI - yt-dlp Standalone Downloader for Windows
+﻿# Soundwave AI - yt-dlp Standalone Downloader for Windows
 $ErrorActionPreference = "SilentlyContinue"
 $ProgressPreference = "SilentlyContinue"
 

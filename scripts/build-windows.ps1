@@ -1,4 +1,4 @@
-<#
+﻿<#
   Build the Windows installers on THIS PC, without GitHub Actions.
 
   ---------------------------------------------------------------------------
@@ -17,7 +17,15 @@
     desktop\release\SoundwaveAI-Setup-<version>.exe        the installer
     desktop\release\SoundwaveAI-Portable-<version>.exe     portable, same bits
 
-  (with -Dev: SoundwaveAI*Dev-Setup-*.exe — the unlocked build, no billing.)
+  (with -Dev: SoundwaveAI*Dev-Setup-*.exe - the unlocked build, no billing.)
+
+  ---------------------------------------------------------------------------
+  Keep this file PURE ASCII.
+
+  Windows PowerShell 5.1 decodes a BOM-less .ps1 as ANSI (CP1252): one non-ASCII
+  character (an em-dash, a box-drawing line) becomes mojibake mid-string and the
+  parser dies with "Unexpected token". This file carries a UTF-8 BOM as well,
+  but ASCII-only is what survives an editor that drops the BOM.
 
   ---------------------------------------------------------------------------
   Use
@@ -29,14 +37,14 @@
   First run downloads ~500 MB (Electron, NSIS, ffmpeg, yt-dlp, the speech
   engine and its model). Later runs reuse everything already in desktop\bin.
 
-  To hand the finished installer to people, put it on a GitHub Release — never
+  To hand the finished installer to people, put it on a GitHub Release - never
   in the repository. Git refuses any file over 100 MB, and these are ~220 MB;
   even if they fitted, every clone would carry them forever:
 
     ... -PublishTag v1.6.7        (needs gh, authenticated: gh auth login)
 
   Publishing to the auto-update feed (desktop/src/update.cjs) is separate and
-  documented in docs/RELEASING.md → "Updates and downloads": the feed lives in
+  documented in docs/RELEASING.md -> "Updates and downloads": the feed lives in
   its own public repo and wants latest.yml next to the setup exe.
 #>
 [CmdletBinding()]
@@ -75,7 +83,7 @@ function Invoke-Stage([string]$Name, [string]$Where, [scriptblock]$Block) {
     if ($LASTEXITCODE -ne 0) { throw "$Name exited $LASTEXITCODE" }
     Good $Name
   } catch {
-    $message = "$Name — $($_.Exception.Message)"
+    $message = "$Name - $($_.Exception.Message)"
     Warn $message
     $failures.Add($message) | Out-Null
     if (-not $KeepGoing) { throw }
@@ -84,14 +92,14 @@ function Invoke-Stage([string]$Name, [string]$Where, [scriptblock]$Block) {
   }
 }
 
-# Download to a file, with retries — a home connection blips more than CI does.
+# Download to a file, with retries - a home connection blips more than CI does.
 function Get-Url([string]$Url, [string]$Out) {
   for ($attempt = 1; $attempt -le 3; $attempt++) {
     try {
       Invoke-WebRequest -Uri $Url -OutFile $Out -UseBasicParsing -TimeoutSec 300
       return
     } catch {
-      if ($attempt -eq 3) { throw "couldn't download $Url — $($_.Exception.Message)" }
+      if ($attempt -eq 3) { throw "couldn't download $Url - $($_.Exception.Message)" }
       Warn "attempt $attempt failed for $Url; retrying"
       Start-Sleep -Seconds 3
     }
@@ -104,33 +112,33 @@ function Assert-File([string]$Path, [int]$MinBytes, [string]$What) {
   if ($size -lt $MinBytes) { throw "$What looks wrong ($size bytes at $Path)" }
 }
 
-# ── Preflight ───────────────────────────────────────────────────────────────
+# -- Preflight ---------------------------------------------------------------
 Say "Preflight"
 if (-not (Test-Path (Join-Path $serverDir "package.json"))) { throw "run this from a checkout of the Soundwave repository" }
 $nodeVersion = (& node --version) 2>$null
-if (-not $nodeVersion) { throw "Node.js is not on PATH — install Node 20 or newer (https://nodejs.org)" }
+if (-not $nodeVersion) { throw "Node.js is not on PATH - install Node 20 or newer (https://nodejs.org)" }
 # CI builds on Node 20; anything older fails later and more confusingly.
 $nodeMajor = [int]($nodeVersion.TrimStart("v").Split(".")[0])
-if ($nodeMajor -lt 20) { throw "Node $nodeVersion is too old — this needs Node 20 or newer (CI uses 20)" }
+if ($nodeMajor -lt 20) { throw "Node $nodeVersion is too old - this needs Node 20 or newer (CI uses 20)" }
 Note "node $nodeVersion"
 Note "repository $repoRoot"
 $version = (Get-Content (Join-Path $desktopDir "package.json") -Raw | ConvertFrom-Json).version
 $edition = if ($Dev) { "Soundwave AI - Dev (unlocked, no billing)" } else { "Soundwave AI (the sold build)" }
-Note "version $version · $edition"
+Note "version $version - $edition"
 
-# ── Backend ─────────────────────────────────────────────────────────────────
+# -- Backend -----------------------------------------------------------------
 Invoke-Stage "Install backend dependencies" $serverDir { npm ci --no-audit --no-fund }
 Invoke-Stage "Typecheck backend" $serverDir { npm run typecheck }
 if (-not $SkipTests) { Invoke-Stage "Test backend" $serverDir { npm test } }
-Invoke-Stage "Build backend (tsc → dist)" $serverDir { npm run build }
+Invoke-Stage "Build backend (tsc -> dist)" $serverDir { npm run build }
 
-# ── Frontend ────────────────────────────────────────────────────────────────
+# -- Frontend ----------------------------------------------------------------
 Invoke-Stage "Install frontend dependencies" $frontendDir { npm ci --no-audit --no-fund }
-Invoke-Stage "Build frontend (tsc → vite build)" $frontendDir { npm run build }
+Invoke-Stage "Build frontend (tsc -> vite build)" $frontendDir { npm run build }
 
-# ── Runtime binaries the installer carries ──────────────────────────────────
+# -- Runtime binaries the installer carries ----------------------------------
 # Exactly what the workflow stages, to the same folders, from the same
-# sources — a locally built installer has to be the same product as a CI one.
+# sources - a locally built installer has to be the same product as a CI one.
 if (-not $SkipBinaries) {
   New-Item -ItemType Directory -Force $binDir | Out-Null
 
@@ -152,7 +160,7 @@ if (-not $SkipBinaries) {
     Good "staged $((Get-Item $ffmpegExe).Length) bytes"
   }
 
-  Say "yt-dlp.exe (nightly first — YouTube fixes land there first)"
+  Say "yt-dlp.exe (nightly first - YouTube fixes land there first)"
   $ytdlpExe = Join-Path $binDir "yt-dlp.exe"
   if ((Test-Path $ytdlpExe) -and (Get-Item $ytdlpExe).Length -gt 1000000) {
     Good "already staged ($((Get-Item $ytdlpExe).Length) bytes)"
@@ -169,16 +177,16 @@ if (-not $SkipBinaries) {
     Good "staged $((Get-Item $ytdlpExe).Length) bytes"
   }
 
-  # The licence text for the GPL ffmpeg, written beside it — the audit below
+  # The licence text for the GPL ffmpeg, written beside it - the audit below
   # (and the packaged app) must never see the binary without its paper.
   Invoke-Stage "Write the binary licences" $repoRoot { node scripts/write-binary-licenses.mjs }
 
-  Say "Caption font (Inter, OFL-1.1 — travels with the app)"
+  Say "Caption font (Inter, OFL-1.1 - travels with the app)"
   $fontDest = Join-Path $binDir "fonts"
   New-Item -ItemType Directory -Force $fontDest | Out-Null
   Copy-Item (Join-Path $repoRoot "assets\fonts\*") $fontDest -Force
   $fontCount = (Get-ChildItem $fontDest).Count
-  if ($fontCount -lt 1) { throw "assets\fonts is empty — the captions would render in a fallback font" }
+  if ($fontCount -lt 1) { throw "assets\fonts is empty - the captions would render in a fallback font" }
   Good "$fontCount file(s)"
 
   Say "Speech engine (whisper.cpp v1.9.2 + the English model)"
@@ -218,7 +226,7 @@ if (-not $SkipBinaries) {
   } else {
     Get-Url "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model" $modelPath
     Assert-File $modelPath 40MB $model
-    # "lmgg" is ggml's magic — a login page saved as .bin must not pass as a model.
+    # "lmgg" is ggml's magic - a login page saved as .bin must not pass as a model.
     $head = [byte[]]([System.IO.File]::ReadAllBytes($modelPath)[0..3])
     if ([System.Text.Encoding]::ASCII.GetString($head) -ne "lmgg") { throw "$model doesn't look like a ggml model" }
     Good "staged $([math]::Round((Get-Item $modelPath).Length / 1MB, 1)) MB"
@@ -234,15 +242,15 @@ if (-not $SkipBinaries) {
     node check-dlls.mjs bin/whisper --copy-runtime-from "$env:WINDIR\System32"
   }
 } else {
-  Warn "skipping the runtime binaries (-SkipBinaries) — the installer will only be good if desktop\bin is already complete"
+  Warn "skipping the runtime binaries (-SkipBinaries) - the installer will only be good if desktop\bin is already complete"
 }
 
-# ── The gates ───────────────────────────────────────────────────────────────
+# -- The gates ---------------------------------------------------------------
 Invoke-Stage "Audit the licences of everything in the installer" $repoRoot { node scripts/license-audit.mjs --write }
 Invoke-Stage "Install desktop tooling (Electron + electron-builder)" $desktopDir { npm ci --no-audit --no-fund }
 if (-not $SkipTests) { Invoke-Stage "Test the desktop shell's helpers" $desktopDir { npm test } }
 
-# ── Assemble, smoke, package ────────────────────────────────────────────────
+# -- Assemble, smoke, package ------------------------------------------------
 Invoke-Stage "Assemble the packaged app tree" $desktopDir { node assemble.mjs }
 Invoke-Stage "Smoke-test the assembled app (boots it like the shell does)" $desktopDir { node smoke.mjs }
 
@@ -258,10 +266,10 @@ if ($YouTubeClientId -and $YouTubeClientSecret) {
 }
 
 if ($Dev) {
-  Invoke-Stage "Build installers — Soundwave AI - Dev" $desktopDir { npx electron-builder --config electron-builder.dev.yml --win --publish never }
+  Invoke-Stage "Build installers - Soundwave AI - Dev" $desktopDir { npx electron-builder --config electron-builder.dev.yml --win --publish never }
   $exeName = "Soundwave AI - Dev.exe"
 } else {
-  Invoke-Stage "Build installers — Soundwave AI" $desktopDir { npx electron-builder --win --publish never }
+  Invoke-Stage "Build installers - Soundwave AI" $desktopDir { npx electron-builder --win --publish never }
   $exeName = "Soundwave AI.exe"
 }
 
@@ -269,11 +277,11 @@ Invoke-Stage "Verify the packaged app can be yt-dlp's JavaScript runtime" $deskt
   node verify-runtime.mjs (Join-Path "release\win-unpacked" $exeName)
 }
 
-# ── What came out ───────────────────────────────────────────────────────────
+# -- What came out -----------------------------------------------------------
 Say "Done"
 $releaseDir = Join-Path $desktopDir "release"
 $artifacts = @(Get-ChildItem $releaseDir -Filter *.exe -ErrorAction SilentlyContinue | Sort-Object Name)
-if ($artifacts.Count -eq 0) { throw "no installer in $releaseDir — check the electron-builder output above" }
+if ($artifacts.Count -eq 0) { throw "no installer in $releaseDir - check the electron-builder output above" }
 foreach ($a in $artifacts) {
   Write-Host ("  {0,-46} {1,8:N1} MB" -f $a.Name, ($a.Length / 1MB)) -ForegroundColor White
   Note $a.FullName
@@ -282,7 +290,7 @@ foreach ($a in $artifacts) {
 if ($PublishTag) {
   Say "Publish to the GitHub Release $PublishTag"
   if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    Warn "gh isn't installed — upload the files by hand, or install GitHub CLI and re-run with -PublishTag"
+    Warn "gh isn't installed - upload the files by hand, or install GitHub CLI and re-run with -PublishTag"
   } else {
     $files = @($artifacts | ForEach-Object { $_.FullName })
     $repoSlug = (& git -C $repoRoot remote get-url origin) 2>$null
@@ -296,7 +304,7 @@ if ($PublishTag) {
       & gh release upload $PublishTag @files --clobber
     }
     if ($LASTEXITCODE -ne 0) { throw "gh couldn't publish the release" }
-    Good "published — $PublishTag"
+    Good "published - $PublishTag"
     Note "a v* tag pushed to the branch is what CI would use; a Release is fine on its own"
   }
 }
@@ -307,4 +315,4 @@ if ($failures.Count -gt 0) {
   exit 1
 }
 Write-Host "`nInstallers are in $releaseDir" -ForegroundColor Green
-Write-Host "Install one, then check Settings → Voice & Desktop says version $version." -ForegroundColor Green
+Write-Host "Install one, then check Settings -> Voice & Desktop says version $version." -ForegroundColor Green
