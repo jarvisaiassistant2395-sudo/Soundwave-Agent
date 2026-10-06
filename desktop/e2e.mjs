@@ -14,7 +14,10 @@
 // the window keeps the app in the tray, and a Ghost Operator macro run from
 // the Workflow panel really copies to the clipboard (verified in Electron) and
 // skips — with the reason — the steps Soundwave can't do yet. Needs
-// playwright-core (CI: npm i --no-save).
+// playwright-core (CI: npm i --no-save). The run itself switches off the two
+// heaviest background jobs (the managed voice install, the Shorts trends scan —
+// see the launch env below): both starve the bundled whisper on a two-core CI
+// machine, and both are covered by their own tests and workflows.
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,6 +29,8 @@ const EXPECT = /ask not what your country/i;
 const started = Date.now();
 const since = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** See the note on `open` below. */
+const NAV_TIMEOUT_MS = 90_000;
 
 function annotate(level, title, message) {
   if (process.env.GITHUB_ACTIONS !== "true") return;
@@ -46,8 +51,40 @@ function annotate(level, title, message) {
  * answered `evaluate` (the old index.html pulled Google's font CSS). Waiting for
  * `domcontentloaded` still proves the app's own bundle was fetched and executed
  * (module scripts gate it), and the caller's own selector wait proves the rest.
+ *
+ * The timeout is about the runner, not the app: a two-core CI machine shares the
+ * packaged app's server with everything the app starts by itself at launch (the
+ * Shorts trends scan, the managed voice setup, whisper, Edge TTS) and, just
+ * after midnight, the daily briefing's research round. Playwright's 30-second
+ * default turned that into a red build twice in one day (runs 37392172221 and
+ * 37394195055 — once on the reload above, once navigating to Settings → Phone,
+ * both with the page already answering). So a route gets 90 seconds and one
+ * retry; the assertions that follow are what actually decide the run.
  */
-const open = (page, url, options = {}) => page.goto(url, { waitUntil: "domcontentloaded", ...options });
+const open = async (page, url, options = {}) => {
+  const timeout = options.timeout ?? NAV_TIMEOUT_MS;
+  const go = (ms) => page.goto(url, { waitUntil: "domcontentloaded", ...options, timeout: ms });
+  try {
+    return await go(timeout);
+  } catch (err) {
+    // A route that did not come back in time on a busy runner: the app itself
+    // starts a lot of work at launch (the trends scan, the Kokoro setup, the
+    // daily briefing at 00:0x), and the CI machine is two cores. Say what the
+    // document was still waiting for, then try once more — the second attempt is
+    // served from the HTTP cache and usually finds a quieter moment. A real hang
+    // still fails the run: the DOM assertions that follow have their own budget,
+    // and a second timeout is reported as the failure.
+    const pending = await page
+      .evaluate(() => performance.getEntriesByType("resource").filter((r) => !r.responseEnd).map((r) => r.name).slice(0, 5))
+      .catch(() => []);
+    console.log(
+      `[e2e] ↻ ${url} did not finish loading in ${timeout}ms (${String(err.message).split("\n")[0]})` +
+        (pending.length ? ` — still waiting for ${pending.join(", ")}` : "") +
+        "; trying once more",
+    );
+    return go(timeout);
+  }
+};
 
 let app = null;
 // Which part of the flow is running. The failure annotation carries it, so a
@@ -194,6 +231,14 @@ try {
       GEMINI_API_BASE: fakeGemini.url,
       // CI verifies the app, not a multi-gigabyte first-run local-model install.
       SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP: "1",
+      // …and not the background trends scan either: it is a couple of dozen
+      // searches with yt-dlp fallbacks, and on a two-core runner it starved the
+      // bundled whisper until a voice command hit the speech engine's
+      // 90-second limit (run 37398031986). The scan has its own coverage —
+      // shorts-trends-smoke.yml reads the real readers live, and the server's
+      // trends tests cover the logic — while this run is about the app behaving
+      // under a person's hands. TRENDS_SCAN is the app's own switch.
+      TRENDS_SCAN: "0",
       // Morning Setup's weather from the same stand-in.
       OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
       OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
@@ -225,6 +270,16 @@ try {
   at("startup: window, tray, shortcut, bridge");
   const main = await app.firstWindow({ timeout: 180_000 });
   mainPage = main;
+  // A click or a selector wait that takes 300 ms on a person's PC can take
+  // seconds on a two-core CI runner that is also serving the app's own startup
+  // work (the trends scan, the managed voice setup, whisper, the briefing at
+  // 00:0x). Anything without an explicit budget of its own gets 60 seconds here
+  // (Playwright's default is 30), so a loaded runner is not reported as a broken
+  // app — the important waits below still pass their own, larger ones, and every
+  // assertion is unchanged. Run 37395332035 died on exactly this: a gear click
+  // that never opened the Assistant Settings modal within 30 seconds while the
+  // page was answering normally.
+  main.setDefaultTimeout(60_000);
   main.on("console", (m) => {
     if (m.type() === "error" || /\[voice\]/.test(m.text())) console.log(`    [main:${m.type()}] ${m.text()}`);
     if (m.type() === "error" || /\[voice\]|microphone|getUserMedia|worklet/i.test(m.text())) rememberPageLog(`[${m.type()}] ${m.text()}`);
@@ -661,8 +716,29 @@ try {
   ok("Morning Setup: the chip ran it, and Gemini wrote the briefing from real facts (weather from Open-Meteo's stand-in)");
 
   // (A toast — e.g. the reply being read aloud — may sit over the gear: click it directly.)
-  await main.evaluate(() => document.querySelector('button[title="Assistant Settings"]')?.click());
-  await main.click('[data-testid="memory-tab"]');
+  // The gear only ever opens the modal (setSettingsOpen(true)), so pressing it
+  // again is harmless — and a click that is lost while the window is settling
+  // should not read as "the Memory tab doesn't exist".
+  const settingsTabReady = async (testId) => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (await main.$(`[data-testid="${testId}"]`)) return true;
+      await main.evaluate(() => document.querySelector('button[title="Assistant Settings"]')?.click());
+      try {
+        await main.waitForSelector(`[data-testid="${testId}"]`, { state: "attached", timeout: 20_000 });
+        return true;
+      } catch {
+        await sleep(500);
+      }
+    }
+    return false;
+  };
+  if (!(await settingsTabReady("memory-tab"))) {
+    const gear = await main.evaluate(() => Boolean(document.querySelector('button[title="Assistant Settings"]')));
+    await fail(`the Assistant Settings modal never opened (the gear button ${gear ? "is in the page but its click did not open it" : "is not in the page"})`);
+  }
+  // Same treatment the YouTube tab already gets below: the panel is animated, and
+  // Playwright's pointer-stability check has stalled on it in Windows CI.
+  await main.locator('[data-testid="memory-tab"]').evaluate((el) => el.click());
   await main.fill('[data-testid="memory-input"]', "The CI user's channel is about space facts");
   await main.press('[data-testid="memory-input"]', "Enter");
   await main.waitForSelector('[data-testid="memory-note"]', { timeout: 15_000 });
@@ -1232,6 +1308,7 @@ try {
           ...process.env,
           GEMINI_API_BASE: fakeGemini.url,
           SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP: "1",
+          TRENDS_SCAN: "0",
           OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
           OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
         },
@@ -1242,6 +1319,7 @@ try {
     }
     app = second;
     const main2 = await app.firstWindow({ timeout: 180_000 });
+    main2.setDefaultTimeout(60_000);
     mainPage = main2;
     main2.on("console", (m) => {
       if (m.type() === "error") rememberPageLog(`[wake-run] ${m.text()}`);
