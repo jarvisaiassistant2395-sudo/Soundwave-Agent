@@ -252,6 +252,16 @@ try {
   at("startup: window, tray, shortcut, bridge");
   const main = await app.firstWindow({ timeout: 180_000 });
   mainPage = main;
+  // A click or a selector wait that takes 300 ms on a person's PC can take
+  // seconds on a two-core CI runner that is also serving the app's own startup
+  // work (the trends scan, the managed voice setup, whisper, the briefing at
+  // 00:0x). Anything without an explicit budget of its own gets 60 seconds here
+  // (Playwright's default is 30), so a loaded runner is not reported as a broken
+  // app — the important waits below still pass their own, larger ones, and every
+  // assertion is unchanged. Run 37395332035 died on exactly this: a gear click
+  // that never opened the Assistant Settings modal within 30 seconds while the
+  // page was answering normally.
+  main.setDefaultTimeout(60_000);
   main.on("console", (m) => {
     if (m.type() === "error" || /\[voice\]/.test(m.text())) console.log(`    [main:${m.type()}] ${m.text()}`);
     if (m.type() === "error" || /\[voice\]|microphone|getUserMedia|worklet/i.test(m.text())) rememberPageLog(`[${m.type()}] ${m.text()}`);
@@ -688,8 +698,29 @@ try {
   ok("Morning Setup: the chip ran it, and Gemini wrote the briefing from real facts (weather from Open-Meteo's stand-in)");
 
   // (A toast — e.g. the reply being read aloud — may sit over the gear: click it directly.)
-  await main.evaluate(() => document.querySelector('button[title="Assistant Settings"]')?.click());
-  await main.click('[data-testid="memory-tab"]');
+  // The gear only ever opens the modal (setSettingsOpen(true)), so pressing it
+  // again is harmless — and a click that is lost while the window is settling
+  // should not read as "the Memory tab doesn't exist".
+  const settingsTabReady = async (testId) => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (await main.$(`[data-testid="${testId}"]`)) return true;
+      await main.evaluate(() => document.querySelector('button[title="Assistant Settings"]')?.click());
+      try {
+        await main.waitForSelector(`[data-testid="${testId}"]`, { state: "attached", timeout: 20_000 });
+        return true;
+      } catch {
+        await sleep(500);
+      }
+    }
+    return false;
+  };
+  if (!(await settingsTabReady("memory-tab"))) {
+    const gear = await main.evaluate(() => Boolean(document.querySelector('button[title="Assistant Settings"]')));
+    await fail(`the Assistant Settings modal never opened (the gear button ${gear ? "is in the page but its click did not open it" : "is not in the page"})`);
+  }
+  // Same treatment the YouTube tab already gets below: the panel is animated, and
+  // Playwright's pointer-stability check has stalled on it in Windows CI.
+  await main.locator('[data-testid="memory-tab"]').evaluate((el) => el.click());
   await main.fill('[data-testid="memory-input"]', "The CI user's channel is about space facts");
   await main.press('[data-testid="memory-input"]', "Enter");
   await main.waitForSelector('[data-testid="memory-note"]', { timeout: 15_000 });
@@ -1269,6 +1300,7 @@ try {
     }
     app = second;
     const main2 = await app.firstWindow({ timeout: 180_000 });
+    main2.setDefaultTimeout(60_000);
     mainPage = main2;
     main2.on("console", (m) => {
       if (m.type() === "error") rememberPageLog(`[wake-run] ${m.text()}`);
