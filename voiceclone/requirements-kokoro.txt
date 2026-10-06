@@ -16,6 +16,23 @@
 # walks the import closure of the engines and fails the setup if it is ever
 # missing again (voiceclone/test_preflight.py pins that walk).
 attrs>=23.2
+# Everything preflight.py's REQUIRED_IMPORTS names is listed in this file (torch
+# and torchaudio excepted — the manager installs those from PyTorch's own CPU
+# index). The three below arrive transitively today (pydantic via fastapi, regex
+# via misaki, safetensors via transformers), so listing them changes nothing at
+# install time; they are here so the two lists can be checked against each other
+# by desktop/test/kokoro-manager.test.cjs without pip metadata or a network.
+# That check is what the next undeclared import will trip.
+pydantic
+regex
+safetensors
+# addict - MIT. misaki/token.py imports it and misaki's metadata never mentions
+# it, so pip had no reason to fetch it and preflight (correctly) refused the
+# environment: "missing: addict". The retry then re-installed this very file,
+# which did not list it — a loop that could not converge. Listed here like
+# attrs and loguru above; the desktop manager also repairs a module preflight
+# names, so the next undeclared import is installed instead of fatal.
+addict>=2.4
 fastapi
 huggingface-hub
 misaki

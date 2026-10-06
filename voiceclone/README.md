@@ -53,6 +53,25 @@ installs. MOSS lists 20 languages but not Serbian, and low-/medium-end speed
 has not yet been benchmarked; do not treat the current selection as a validated
 performance decision.
 
+Nothing about the packaged service is started by hand: no terminal, no
+`VOICECLONE_URL` to set, no Python to install. The desktop shell provisions it,
+starts it on a private loopback port with its own token, and points both the
+narration and cloning APIs at it — so "the voice-cloning service isn't
+reachable" in a packaged build means *the managed setup has not finished*, and
+the app says which stage it is at (its progress lives in the status file it
+passes as `LOCAL_VOICE_STATUS_FILE`, and its log is
+`%APPDATA%\Soundwave AI\kokoro\kokoro.log`).
+
+That setup also repairs itself. `preflight.py` is the gate: it imports the
+service and the engines' full import closure before the service is ever
+launched, and prints `missing: <module>` for anything it cannot import. The
+desktop manager then installs exactly those modules — applying the pin from
+`requirements-kokoro.txt` when one exists — and runs preflight again. That path
+exists because a hand-written list was wrong three times (loguru, attrs,
+addict); the third time it was wrong the retry loop could only repeat the same
+failure while telling the person it was repairing itself. It does now. The GPL
+phonemizer/espeak-ng pair is refused by name on that path, as everywhere else.
+
 It holds the models in memory and is **stateless**: each generation request
 carries the reference clip with it (`POST /clone/ephemeral`), so cloned voices
 are owned per-user by the Node API and can survive this service restarting on

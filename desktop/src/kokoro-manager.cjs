@@ -24,7 +24,19 @@ const { spawn } = require("node:child_process");
 // .txt now lists it and preflight.py walks the engines' own import closure and
 // fails the setup naming the module. The bump re-runs the package step for
 // installs that were left broken by revision 4.
-const SETUP_REVISION = 5;
+//
+// Revision 6: the third time, and the one that proved the *repair* was the bug,
+// not the list. misaki imports `addict` (misaki/token.py) without declaring it,
+// so preflight found it missing and said so — correctly — and then the retry
+// re-ran the package step, which installed requirements-kokoro.txt, which never
+// mentioned addict. Twenty seconds later the same failure, forever: the app
+// promising "this is repaired automatically" while the loop it ran could not
+// possibly repair it. requirements-kokoro.txt lists addict now, and the setup
+// repairs this class of failure itself: preflight names the module, the manager
+// installs that module by name (pinned if our requirements pin it), and runs
+// preflight again. A fourth undeclared dependency is now a self-repair instead
+// of a release.
+const SETUP_REVISION = 6;
 // The managed stack now includes CPU MOSS-TTS-Nano cloning as well as Kokoro.
 // A runtime revision forces a restart so older Kokoro-only services are not
 // mistaken for a complete offline-ready install.
@@ -210,6 +222,72 @@ function cleanIncompleteDownloads(root) {
 // once turned any failure into "needs an internet connection" because an
 // earlier, recovered "Retrying ... timed out" warning was still in the tail.
 const RECOVERED_NOISE = /Retrying \(Retry\(|^\s*WARNING:|^\s*Downloading |^\s*Requirement already satisfied|^\s*Collecting |^\s*Using cached /i;
+
+// ── Repairing a missing package by name ─────────────────────────────────────
+// preflight.py prints one `missing: <module>` line per module it cannot import,
+// and that line is the only place the real answer lives when a dependency is
+// undeclared by every package that needs it (attr, loguru, addict — all three).
+// `pip install` takes *distribution* names, which are not always module names,
+// so the ones we have met are mapped here; anything else is tried as-is and
+// pip's own error becomes the log's last word.
+
+/** Module name → the distribution that provides it. Only the divergent ones. */
+const MODULE_PACKAGES = {
+  attr: "attrs",
+  attrs: "attrs",
+  addict: "addict",
+  cv2: "opencv-python",
+  PIL: "pillow",
+  yaml: "pyyaml",
+  skimage: "scikit-image",
+  sklearn: "scikit-learn",
+  soundfile: "soundfile",
+  // `kokoro` is installed with --no-deps on purpose, and its declared extra
+  // pulls GPL phonemizer + espeak-ng, which Soundwave never imports. A repair
+  // must never install them by accident, so they are refused here as well as
+  // in preflight.py.
+};
+
+/** Packages a repair must never install, whatever a log happens to say. */
+const FORBIDDEN_PACKAGES = new Set(["phonemizer", "phonemizer-fork", "espeakng-loader", "espeakng_loader", "chatterbox-tts", "chatterbox"]);
+
+/** `transformers==4.57.1` and `loguru>=0.7.2,<1` both parse to a name + spec. */
+function requirementsPin(requirementsText, packageName) {
+  const wanted = packageName.toLowerCase().replace(/[_.]+/g, "-");
+  for (const line of requirementsText.split(/\r?\n/)) {
+    const text = line.trim();
+    if (!text || text.startsWith("#")) continue;
+    const match = /^([A-Za-z0-9_.\-]+)\s*([<>=!~].*)?$/.exec(text);
+    if (!match) continue;
+    if (match[1].toLowerCase().replace(/[_.]+/g, "-") !== wanted) continue;
+    return match[2] ? `${match[1]}${match[2].trim()}` : match[1];
+  }
+  return null;
+}
+
+/** The `missing: <module>` names in a preflight report. */
+function missingModulesIn(logText) {
+  const names = new Set();
+  for (const match of String(logText ?? "").matchAll(/^missing:\s*([A-Za-z0-9_.\-]+)\s*$/gm)) names.add(match[1]);
+  return [...names];
+}
+
+/**
+ * What to hand pip for the modules preflight named: pinned exactly as
+ * requirements-kokoro.txt pins it (transformers, torch and onnxruntime all
+ * carry pins that matter), otherwise the module's distribution, otherwise the
+ * module name itself when pip knows it under that name.
+ */
+function packageNamesFor(modules, requirementsText = "") {
+  const out = [];
+  for (const module of modules) {
+    const packageName = MODULE_PACKAGES[module] ?? module;
+    if (FORBIDDEN_PACKAGES.has(packageName.toLowerCase())) continue;
+    const spec = requirementsPin(requirementsText, packageName) ?? packageName;
+    if (!out.includes(spec)) out.push(spec);
+  }
+  return out;
+}
 
 /** The last lines that look like the actual failure (a traceback's final line, pip's ERROR:). */
 function failureLines(logTail = "", max = 6) {
@@ -824,7 +902,7 @@ function createKokoroManager({
     const packageSteps = 7;
     let completedPackageSteps = 0;
     const runPackageStep = async (label, executable, args, options = {}) => {
-      const progress = Math.round((completedPackageSteps / packageSteps) * 100);
+      const progress = Math.min(100, Math.round((completedPackageSteps / packageSteps) * 100));
       writeState("installing-packages", `Installing ${label} for the local voice service.`, progress, `${label} (${completedPackageSteps + 1}/${packageSteps})`);
       await runCommand(executable, args, options);
       completedPackageSteps++;
@@ -857,7 +935,38 @@ function createKokoroManager({
     // moss_engine.py) and every package they import, so a dependency the
     // --no-deps Kokoro install still needs (loguru was one) fails here — with
     // the module's name in the log — instead of at service start-up.
-    await runPackageStep("runtime verification", venvPython, [preflightScript], { cwd: resourcesDir, env: pipEnv, timeoutMs: 3 * 60_000 });
+    const preflightOptions = { cwd: resourcesDir, env: pipEnv, timeoutMs: 3 * 60_000 };
+    let logFrom = 0;
+    try {
+      logFrom = fs.statSync(logFile).size;
+    } catch {
+      /* first run has no log yet */
+    }
+    try {
+      await runPackageStep("runtime verification", venvPython, [preflightScript], preflightOptions);
+    } catch (error) {
+      // preflight named what it could not import — install exactly that, then
+      // ask it again. This is the difference between a retry loop that can only
+      // ever repeat itself and one that can actually finish.
+      const missing = missingModulesIn(readLogSince(logFrom));
+      const requirementsText = (() => {
+        try {
+          return fs.readFileSync(path.join(resourcesDir, "requirements-kokoro.txt"), "utf8");
+        } catch {
+          return "";
+        }
+      })();
+      const packages = packageNamesFor(missing, requirementsText);
+      if (!packages.length) throw error;
+      console.warn("[soundwave-desktop] the local voice service is missing", missing.join(", "), "- installing", packages.join(" "));
+      await runPackageStep(
+        packages.length === 1 ? `the ${packages[0]} package the service needs` : "the packages the service still needs",
+        venvPython,
+        [...common, ...packages],
+        preflightOptions,
+      );
+      await runPackageStep("runtime verification", venvPython, [preflightScript], preflightOptions);
+    }
     atomicWriteJson(installMarker, { revision: SETUP_REVISION, python: PYTHON_VERSION, installedAt: new Date().toISOString() });
     writeState("installing-packages", "The on-device narration and cloning packages are ready.", 100, "Python packages");
   }
@@ -1258,6 +1367,8 @@ async function createManagedKokoro(options) {
 }
 
 module.exports = {
+  FORBIDDEN_PACKAGES,
+  MODULE_PACKAGES,
   PYTHON_INSTALLER_SHA256,
   PYTHON_INSTALLER_URL,
   PYTHON_VERSION,
@@ -1270,6 +1381,9 @@ module.exports = {
   createManagedKokoro,
   describeSetupFailure,
   downloadHttps,
+  missingModulesIn,
+  packageNamesFor,
   readJson,
+  requirementsPin,
   shouldManageLocalVoice,
 };

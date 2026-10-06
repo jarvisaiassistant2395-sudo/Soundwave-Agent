@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
+  MODULE_PACKAGES,
   PYTHON_INSTALLER_SHA256,
   PYTHON_INSTALLER_URL,
   PYTHON_VERSION,
@@ -19,7 +20,10 @@ const {
   createManagedKokoro,
   describeSetupFailure,
   downloadHttps,
+  missingModulesIn,
+  packageNamesFor,
   readJson,
+  requirementsPin,
   shouldManageLocalVoice,
 } = require("../src/kokoro-manager.cjs");
 const { getFreePort } = require("../src/server-env.cjs");
@@ -753,4 +757,84 @@ test("describeSetupFailure explains the missing pronunciation model", () => {
     // It must not be mistaken for "no internet" or a TLS interception.
     assert.doesNotMatch(message, /internet|certificate|antivirus/i);
   }
+});
+
+// ── The repair that makes "installs its own packages" true ───────────────────
+// Three times now a module the service imports has not been declared by any
+// package that needs it (loguru, attr, addict). preflight.py names it; the
+// manager has to *install* it, or the retry loop repeats the same failure
+// forever while telling the person it is repairing itself.
+
+test("missingModulesIn reads preflight's report and ignores its other lines", () => {
+  const log = [
+    "missing-file: moss_tts_nano/model.py",
+    "missing: addict",
+    "missing: attr",
+    "missing: addict",
+    "missing-model: en_core_web_sm (not on PyPI — `python -m spacy download en_core_web_sm`)",
+    "preflight failed: 2 missing module(s), 1 missing spaCy model(s)",
+  ].join("\n");
+  assert.deepEqual(missingModulesIn(log), ["addict", "attr"]);
+  assert.deepEqual(missingModulesIn(""), []);
+  assert.deepEqual(missingModulesIn(undefined), []);
+});
+
+test("packageNamesFor turns module names into the distributions pip knows", () => {
+  assert.deepEqual(packageNamesFor(["attr"]), ["attrs"]);
+  assert.deepEqual(packageNamesFor(["addict"]), ["addict"]);
+  assert.deepEqual(packageNamesFor(["PIL"]), ["pillow"]);
+  assert.deepEqual(packageNamesFor(["cv2"]), ["opencv-python"]);
+  // An unknown module is still attempted: pip's own error then becomes the
+  // log's last word rather than silence.
+  assert.deepEqual(packageNamesFor(["mystery_module"]), ["mystery_module"]);
+  // Duplicates collapse, order is kept.
+  assert.deepEqual(packageNamesFor(["attr", "attr", "addict"]), ["attrs", "addict"]);
+});
+
+test("packageNamesFor refuses the GPL path kokoro is installed without", () => {
+  // Kokoro ships with --no-deps precisely because misaki[en] pulls GPL
+  // phonemizer + espeak-ng. A repair must not install them by accident.
+  assert.deepEqual(packageNamesFor(["phonemizer"]), []);
+  assert.deepEqual(packageNamesFor(["espeakng_loader"]), []);
+  assert.deepEqual(packageNamesFor(["chatterbox"]), []);
+  assert.deepEqual(packageNamesFor(["addict", "phonemizer", "attr"]), ["addict", "attrs"]);
+});
+
+test("packageNamesFor keeps our version pins instead of taking the latest", () => {
+  const requirements = ["# a comment", "transformers==4.57.1", "loguru>=0.7.2,<1", "attrs>=23.2", ""].join("\n");
+  assert.deepEqual(packageNamesFor(["transformers"], requirements), ["transformers==4.57.1"]);
+  assert.deepEqual(packageNamesFor(["loguru"], requirements), ["loguru>=0.7.2,<1"]);
+  assert.deepEqual(packageNamesFor(["attr"], requirements), ["attrs>=23.2"]);
+  // A module with no line in the file is installed unpinned.
+  assert.deepEqual(packageNamesFor(["addict"], requirements), ["addict"]);
+});
+
+test("requirementsPin normalises the spellings pip treats as the same package", () => {
+  const requirements = "huggingface-hub>=0.30\n";
+  for (const spelling of ["huggingface_hub", "huggingface-hub", "HuggingFace.Hub"]) {
+    assert.equal(requirementsPin(requirements, spelling), "huggingface-hub>=0.30");
+  }
+  assert.equal(requirementsPin(requirements, "numpy"), null);
+});
+
+test("every module preflight demands is installed by the requirements file or the torch step", () => {
+  // THE test that was missing. addict was in preflight's REQUIRED_IMPORTS and
+  // absent from requirements-kokoro.txt, so the setup failed correctly and the
+  // repair could not possibly fix it. Any future module added to one list and
+  // forgotten in the other now fails here instead of on a customer's PC.
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const preflight = fs.readFileSync(path.join(repoRoot, "voiceclone", "preflight.py"), "utf8");
+  const block = /REQUIRED_IMPORTS = \(([\s\S]*?)\n\)/.exec(preflight);
+  assert.ok(block, "REQUIRED_IMPORTS not found in preflight.py");
+  const modules = [...block[1].matchAll(/"([A-Za-z0-9_.\-]+)"/g)].map((m) => m[1]);
+  assert.ok(modules.length >= 15, `expected the full list, got ${modules.length}`);
+  const requirements = fs.readFileSync(path.join(repoRoot, "voiceclone", "requirements-kokoro.txt"), "utf8");
+  // Installed by a dedicated step in the manager (CPU wheels from PyTorch's own
+  // index), never by the requirements file.
+  const separateStep = new Set(["torch", "torchaudio"]);
+  const missing = modules.filter((name) => {
+    const pinned = requirementsPin(requirements, MODULE_PACKAGES[name] ?? name);
+    return !pinned && !separateStep.has(name.toLowerCase());
+  });
+  assert.deepEqual(missing, [], `these are demanded by preflight but installed by nothing: ${missing.join(", ")}`);
 });

@@ -71,10 +71,7 @@ async function sidecarFetch(path: string, init: RequestInit = {}, timeoutMs = 15
     if (err.name === "AbortError") {
       throw new SidecarError(504, "The voice-cloning service took too long to respond. Try shorter text, shorter reference audio, or give the service more time (CPU generation is slow).");
     }
-    throw new SidecarError(
-      503,
-      "The voice-cloning service isn't reachable. Start it (see voiceclone/README.md) and set VOICECLONE_URL — the feature hides itself automatically while it's down.",
-    );
+    throw new SidecarError(503, unreachableMessage());
   } finally {
     clearTimeout(timer);
   }
@@ -113,15 +110,61 @@ export interface VoiceCloneStatus {
   canRetry?: boolean;
 }
 
+/**
+ * What to say when the service cannot be reached at all.
+ *
+ * In the packaged app nobody starts anything by hand: the desktop shell
+ * provisions and launches this service (desktop/src/kokoro-manager.cjs) and
+ * writes its progress to LOCAL_VOICE_STATUS_FILE. Telling that person to
+ * "start it (see voiceclone/README.md)" is advice they cannot follow — the
+ * README is not in the installer. When we can see the managed status file we
+ * quote it instead, so the sentence matches what the app is actually doing.
+ */
+function startedByHand(): boolean {
+  return !config.localVoiceStatusFile;
+}
+
+function unreachableMessage(): string {
+  if (startedByHand()) {
+    return "The voice-cloning service isn't reachable. Start it (see voiceclone/README.md) and set VOICECLONE_URL — the feature hides itself automatically while it's down.";
+  }
+  const managed = managedSetupState();
+  if (managed?.phase === "installing-python" || managed?.phase === "installing-packages" || managed?.phase === "checking" || managed?.phase === "loading-model") {
+    return `The on-device voice service is still being prepared — ${managed.message ?? "this happens once, in the background"}. Narration and cloning appear as soon as it is ready.`;
+  }
+  if (managed?.cloneError) {
+    return `The on-device voice service isn't running: ${managed.cloneError}`;
+  }
+  if (managed?.phase === "failed") {
+    return `The on-device voice service couldn't start: ${managed.message ?? "see the local voice setup log"}`;
+  }
+  return "The on-device voice service isn't running yet. Open Settings → Voice to see its progress or retry the setup.";
+}
+
 /** Why the packaged desktop's cloning setup didn't finish, from its status file. */
-function managedCloneError(): string | undefined {
+interface ManagedVoiceState {
+  phase?: string;
+  message?: string;
+  cloneError?: string;
+}
+
+function managedSetupState(): ManagedVoiceState | undefined {
   if (!config.localVoiceStatusFile) return undefined;
   try {
-    const value = JSON.parse(fs.readFileSync(config.localVoiceStatusFile, "utf8")) as { managed?: unknown; cloneError?: unknown };
-    return value.managed === true && typeof value.cloneError === "string" && value.cloneError ? value.cloneError.slice(0, 600) : undefined;
+    const value = JSON.parse(fs.readFileSync(config.localVoiceStatusFile, "utf8")) as Record<string, unknown>;
+    if (value.managed !== true) return undefined;
+    return {
+      ...(typeof value.phase === "string" ? { phase: value.phase } : {}),
+      ...(typeof value.message === "string" ? { message: value.message.slice(0, 300) } : {}),
+      ...(typeof value.cloneError === "string" && value.cloneError ? { cloneError: value.cloneError.slice(0, 600) } : {}),
+    };
   } catch {
     return undefined;
   }
+}
+
+function managedCloneError(): string | undefined {
+  return managedSetupState()?.cloneError;
 }
 
 export async function getVoiceCloneStatus(): Promise<VoiceCloneStatus> {
