@@ -300,6 +300,12 @@ describe("reading the video's sound", () => {
     expect(pcm.slice(0, 5)).toHaveLength(0);
   });
 
+  // NOTE ON PLATFORMS: this passes on Linux with or without the fix, because
+  // Linux lets you unlink a file something still has open. Windows does not —
+  // the failure lands inside the write stream's own `end` callback, so the
+  // unlink throws EBUSY while the handle is live. The assertion is the real
+  // contract either way; Windows CI is what proves the stream is destroyed and
+  // closed first (run 37505485733 is where that showed up).
   it("says why when ffmpeg can't read the sound, and leaves no temp file behind", async () => {
     extractFailsWith = "Invalid data found when processing input";
     try {

@@ -277,6 +277,49 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * video, on a machine that is also running an ffmpeg render. Now peak memory is
  * one pipe buffer, and a window is read back from disk when it's needed.
  */
+/**
+ * Throw away the temp file a failed decode was streaming into.
+ *
+ * Windows will not delete a file something still has open, and the failure lands
+ * inside the write stream's own `end` callback — so unlinking there throws
+ * EBUSY/EPERM while the handle is live. On Linux the unlink succeeds at once and
+ * leaves the inode to be reclaimed later, which is why this looked perfectly
+ * clean in development and left one temp file per failed decode on the platform
+ * the app actually ships to. Each of those is the whole video's audio as raw PCM
+ * — about 115 MB for an hour — so it is not litter to leave to chance.
+ *
+ * The stream is destroyed and its "close" awaited first, and the unlink is
+ * reported rather than swallowed: a cleanup path that fails silently is how the
+ * file came to be left behind in the first place.
+ */
+function discardTempFile(out: fs.WriteStream, file: string): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        fs.unlinkSync(file);
+      } catch (err) {
+        // ENOENT is success — nothing was ever written, or it is already gone.
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.warn(`[clips] couldn't delete ${path.basename(file)} after a failed decode: ${(err as Error).message}`);
+        }
+      }
+      resolve();
+    };
+    if (out.closed) {
+      finish();
+      return;
+    }
+    out.once("close", finish);
+    out.destroy();
+    // A stream that never finished opening may not emit "close" at all, and a
+    // cleanup path must not be able to hang the pipeline that called it.
+    setTimeout(finish, 3_000).unref();
+  });
+}
+
 export async function extractPcm(filePath: string, durationSec: number): Promise<PcmStore> {
   const maxSeconds = Math.min(Math.max(1, durationSec), MAX_PROFILE_HOURS * 3600);
   const dir = path.join(config.uploadsDir, "jobs");
@@ -355,11 +398,10 @@ export async function extractPcm(filePath: string, durationSec: number): Promise
       });
     });
   } catch (err) {
-    try {
-      fs.unlinkSync(pcmPath);
-    } catch {
-      /* nothing written yet */
-    }
+    // Awaited, not fired and forgotten: the file has to be gone before the
+    // caller sees the error, or a test (and a person) checking the folder
+    // straight afterwards still finds it.
+    await discardTempFile(out, pcmPath);
     throw err;
   }
 
