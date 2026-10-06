@@ -26,6 +26,8 @@ const EXPECT = /ask not what your country/i;
 const started = Date.now();
 const since = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** See the note on `open` below. */
+const NAV_TIMEOUT_MS = 90_000;
 
 function annotate(level, title, message) {
   if (process.env.GITHUB_ACTIONS !== "true") return;
@@ -46,8 +48,40 @@ function annotate(level, title, message) {
  * answered `evaluate` (the old index.html pulled Google's font CSS). Waiting for
  * `domcontentloaded` still proves the app's own bundle was fetched and executed
  * (module scripts gate it), and the caller's own selector wait proves the rest.
+ *
+ * The timeout is about the runner, not the app: a two-core CI machine shares the
+ * packaged app's server with everything the app starts by itself at launch (the
+ * Shorts trends scan, the managed voice setup, whisper, Edge TTS) and, just
+ * after midnight, the daily briefing's research round. Playwright's 30-second
+ * default turned that into a red build twice in one day (runs 37392172221 and
+ * 37394195055 — once on the reload above, once navigating to Settings → Phone,
+ * both with the page already answering). So a route gets 90 seconds and one
+ * retry; the assertions that follow are what actually decide the run.
  */
-const open = (page, url, options = {}) => page.goto(url, { waitUntil: "domcontentloaded", ...options });
+const open = async (page, url, options = {}) => {
+  const timeout = options.timeout ?? NAV_TIMEOUT_MS;
+  const go = (ms) => page.goto(url, { waitUntil: "domcontentloaded", ...options, timeout: ms });
+  try {
+    return await go(timeout);
+  } catch (err) {
+    // A route that did not come back in time on a busy runner: the app itself
+    // starts a lot of work at launch (the trends scan, the Kokoro setup, the
+    // daily briefing at 00:0x), and the CI machine is two cores. Say what the
+    // document was still waiting for, then try once more — the second attempt is
+    // served from the HTTP cache and usually finds a quieter moment. A real hang
+    // still fails the run: the DOM assertions that follow have their own budget,
+    // and a second timeout is reported as the failure.
+    const pending = await page
+      .evaluate(() => performance.getEntriesByType("resource").filter((r) => !r.responseEnd).map((r) => r.name).slice(0, 5))
+      .catch(() => []);
+    console.log(
+      `[e2e] ↻ ${url} did not finish loading in ${timeout}ms (${String(err.message).split("\n")[0]})` +
+        (pending.length ? ` — still waiting for ${pending.join(", ")}` : "") +
+        "; trying once more",
+    );
+    return go(timeout);
+  }
+};
 
 let app = null;
 // Which part of the flow is running. The failure annotation carries it, so a
