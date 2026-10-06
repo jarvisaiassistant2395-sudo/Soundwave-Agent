@@ -115,6 +115,8 @@ export interface DataStore {
   // users
   findUserByEmail(email: string): Promise<StoredUser | null>;
   findUserById(id: string): Promise<StoredUser | null>;
+  /** The account a Stripe customer belongs to (webhooks carry the customer). */
+  findUserByStripeCustomerId(customerId: string): Promise<StoredUser | null>;
   createUser(u: Partial<StoredUser> & { email: string; name: string }): Promise<StoredUser>;
   updateUser(id: string, patch: Partial<StoredUser>): Promise<StoredUser | null>;
   deleteUserSoft(id: string): Promise<void>;
@@ -222,6 +224,11 @@ export class JsonStore implements DataStore {
   }
   async findUserById(id: string): Promise<StoredUser | null> {
     return this.db.users.find((u) => u.id === id && !u.deletedAt) ?? null;
+  }
+  async findUserByStripeCustomerId(customerId: string): Promise<StoredUser | null> {
+    const id = customerId.trim();
+    if (!id) return null;
+    return this.db.users.find((u) => u.stripeCustomerId === id && !u.deletedAt) ?? null;
   }
   async createUser(u: Partial<StoredUser> & { email: string; name: string }): Promise<StoredUser> {
     const { email, name, id: givenId, ...rest } = u;

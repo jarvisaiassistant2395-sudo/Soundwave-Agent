@@ -35,6 +35,15 @@ export const config = {
   resendApiKey: str("RESEND_API_KEY", ""),
   stripeSecretKey: str("STRIPE_SECRET_KEY", ""),
   stripeWebhookSecret: str("STRIPE_WEBHOOK_SECRET", ""),
+  // Where Stripe lives. Only tests (and a self-hosted mirror) change this.
+  stripeApiBase: str("STRIPE_API_BASE", "https://api.stripe.com"),
+  // The four prices Soundwave sells, as created in the Stripe dashboard
+  // (Products → a recurring price per plan and interval). A plan with no price
+  // id is simply not offered on this deployment.
+  stripePriceProMonthly: str("STRIPE_PRICE_PRO_MONTHLY", ""),
+  stripePriceProAnnual: str("STRIPE_PRICE_PRO_ANNUAL", ""),
+  stripePriceEnterpriseMonthly: str("STRIPE_PRICE_ENTERPRISE_MONTHLY", ""),
+  stripePriceEnterpriseAnnual: str("STRIPE_PRICE_ENTERPRISE_ANNUAL", ""),
   ffmpegPath: str("FFMPEG_PATH", ""),
   // YouTube import (yt-dlp). The vendored zipapp is auto-detected (needs python3);
   // set YTDLP_PATH to override with a system binary.

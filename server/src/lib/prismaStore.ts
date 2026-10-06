@@ -37,6 +37,13 @@ export class PrismaStore implements DataStore {
     if (!u || u.deletedAt) return null;
     return mapUser(u);
   }
+  async findUserByStripeCustomerId(customerId: string): Promise<StoredUser | null> {
+    const id = customerId.trim();
+    if (!id) return null;
+    const u = await this.prisma.user.findFirst({ where: { stripeCustomerId: id } });
+    if (!u || u.deletedAt) return null;
+    return mapUser(u);
+  }
   async createUser(input: Partial<StoredUser> & { email: string; name: string }): Promise<StoredUser> {
     const u = await this.prisma.user.create({
       data: {

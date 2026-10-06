@@ -7,7 +7,9 @@ import {
   CreditCard,
   Database,
   Download,
+  ExternalLink,
   Loader2,
+  RefreshCw,
   Mic,
   MonitorSmartphone,
   Palette,
@@ -46,7 +48,7 @@ import {
   type VoiceInputStatus,
   type VoicePrefs,
 } from "../lib/voiceInput";
-import { getDesktop, hotkeyLabel, type DesktopSettings, type DesktopState } from "../lib/desktop";
+import { getDesktop, hotkeyLabel, openInBrowser, type DesktopSettings, type DesktopState } from "../lib/desktop";
 import { notifyUser } from "../lib/notify";
 import { PhoneTab } from "./settings/PhoneTab";
 import { BrainTab } from "./settings/BrainTab";
@@ -215,28 +217,205 @@ function ProfileTab() {
 }
 
 // ── Billing ─────────────────────────────────────────────────────────────────
+// The plans are Stripe subscriptions. Paying happens in the person's own
+// browser (Stripe Checkout) — no card ever touches this app — and the account's
+// plan follows from what Stripe says about it: the webhook when it can reach
+// this PC, and asking Stripe directly when the person comes back.
+type SubscriptionSummary = {
+  status: string;
+  interval: "monthly" | "annual" | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  needsAttention: boolean;
+};
+
+type BillingStatus = {
+  plan: Plan;
+  configured: boolean;
+  customer: boolean;
+  subscription: SubscriptionSummary | null;
+  problem?: string;
+};
+
+type Invoice = {
+  id: string;
+  stripeInvoiceId?: string;
+  amount: number;
+  currency: string;
+  status: string;
+  pdfUrl: string | null;
+  hostedUrl?: string | null;
+  createdAt: string | null;
+};
+
+const money = (cents: number, currency: string) =>
+  new Intl.NumberFormat(undefined, { style: "currency", currency: (currency || "usd").toUpperCase() }).format(cents / 100);
+
+const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "");
+
 function BillingTab() {
-  const { user, quota, setUser, refreshQuota } = useAuth();
-  const [changing, setChanging] = useState(false);
+  const { user, quota, setUser, refreshQuota, loadSession } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[] | null>(null);
+  const [cadence, setCadence] = useState<"monthly" | "annual">("monthly");
+  const [busy, setBusy] = useState<"checkout" | "portal" | "dev" | null>(null);
+  /** Waiting for the person to finish in their browser. */
+  const [waiting, setWaiting] = useState<{ url: string; target: Plan } | null>(null);
+
   const plan = user?.plan ?? "FREE";
   const planDef = PLANS[plan];
   const used = quota?.used ?? 0;
   const limit = quota?.limit ?? planDef.characterLimit;
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const configured = status?.configured ?? true;
+  const sub = status?.subscription ?? null;
 
-  const applyPlan = async (p: "PRO" | "ENTERPRISE") => {
-    setChanging(true);
+  const loadBilling = async () => {
     try {
-      const res = await http.post<{ user: { id: string; plan: Plan; name: string; email: string } }>("/billing/apply-plan", { plan: p, billing: "monthly" });
+      const [s, i] = await Promise.all([
+        http.get<BillingStatus>("/billing/status"),
+        http.get<{ invoices: Invoice[] }>("/billing/invoices").catch(() => ({ invoices: [] as Invoice[] })),
+      ]);
+      setStatus(s);
+      setInvoices(i.invoices);
+      return s;
+    } catch (e) {
+      toast.error("Couldn't read your plan", (e as Error).message);
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    void loadBilling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Back from the browser: what Stripe says now is the truth. */
+  const reconcile = async (quiet = false) => {
+    try {
+      const res = await http.post<{ plan: Plan; changed: boolean }>("/billing/reconcile");
+      if (res.changed) {
+        await loadSession();
+        await refreshQuota();
+        toast.success(`You're on ${PLANS[res.plan].name}`, "Thanks — your plan is active.");
+      } else if (!quiet) {
+        toast.info("Nothing has changed yet", "If you just paid, give Stripe a few seconds and press Check again.");
+      }
+      await loadBilling();
+      return res;
+    } catch (e) {
+      if (!quiet) toast.error("Couldn't check with Stripe", (e as Error).message);
+      return null;
+    }
+  };
+
+  // The person returns to /settings/billing?billing=success in their browser.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const outcome = params.get("billing");
+    if (!outcome) return;
+    if (outcome === "success") {
+      toast.info("Finishing up", "Checking with Stripe…");
+      void reconcile(true);
+    } else if (outcome === "cancelled") {
+      toast.info("No changes made", "You closed the payment page — nothing was charged.");
+    }
+    // Taken once: coming back to this tab shouldn't re-run the whole thing.
+    navigate("/settings/billing", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
+
+  // While the browser is open, watch for the plan to change by itself. Stripe
+  // is asked gently: often for the first minute (the usual case is seconds),
+  // then rarely, and never while this window is hidden.
+  useEffect(() => {
+    if (!waiting) return;
+    let alive = true;
+    const started = Date.now();
+    let timer = 0;
+    const until = started + 6 * 60_000;
+    const tick = async () => {
+      if (!alive) return;
+      if (Date.now() > until) {
+        setWaiting(null);
+        toast.info("Still nothing from Stripe", "If you did pay, press Check again in a moment.");
+        return;
+      }
+      const every = document.hidden ? 30_000 : Date.now() - started < 60_000 ? 4_000 : 15_000;
+      if (!document.hidden) {
+        try {
+          await reconcile(true);
+          const s = await http.get<BillingStatus>("/billing/status");
+          if (!alive) return;
+          const arrived = !s.subscription || (waiting.target === "FREE" ? s.subscription.cancelAtPeriodEnd : s.plan === waiting.target);
+          if (arrived) {
+            setWaiting(null);
+            await loadSession();
+            await refreshQuota();
+            setStatus(s);
+            toast.success(waiting.target === "FREE" ? "Subscription updated" : `You're on ${PLANS[waiting.target].name}`, "Stripe confirmed the change.");
+            return;
+          }
+        } catch {
+          /* the API is briefly unreachable — keep waiting */
+        }
+      }
+      timer = window.setTimeout(() => void tick(), every);
+    };
+    timer = window.setTimeout(() => void tick(), 3_000);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting, loadSession, refreshQuota]);
+
+  const upgrade = async (target: "PRO" | "ENTERPRISE") => {
+    setBusy("checkout");
+    try {
+      const res = await http.post<{ url: string }>("/billing/create-checkout", { plan: target, billing: cadence });
+      await openInBrowser(res.url);
+      setWaiting({ url: res.url, target });
+    } catch (e) {
+      toast.error("Couldn't start the payment page", (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const manage = async () => {
+    setBusy("portal");
+    try {
+      const res = await http.post<{ url: string }>("/billing/create-portal");
+      await openInBrowser(res.url);
+      setWaiting({ url: res.url, target: "FREE" });
+    } catch (e) {
+      toast.error("Couldn't open the billing page", (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** Development only: no Stripe keys on this deployment. */
+  const applyPlan = async (p: "PRO" | "ENTERPRISE") => {
+    setBusy("dev");
+    try {
+      const res = await http.post<{ user: { id: string; plan: Plan; name: string; email: string } }>("/billing/apply-plan", { plan: p, billing: cadence });
       setUser({ ...(user!), plan: res.user.plan });
       await refreshQuota();
-      toast.success(`Plan changed to ${p}`, "In production this goes through Stripe Checkout.");
+      await loadBilling();
+      toast.success(`Plan changed to ${p}`, "This build has no Stripe keys, so the plan was switched locally.");
     } catch (e) {
       toast.error("Failed", (e as Error).message);
     } finally {
-      setChanging(false);
+      setBusy(null);
     }
   };
+
+  const nextPlan: "PRO" | "ENTERPRISE" | null = plan === "FREE" ? "PRO" : plan === "PRO" ? "ENTERPRISE" : null;
+  const priceFor = (id: "PRO" | "ENTERPRISE") => (cadence === "annual" ? PLANS[id].annualPricePerMonth : PLANS[id].monthlyPrice);
 
   return (
     <>
@@ -245,17 +424,38 @@ function BillingTab() {
           <div>
             <div className="flex items-center gap-2">
               <p className="text-lg font-bold text-white">{planDef.name}</p>
-              <Badge tone="gradient">{planDef.monthlyPrice === 0 ? "Free" : `$${planDef.monthlyPrice}/mo`}</Badge>
+              <Badge tone="gradient">{planDef.monthlyPrice === 0 ? "Free" : `${money(planDef.monthlyPrice * 100, "usd")}/mo`}</Badge>
+              {sub?.cancelAtPeriodEnd && <Badge tone="gray">Ends {day(sub.currentPeriodEnd)}</Badge>}
             </div>
             <p className="mt-1 text-sm text-gray-400">
               {formatNumber(used)} / {formatNumber(limit)} characters this month
             </p>
+            {sub && !sub.cancelAtPeriodEnd && sub.currentPeriodEnd && plan !== "FREE" && (
+              <p className="mt-1 text-xs text-gray-500">Renews {day(sub.currentPeriodEnd)}</p>
+            )}
+            {sub?.needsAttention && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-300">
+                <TriangleAlert className="h-3.5 w-3.5" /> Stripe couldn&apos;t take the last payment — update your card to keep {planDef.name}.
+              </p>
+            )}
           </div>
-          {plan !== "ENTERPRISE" && (
-            <Button size="sm" onClick={() => applyPlan(plan === "FREE" ? "PRO" : "ENTERPRISE")} loading={changing}>
-              Upgrade to {plan === "FREE" ? "Pro" : "Enterprise"}
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {configured && nextPlan && (
+              <Button size="sm" onClick={() => void upgrade(nextPlan)} loading={busy === "checkout"} disabled={Boolean(waiting)}>
+                Upgrade to {PLANS[nextPlan].name}
+              </Button>
+            )}
+            {configured && plan !== "FREE" && (
+              <Button size="sm" variant="outline" onClick={() => void manage()} loading={busy === "portal"} disabled={Boolean(waiting)}>
+                Manage subscription
+              </Button>
+            )}
+            {!configured && plan !== "ENTERPRISE" && (
+              <Button size="sm" variant="outline" onClick={() => void applyPlan(plan === "FREE" ? "PRO" : "ENTERPRISE")} loading={busy === "dev"}>
+                Switch to {plan === "FREE" ? "Pro" : "Enterprise"} (local)
+              </Button>
+            )}
+          </div>
         </div>
         <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-800">
           <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-500 transition-all duration-300" style={{ width: `${pct}%` }} />
@@ -268,17 +468,131 @@ function BillingTab() {
         </div>
       </Card>
 
+      {configured && (
+        <Card title="Upgrade" icon={<Sparkles className="h-4 w-4" />}>
+          <div className="flex items-center gap-2">
+            {(["monthly", "annual"] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCadence(c)}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                  cadence === c ? "border-blue-500/60 bg-blue-500/10 text-white" : "border-gray-800 text-gray-400 hover:text-gray-200",
+                )}
+              >
+                {c === "monthly" ? "Monthly" : "Annual — two months free"}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {(["PRO", "ENTERPRISE"] as const).map((id) => {
+              const def = PLANS[id];
+              const current = plan === id;
+              return (
+                <div key={id} className={cn("rounded-card border p-4", current ? "border-blue-500/40 bg-blue-500/[0.04]" : "border-gray-800 bg-gray-900/40")}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-white">{def.name}</p>
+                    <p className="text-sm text-gray-300">
+                      {money(priceFor(id) * 100, "usd")}
+                      <span className="text-xs text-gray-500">/mo</span>
+                    </p>
+                  </div>
+                  <ul className="mt-3 space-y-1 text-xs text-gray-400">
+                    <li>{formatNumber(def.characterLimit)} characters a month</li>
+                    <li>Up to {def.maxResolution}{def.watermark ? "" : " · no watermark"}</li>
+                    {def.cloudSave && <li>Cloud projects</li>}
+                    {def.apiAccess && <li>API access</li>}
+                  </ul>
+                  <Button
+                    size="sm"
+                    className="mt-4"
+                    variant={current ? "outline" : "primary"}
+                    disabled={current || Boolean(waiting)}
+                    onClick={() => void upgrade(id)}
+                    loading={busy === "checkout"}
+                  >
+                    {current ? "Your plan" : `Switch to ${def.name}`}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          {cadence === "annual" && <p className="mt-3 text-xs text-gray-500">Billed once a year at {money(PLANS.PRO.annualPricePerMonth * 12 * 100, "usd")} for Pro, {money(PLANS.ENTERPRISE.annualPricePerMonth * 12 * 100, "usd")} for Enterprise.</p>}
+        </Card>
+      )}
+
+      {waiting && (
+        <Card title="Finish in your browser" icon={<ExternalLink className="h-4 w-4" />}>
+          <p className="text-sm text-gray-300">Stripe opened in your browser — pay there, then come back. This page notices on its own.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" icon={<RefreshCw className="h-4 w-4" />} onClick={() => void reconcile()}>
+              Check again
+            </Button>
+            <Button size="sm" variant="ghost" icon={<ExternalLink className="h-4 w-4" />} onClick={() => void openInBrowser(waiting.url)}>
+              Open the page again
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setWaiting(null)}>
+              Stop waiting
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Card title="Payment method" icon={<CreditCard className="h-4 w-4" />}>
-        <p className="text-sm text-gray-400">No card on file. In production, payment methods are managed via Stripe Customer Portal (no raw card data ever touches our servers).</p>
+        {!configured ? (
+          <p className="text-sm text-gray-400">
+            This build has no Stripe keys, so there is nothing to charge and nothing to pay. The plan buttons above switch the plan locally so the whole quota path can be used.
+          </p>
+        ) : sub ? (
+          <p className="text-sm text-gray-400">
+            Your card is held by Stripe, never by Soundwave. Change or remove it in the billing page — that is where cancellations happen too, and your access
+            continues until {sub.currentPeriodEnd ? day(sub.currentPeriodEnd) : "the end of the period"}.
+          </p>
+        ) : (
+          <p className="text-sm text-gray-400">No card on file yet. Upgrading opens Stripe Checkout in your browser; card details never touch this app.</p>
+        )}
+        {status?.problem && <p className="mt-2 text-xs text-amber-300">Stripe couldn&apos;t be reached just now ({status.problem}) — showing what this computer already knows.</p>}
       </Card>
 
       <Card title="Billing history" icon={<CreditCard className="h-4 w-4" />}>
-        <p className="text-sm text-gray-500">No invoices yet.</p>
+        {invoices === null ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : invoices.length === 0 ? (
+          <p className="text-sm text-gray-500">No invoices yet.</p>
+        ) : (
+          <ul className="divide-y divide-gray-800">
+            {invoices.map((inv) => (
+              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-gray-200">
+                    {money(inv.amount, inv.currency)} <span className="text-xs text-gray-500">{inv.stripeInvoiceId ?? inv.id}</span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {inv.createdAt ? day(inv.createdAt) : ""} · {inv.status}
+                  </p>
+                </div>
+                {(inv.pdfUrl || inv.hostedUrl) && (
+                  <Button size="sm" variant="ghost" icon={<Download className="h-4 w-4" />} onClick={() => void openInBrowser(inv.pdfUrl ?? inv.hostedUrl!)}>
+                    Receipt
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
-      <Card title="Cancel subscription" icon={<Trash2 className="h-4 w-4" />}>
-        <p className="text-sm text-gray-400">You can cancel anytime from the Stripe Customer Portal. Your access continues until the end of the billing period.</p>
-      </Card>
+      {configured && plan !== "FREE" && (
+        <Card title="Cancel subscription" icon={<Trash2 className="h-4 w-4" />}>
+          <p className="text-sm text-gray-400">
+            Cancel anytime in the billing page; your access continues until the end of the period you paid for. Nothing is deleted.
+          </p>
+          <Button variant="outline" className="mt-3" onClick={() => void manage()} loading={busy === "portal"}>
+            Open billing page
+          </Button>
+        </Card>
+      )}
     </>
   );
 }

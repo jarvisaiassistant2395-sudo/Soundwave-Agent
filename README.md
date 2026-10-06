@@ -514,7 +514,7 @@ it works and how to build it.
 | Agent Engine | Python 3 Autonomous Shorts Creator, 2026 Viral Research Hooks, Reactive Soundwave HUD, Batch Automation |
 | Voice input | Local speech-to-text: whisper.cpp (`whisper-cli`) + Whisper base.en, run per command by the server (`POST /api/v1/agent/transcribe`); the browser records 16 kHz WAV (AudioWorklet) and detects the end of speech itself |
 | Voice | **Soundwave voices** = Microsoft neural voices (Edge TTS). A direct WebSocket client streams replies as they are synthesized (24 kHz mono MP3 + word timings); `node-edge-tts` is the backup engine. No robotic fallback voice: if the service is unreachable the app says why |
-| Backend | Express 5 + TypeScript, PostgreSQL + Prisma (JSON-file store fallback), JWT sessions (httpOnly cookies + refresh rotation + CSRF), Stripe billing stubs, SSE export jobs |
+| Backend | Express 5 + TypeScript, PostgreSQL + Prisma (JSON-file store fallback), JWT sessions (httpOnly cookies + refresh rotation + CSRF), Stripe billing (Checkout + Billing Portal + signed webhooks), SSE export jobs |
 | Media | FFmpeg (`libx264`/`libvpx-vp9`, `libass` subtitles + ASS watermark, volume/fades, media probing) |
 
 ```
@@ -680,9 +680,14 @@ cd frontend && npm run build     # production build
 | GET | `/api/v1/user/usage` | ✓ | quota snapshot |
 | DELETE | `/api/v1/user/account` | ✓ | account deletion (30-day window) |
 | GET | `/api/v1/user/export-data` | ✓ | GDPR data export |
-| GET | `/api/v1/billing/plans` | — | plan definitions |
-| GET | `/api/v1/billing/portal` | ✓ | Stripe customer portal (stub) |
-| POST | `/api/v1/billing/checkout` | ✓ | Stripe checkout (stub) |
+| GET | `/api/v1/billing/plans` | — | plan definitions + whether billing works here |
+| GET | `/api/v1/billing/status` | ✓ | this account’s plan and its subscription |
+| POST | `/api/v1/billing/create-checkout` | ✓ | Stripe Checkout session → `{ url }` to open in a browser |
+| POST | `/api/v1/billing/create-portal` | ✓ | Stripe Billing Portal → `{ url }` (change card, cancel) |
+| POST | `/api/v1/billing/reconcile` | ✓ | ask Stripe what this account has paid for and apply it |
+| GET | `/api/v1/billing/invoices` | ✓ | receipts (Stripe’s, with PDFs; the stored record otherwise) |
+| POST | `/api/v1/billing/webhook` | signature | signed Stripe events set the plan |
+| POST | `/api/v1/billing/apply-plan` | ✓ | development only: switch a plan without paying |
 | GET/POST | `/api/v1/api-keys` | ✓ Ent | API key create/list |
 | DELETE | `/api/v1/api-keys/:id` | ✓ Ent | revoke key |
 
@@ -751,9 +756,10 @@ docker compose up --build
 
 - **API** auto-selects Prisma + Postgres when `DATABASE_URL` is set (see
   `server/prisma/schema.prisma`); otherwise the JSON store is used.
-- Set `STRIPE_*`, `SMTP_*`, `GOOGLE_*` env vars to activate billing,
-  email, and OAuth; without them the corresponding endpoints degrade gracefully
-  (billing 501 / logged email / OAuth redirect to a "not configured" notice).
+- Set `STRIPE_*` and the Google client env vars to activate billing and
+  sign-in; without them the app degrades honestly (Billing says it isn't
+  configured and switches the plan locally, and the first screen explains what
+  the build is missing).
 - Run `prisma migrate deploy` in CI before rolling out schema changes.
 
 ### Setting up Google sign-in
@@ -778,6 +784,30 @@ Gmail permissions are separate grants, asked for when that feature is first used
 Sessions on the person's own PC are permanent — signing out is a deliberate act,
 not an expiry.
 
+### Setting up billing (Stripe)
+
+Plans are Stripe subscriptions. Paying happens in the person's own browser —
+Stripe Checkout for upgrading, the Billing Portal for changing a card or
+cancelling — so no card details ever reach this app.
+
+1. In the Stripe dashboard, create **four recurring prices**: Pro monthly, Pro
+   annual, Enterprise monthly, Enterprise annual.
+2. Set `STRIPE_SECRET_KEY` and the four `STRIPE_PRICE_*` ids (see
+   `server/.env.example`). A plan with no price id is simply not offered.
+3. Webhooks (a hosted deployment): add an endpoint for
+   `checkout.session.completed`, `customer.subscription.*` and `invoice.*`
+   pointing at `https://your-host/api/v1/billing/webhook`, then set
+   `STRIPE_WEBHOOK_SECRET`. Locally: `stripe listen --forward-to
+   http://127.0.0.1:4000/api/v1/billing/webhook`.
+4. Restart the server. Settings → Billing shows the plans and opens Checkout.
+
+Two paths keep the plan in step, on purpose: the signed webhook (instant) **and**
+`POST /billing/reconcile`, which asks Stripe about this account's customer. The
+second one is what makes the desktop app work — a PC at home has no public
+address for Stripe to call, so the app asks instead (when someone comes back
+from Checkout, opens Billing, or while the payment page is open). Without any
+Stripe keys, Billing says so plainly and its buttons switch the plan locally.
+
 ### Feature flags & graceful degradation
 
 | Capability | Without infra | Behaviour |
@@ -786,7 +816,7 @@ not an expiry.
 | Redis | not installed | in-process rate limiting |
 | FFmpeg | not installed | shorts fail with a clear message; everything else works |
 | SMTP | not configured | emails are logged to stdout |
-| Stripe | not configured | billing returns 501 stubs |
+| Stripe | not configured | Billing says so and the plan switches locally (development) |
 | Edge TTS (Microsoft) | unreachable | the agent shows why it can't speak (no robotic stand-in voice); a short fails with a clear message instead of being narrated by another voice |
 | Speech engine (whisper.cpp) | not in `vendor/whisper/` / `WHISPER_*` unset | `/agent/transcribe` answers 503 with the reason; the mic shows it; typing works |
 | Voice cloning | `VOICECLONE_URL` unset or sidecar down | `/tts/clone*` answers with a clear error; the Soundwave voices are unaffected |

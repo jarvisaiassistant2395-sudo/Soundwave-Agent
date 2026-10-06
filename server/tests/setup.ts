@@ -37,6 +37,9 @@ beforeEach(() => {
     // built-in one (`youtubeService.client()` prefers it), which quietly changed
     // which app the sign-in tests were signing in with.
     path.join("youtube", "youtube_config.json"),
+    // Webhook ids already handled: a leftover file would make a fresh test's
+    // first Stripe event look like a duplicate.
+    path.join("billing", "stripe-events.json"),
   ]) {
     try {
       fs.rmSync(path.join(dataDir, name), { force: true });
