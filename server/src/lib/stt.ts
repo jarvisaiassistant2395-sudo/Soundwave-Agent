@@ -379,6 +379,15 @@ let chain: Promise<unknown> = Promise.resolve();
  * it, or fail because a background check filled the queue. Whisper is a single
  * process on a single PC, and both callers want it: the person goes first.
  */
+/**
+ * Is the speech engine busy? Background work (the trends scan, channel checks)
+ * asks before taking the machine, so a person being transcribed never waits
+ * behind it. `queued` counts work that is running *and* work that is waiting.
+ */
+export function sttBusy(): boolean {
+  return queued > 0;
+}
+
 function enqueue<T>(task: () => Promise<T>, opts: { background?: boolean } = {}): Promise<T> {
   if (opts.background && queued > 0) {
     return Promise.reject(new SttError("STT_BUSY", "The speech engine is busy with something you asked for."));

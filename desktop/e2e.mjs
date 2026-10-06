@@ -14,7 +14,10 @@
 // the window keeps the app in the tray, and a Ghost Operator macro run from
 // the Workflow panel really copies to the clipboard (verified in Electron) and
 // skips — with the reason — the steps Soundwave can't do yet. Needs
-// playwright-core (CI: npm i --no-save).
+// playwright-core (CI: npm i --no-save). The run itself switches off the two
+// heaviest background jobs (the managed voice install, the Shorts trends scan —
+// see the launch env below): both starve the bundled whisper on a two-core CI
+// machine, and both are covered by their own tests and workflows.
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -228,6 +231,14 @@ try {
       GEMINI_API_BASE: fakeGemini.url,
       // CI verifies the app, not a multi-gigabyte first-run local-model install.
       SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP: "1",
+      // …and not the background trends scan either: it is a couple of dozen
+      // searches with yt-dlp fallbacks, and on a two-core runner it starved the
+      // bundled whisper until a voice command hit the speech engine's
+      // 90-second limit (run 37398031986). The scan has its own coverage —
+      // shorts-trends-smoke.yml reads the real readers live, and the server's
+      // trends tests cover the logic — while this run is about the app behaving
+      // under a person's hands. TRENDS_SCAN is the app's own switch.
+      TRENDS_SCAN: "0",
       // Morning Setup's weather from the same stand-in.
       OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
       OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
@@ -1297,6 +1308,7 @@ try {
           ...process.env,
           GEMINI_API_BASE: fakeGemini.url,
           SOUNDWAVE_DISABLE_KOKORO_AUTO_SETUP: "1",
+          TRENDS_SCAN: "0",
           OPEN_METEO_GEOCODING_URL: `${fakeGemini.url}/geocode`,
           OPEN_METEO_FORECAST_URL: `${fakeGemini.url}/forecast`,
         },

@@ -294,6 +294,10 @@ jobs:
         working-directory: desktop
         run: npm install --no-save --no-audit --no-fund playwright-core@1.63.0
 
+      # The run turns off the two heavy first-run/background jobs itself (the
+      # managed voice install and the Shorts trends scan): both are covered by
+      # their own tests and workflows, and on a two-core runner they starved the
+      # bundled whisper (run 37398031986). See the launch env in desktop/e2e.mjs.
       - name: End-to-end test of the packaged app (voice input, voice bar, tray)
         working-directory: desktop
         run: node e2e.mjs

@@ -344,7 +344,12 @@ export function initTrendScout(): () => void {
   };
   const timer = setInterval(() => tick("schedule"), CHECK_INTERVAL_MS);
   timer.unref?.();
-  const first = setTimeout(() => tick("startup"), 25_000);
+  // Two minutes, not twenty-five seconds: the start of a session belongs to the
+  // person (windows opening, the first command, the first voice input), and this
+  // scan is heavy background work — a couple of dozen searches, with yt-dlp
+  // fallbacks. Nothing is lost by reading the week's Shorts a minute later, and
+  // the voice path never has to fight it.
+  const first = setTimeout(() => tick("startup"), 120_000);
   first.unref?.();
   return () => {
     clearInterval(timer);

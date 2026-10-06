@@ -24,6 +24,7 @@
 // The scripts and the agent read the result exactly like the old search digest.
 
 import { NICHES } from "./brain/core/viral.js";
+import { sttBusy } from "./stt.js";
 import { searchVideos } from "./ytdlp.js";
 
 /** One Short seen in this week's popular results. */
@@ -318,6 +319,13 @@ export async function collectTrendingShorts(
     while (next < jobs.length) {
       if (opts.signal?.aborted) return;
       if (successes === 0 && failures >= GIVE_UP_AFTER_FAILURES) return;
+      // The speech engine is one whisper process on one PC, and this is
+      // background work: if a recording (or a wake-word check) is queued or
+      // running, step aside rather than compete for the CPU. Two minutes of
+      // extra scan time is invisible; a voice command that takes four times as
+      // long is not (the packaged-app e2e caught exactly that: yt-dlp searches
+      // running while whisper transcribed pushed it past its 90-second limit).
+      for (let waited = 0; waited < 120_000 && sttBusy(); waited += 500) await delay(500);
       const job = jobs[next++]!;
       const read = async (): Promise<{ nodes: unknown[]; source: TrendingShort["source"] }> => {
         try {

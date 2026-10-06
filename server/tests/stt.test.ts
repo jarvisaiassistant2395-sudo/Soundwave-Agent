@@ -13,6 +13,7 @@ import {
   modelLabel,
   parseWav,
   resolveWhisper,
+  sttBusy,
   transcribe,
 } from "../src/lib/stt.js";
 
@@ -243,6 +244,26 @@ describe("voice input — POST /api/v1/agent/transcribe", () => {
       const later = await request(app).post("/api/v1/agent/transcribe?background=1").set("Content-Type", "audio/wav").send(wav);
       expect(later.status).toBe(200);
       expect(later.body.text).toBe("Make a YouTube short about black holes.");
+      delete process.env.FAKE_WHISPER_SLEEP;
+    });
+
+    it("says when the engine is busy, so background work can step aside", async () => {
+      // The trends scan (shortsTrends) asks this before taking the machine: a
+      // person's voice input must never share the CPU with two yt-dlp searches
+      // on a small PC — that is what pushed a voice command past the engine's
+      // 90-second limit in the packaged-app end-to-end run.
+      installFakeWhisper();
+      process.env.FAKE_WHISPER_OUTPUT = " And so, my fellow Americans.";
+      process.env.FAKE_WHISPER_SLEEP = "1";
+      expect(sttBusy()).toBe(false);
+
+      const running = request(app).post("/api/v1/agent/transcribe").set("Content-Type", "audio/wav").send(encodeWav(speechLikePcm())).then((r) => r);
+      for (let i = 0; i < 80 && !sttBusy(); i++) await new Promise((r) => setTimeout(r, 25));
+      expect(sttBusy()).toBe(true);
+
+      const done = await running;
+      expect(done.status).toBe(200);
+      expect(sttBusy()).toBe(false);
       delete process.env.FAKE_WHISPER_SLEEP;
     });
 
