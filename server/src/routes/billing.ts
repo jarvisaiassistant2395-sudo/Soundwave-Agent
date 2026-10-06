@@ -34,6 +34,7 @@ import {
   createCustomer,
   createPortalSession,
   customerIdOf,
+  lifetimePriceId,
   listInvoices as listStripeInvoices,
   listSubscriptions,
   missingPrices,
@@ -69,7 +70,7 @@ function stripeProblem(err: unknown): ApiError | null {
   return new ApiError(err.status >= 500 ? 502 : err.status, err.code, err.message);
 }
 
-function planPayload() {
+async function planPayload() {
   return {
     plans: Object.values(PLANS).map((p) => ({
       id: p.id,
@@ -90,11 +91,50 @@ function planPayload() {
       personal: personalEdition,
       missingPrices: billingEnabled ? missingPrices() : [],
     },
+    lifetime: await lifetimeOffer(),
   };
 }
 
-router.get("/plans", (_req, res) => {
-  res.json(planPayload());
+/**
+ * The Founder lifetime: one payment, everything Enterprise gives, forever.
+ *
+ * It is only safe to sell because the marginal cost of a user is their own
+ * Gemini key and their own CPU — the thing a cloud competitor structurally
+ * cannot copy. The seat count is capped and shown, because "first 100" is a
+ * promise, and a promise that quietly runs to 300 is a lie told to the first
+ * hundred people who believed it.
+ */
+const FOUNDER_PRICE_USD = 199;
+
+async function lifetimeOffer(): Promise<{
+  available: boolean;
+  priceUsd: number;
+  seats: number;
+  sold: number;
+  priceConfigured: boolean;
+  reason?: string;
+}> {
+  const seats = config.founderSeats;
+  const priceConfigured = Boolean(lifetimePriceId());
+  if (!billingEnabled) return { available: false, priceUsd: FOUNDER_PRICE_USD, seats, sold: 0, priceConfigured, reason: "no_billing" };
+  const sold = (await (await getStore()).countLifetimeUsers().catch(() => 0)) ?? 0;
+  const available = priceConfigured && sold < seats;
+  return {
+    available,
+    priceUsd: FOUNDER_PRICE_USD,
+    seats,
+    sold,
+    priceConfigured,
+    ...(available ? {} : { reason: priceConfigured ? "sold_out" : "no_price" }),
+  };
+}
+
+router.get("/plans", async (_req, res, next) => {
+  try {
+    res.json(await planPayload());
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── This account's subscription ─────────────────────────────────────────────
@@ -152,7 +192,7 @@ router.get("/status", requireAuth, async (req, res, next) => {
       return res.json({ plan: effectivePlan(user.plan), configured: false, personal: true, customer: false, subscription: null });
     }
     if (!stripeConfigured()) {
-      return res.json({ plan: user.plan, configured: false, subscription: null, customer: Boolean(user.stripeCustomerId) });
+      return res.json({ plan: user.plan, configured: false, subscription: null, customer: Boolean(user.stripeCustomerId), lifetime: Boolean(user.lifetimeSince) });
     }
     let view: ReturnType<typeof subscriptionView> | null = null;
     try {
@@ -170,6 +210,7 @@ router.get("/status", requireAuth, async (req, res, next) => {
     res.json({
       plan: view?.plan ?? user.plan,
       configured: true,
+      lifetime: Boolean(user.lifetimeSince),
       customer: Boolean(user.stripeCustomerId),
       subscription: view
         ? {
@@ -204,7 +245,10 @@ router.post("/reconcile", requireBilling, requireAuth, async (req, res, next) =>
 
 // ── Paying ──────────────────────────────────────────────────────────────────
 
-const checkoutSchema = z.object({ plan: z.enum(["PRO", "ENTERPRISE"]), billing: z.enum(["monthly", "annual"]).default("monthly") });
+const checkoutSchema = z.object({
+  plan: z.enum(["PRO", "ENTERPRISE", "LIFETIME"]),
+  billing: z.enum(["monthly", "annual"]).default("monthly"),
+});
 
 /** Where the browser should come back to (this app's own page, same origin). */
 function appOriginFor(req: Request): string {
@@ -223,9 +267,26 @@ router.post("/create-checkout", requireBilling, requireAuth, validate({ body: ch
   try {
     if (!stripeConfigured()) throw new ApiError(503, "BILLING_NOT_CONFIGURED", "Payments are not set up on this deployment yet — the plan can be switched locally instead.");
     const { plan, billing } = req.body as z.infer<typeof checkoutSchema>;
-    const priceId = priceIdFor(plan, billing as BillingInterval);
+    const lifetime = plan === "LIFETIME";
+    let priceId: string | null;
+    if (lifetime) {
+      const offer = await lifetimeOffer();
+      if (!offer.available) {
+        throw new ApiError(
+          409,
+          offer.reason === "sold_out" ? "LIFETIME_SOLD_OUT" : "PRICE_NOT_CONFIGURED",
+          offer.reason === "sold_out"
+            ? `All ${offer.seats} Founder seats have gone. A monthly or annual plan is right there.`
+            : "The lifetime offer isn't set up on this deployment. Add STRIPE_PRICE_LIFETIME.",
+        );
+      }
+      priceId = lifetimePriceId();
+    } else {
+      priceId = priceIdFor(plan, billing as BillingInterval);
+    }
     if (!priceId) {
-      throw new ApiError(503, "PRICE_NOT_CONFIGURED", `This deployment has no Stripe price for ${PLANS[plan].name} (${billing}). Add STRIPE_PRICE_${plan}_${billing.toUpperCase()}.`);
+      const named = plan as Plan;
+      throw new ApiError(503, "PRICE_NOT_CONFIGURED", `This deployment has no Stripe price for ${PLANS[named].name} (${billing}). Add STRIPE_PRICE_${plan}_${billing.toUpperCase()}.`);
     }
     const origin = appOriginFor(req);
     const customerId = await ensureStripeCustomer(req.user!);
@@ -237,6 +298,7 @@ router.post("/create-checkout", requireBilling, requireAuth, validate({ body: ch
       // Back to Billing, where the page notices the purchase and reconciles.
       successUrl: `${origin}/settings/billing?billing=success`,
       cancelUrl: `${origin}/settings/billing?billing=cancelled`,
+      ...(lifetime ? { mode: "payment" as const, metadata: { kind: "lifetime" } } : {}),
     });
     if (!session.url) throw new ApiError(502, "STRIPE_NO_URL", "Stripe didn't return a checkout page. Try again in a moment.");
     res.json({ url: session.url, sessionId: session.id });
@@ -317,6 +379,7 @@ router.post("/apply-plan", requireBilling, requireAuth, validate({ body: checkou
       throw new ApiError(409, "BILLING_CONFIGURED", "This deployment takes payments through Stripe — upgrade from the Billing tab instead.");
     }
     const { plan } = req.body as z.infer<typeof checkoutSchema>;
+    if (plan === "LIFETIME") throw new ApiError(400, "NOT_A_PLAN", "A lifetime is bought, not switched on — it isn't a plan you can set here.");
     const store = await getStore();
     const user = await store.updateUser(req.user!.id, { plan });
     res.json({ user: { id: user!.id, plan: user!.plan, name: user!.name, email: user!.email } });
@@ -382,6 +445,17 @@ async function applyEvent(event: StripeEvent): Promise<string> {
     const userId = (typeof object.client_reference_id === "string" && object.client_reference_id) || (object.metadata as Record<string, string> | undefined)?.userId || "";
     const user = userId ? await store.findUserById(userId) : found?.user ?? null;
     if (!user) return "no account for that checkout";
+    const metadata = (object.metadata ?? {}) as Record<string, string>;
+    if (object.mode === "payment" && metadata.kind === "lifetime") {
+      // One payment, and the plan it buys never expires. Enterprise is what a
+      // lifetime is — the same features — and lifetimeSince is what tells the
+      // app (and the person) that they don't owe anything again.
+      await store.updateUser(user.id, {
+        plan: "ENTERPRISE",
+        lifetimeSince: typeof object.created === "number" ? new Date(object.created * 1000).toISOString() : new Date().toISOString(),
+      });
+      return "lifetime bought → ENTERPRISE";
+    }
     const customerId = typeof object.customer === "string" ? object.customer : null;
     const subscriptionId = typeof object.subscription === "string" ? object.subscription : null;
     const had = { customerId: user.stripeCustomerId, subscriptionId: user.stripeSubscriptionId };

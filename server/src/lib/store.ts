@@ -19,6 +19,8 @@ export interface StoredUser {
   plan: Plan;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  /** When a Founder lifetime was bought. Its presence is what makes it a lifetime. */
+  lifetimeSince?: string | null;
   charactersUsedThisMonth: number;
   characterResetDate: string;
   totalAudioDurationSeconds: number;
@@ -118,6 +120,8 @@ export interface DataStore {
   /** The account a Stripe customer belongs to (webhooks carry the customer). */
   findUserByStripeCustomerId(customerId: string): Promise<StoredUser | null>;
   createUser(u: Partial<StoredUser> & { email: string; name: string }): Promise<StoredUser>;
+  /** How many accounts already hold a Founder lifetime (the seat cap). */
+  countLifetimeUsers(): Promise<number>;
   updateUser(id: string, patch: Partial<StoredUser>): Promise<StoredUser | null>;
   deleteUserSoft(id: string): Promise<void>;
   countUsers(): Promise<number>;
@@ -270,6 +274,9 @@ export class JsonStore implements DataStore {
   }
   async countUsers(): Promise<number> {
     return this.db.users.filter((u) => !u.deletedAt).length;
+  }
+  async countLifetimeUsers(): Promise<number> {
+    return this.db.users.filter((u) => !u.deletedAt && Boolean(u.lifetimeSince)).length;
   }
 
   // ── sessions ─────────────────────────────────────────────────────────────

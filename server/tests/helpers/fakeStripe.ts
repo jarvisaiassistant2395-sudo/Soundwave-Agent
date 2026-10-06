@@ -145,6 +145,7 @@ export function useFakeStripe(config: Record<string, unknown>, fake: FakeStripe)
     stripePriceProAnnual: "price_pro_annual",
     stripePriceEnterpriseMonthly: "price_ent_monthly",
     stripePriceEnterpriseAnnual: "price_ent_annual",
+    stripePriceLifetime: "price_lifetime",
   });
 }
 
@@ -154,4 +155,5 @@ export const FAKE_PRICES = {
   proAnnual: "price_pro_annual",
   enterpriseMonthly: "price_ent_monthly",
   enterpriseAnnual: "price_ent_annual",
+  lifetime: "price_lifetime",
 } as const;

@@ -232,11 +232,22 @@ type SubscriptionSummary = {
 type BillingStatus = {
   plan: Plan;
   configured: boolean;
+  /** Bought once, never renewed (the Founder lifetime). */
+  lifetime?: boolean;
   /** The owner's own build: no payments anywhere (see the desktop editions). */
   personal?: boolean;
   customer: boolean;
   subscription: SubscriptionSummary | null;
   problem?: string;
+};
+
+type LifetimeOffer = {
+  available: boolean;
+  priceUsd: number;
+  seats: number;
+  sold: number;
+  priceConfigured: boolean;
+  reason?: string;
 };
 
 type Invoice = {
@@ -261,10 +272,11 @@ function BillingTab() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
+  const [offer, setOffer] = useState<LifetimeOffer | null>(null);
   const [cadence, setCadence] = useState<"monthly" | "annual">("monthly");
   const [busy, setBusy] = useState<"checkout" | "portal" | "dev" | null>(null);
   /** Waiting for the person to finish in their browser. */
-  const [waiting, setWaiting] = useState<{ url: string; target: Plan } | null>(null);
+  const [waiting, setWaiting] = useState<{ url: string; target: Plan | "LIFETIME" } | null>(null);
 
   const plan = user?.plan ?? "FREE";
   const planDef = PLANS[plan];
@@ -296,6 +308,12 @@ function BillingTab() {
 
   useEffect(() => {
     void loadBilling();
+    // The Founder offer, so the card can say how many of the seats are left
+    // rather than "limited time" — a number is a promise, and it is checkable.
+    void http
+      .get<{ lifetime: LifetimeOffer }>("/billing/plans")
+      .then((r) => setOffer(r.lifetime ?? null))
+      .catch(() => setOffer(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -362,7 +380,13 @@ function BillingTab() {
             await loadSession();
             await refreshQuota();
             setStatus(s);
-            toast.success(waiting.target === "FREE" ? "Subscription updated" : `You're on ${PLANS[waiting.target].name}`, "Stripe confirmed the change.");
+            const arrival =
+              waiting.target === "FREE"
+                ? "Subscription updated"
+                : waiting.target === "LIFETIME"
+                  ? "Founder lifetime — thank you"
+                  : `You're on ${PLANS[waiting.target].name}`;
+            toast.success(arrival, "Stripe confirmed the change.");
             return;
           }
         } catch {
@@ -379,7 +403,7 @@ function BillingTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waiting, loadSession, refreshQuota]);
 
-  const upgrade = async (target: "PRO" | "ENTERPRISE") => {
+  const upgrade = async (target: "PRO" | "ENTERPRISE" | "LIFETIME") => {
     setBusy("checkout");
     try {
       const res = await http.post<{ url: string }>("/billing/create-checkout", { plan: target, billing: cadence });
@@ -433,6 +457,8 @@ function BillingTab() {
               <p className="text-lg font-bold text-white">{planDef.name}</p>
               {personal ? (
                 <Badge tone="gradient">Everything unlocked</Badge>
+              ) : status?.lifetime ? (
+                <Badge tone="gradient">Founder — paid once</Badge>
               ) : (
                 <Badge tone="gradient">{planDef.monthlyPrice === 0 ? "Free" : `${money(planDef.monthlyPrice * 100, "usd")}/mo`}</Badge>
               )}
@@ -452,12 +478,13 @@ function BillingTab() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {personal && <span className="text-xs text-gray-500">This build has no payments in it — nothing here to buy.</span>}
-            {!personal && configured && nextPlan && (
+            {!personal && status?.lifetime && <span className="text-xs text-gray-500">Nothing renews and nothing is owed — this plan is yours for good.</span>}
+            {!personal && !status?.lifetime && configured && nextPlan && (
               <Button size="sm" onClick={() => void upgrade(nextPlan)} loading={busy === "checkout"} disabled={Boolean(waiting)}>
                 Upgrade to {PLANS[nextPlan].name}
               </Button>
             )}
-            {!personal && configured && plan !== "FREE" && (
+            {!personal && !status?.lifetime && configured && plan !== "FREE" && (
               <Button size="sm" variant="outline" onClick={() => void manage()} loading={busy === "portal"} disabled={Boolean(waiting)}>
                 Manage subscription
               </Button>
@@ -479,6 +506,26 @@ function BillingTab() {
           <MiniStat label="Video limit" value={`${planDef.maxVideoMb}MB`} />
         </div>
       </Card>
+
+      {!personal && !status?.lifetime && offer?.available && (
+        <Card title="Founder lifetime" icon={<Sparkles className="h-4 w-4" />}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="max-w-xl">
+              <p className="text-sm text-gray-300">
+                Everything Enterprise gives, paid once: <span className="font-semibold text-white">{money(offer.priceUsd * 100, "usd")}</span> — no renewal, no
+                invoice, ever. It costs us almost nothing to keep you running (your own PC, your own Gemini key), which is why we can sell it and a cloud
+                clipper can't.
+              </p>
+              <p className="mt-2 text-xs text-gray-500" data-testid="founder-seats">
+                {Math.max(0, offer.seats - offer.sold)} of {offer.seats} Founder seats left.
+              </p>
+            </div>
+            <Button size="sm" onClick={() => void upgrade("LIFETIME")} loading={busy === "checkout"} disabled={Boolean(waiting)} data-testid="founder-buy">
+              Buy the lifetime
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {personal && (
         <Card title="Your own build" icon={<Sparkles className="h-4 w-4" />}>

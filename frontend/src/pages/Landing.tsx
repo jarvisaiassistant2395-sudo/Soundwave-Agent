@@ -324,8 +324,9 @@ export function Landing() {
           <div className="mx-auto mt-12 grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-3">
             {[
               { name: "Free", price: "$0", desc: "10K chars / month", highlight: false, cta: "Open Soundwave", to: "/agent" },
-              { name: "Pro", price: "$12", desc: "200K chars / month", highlight: true, cta: "Subscribe Now", to: "/agent" },
+              { name: "Pro", price: "$15", desc: "200K chars / month", highlight: true, cta: "Subscribe Now", to: "/agent" },
               { name: "Enterprise", price: "$39", desc: "2M chars / month", highlight: false, cta: "Contact Sales", to: "/pricing" },
+              { name: "Founder lifetime", price: "$199", desc: "once — everything, for good", highlight: false, cta: "See Billing", to: "/settings/billing" },
             ].map((p) => (
               <div
                 key={p.name}

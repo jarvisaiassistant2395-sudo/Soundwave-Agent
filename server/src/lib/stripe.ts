@@ -57,6 +57,11 @@ export function planForPriceId(priceId: string): { plan: Plan; interval: Billing
   return null;
 }
 
+/** The Founder lifetime price: one payment, no subscription, no renewal. */
+export function lifetimePriceId(): string | null {
+  return config.stripePriceLifetime || null;
+}
+
 /** The plans whose price id is missing from this deployment's configuration. */
 export function missingPrices(): string[] {
   const missing: string[] = [];
@@ -209,15 +214,25 @@ export async function createCheckoutSession(opts: {
   successUrl: string;
   cancelUrl: string;
   customerId?: string | null;
+  /**
+   * A subscription, or one payment. The lifetime offer is a single payment —
+   * `kind: "lifetime"` rides along in the metadata so the webhook can tell the
+   * two apart without being told where the price came from.
+   */
+  mode?: "subscription" | "payment";
+  metadata?: Record<string, string>;
 }): Promise<{ id: string; url: string }> {
+  const mode = opts.mode ?? "subscription";
   const session = await request<StripeObject>("POST", "/v1/checkout/sessions", {
-    mode: "subscription",
+    mode,
     line_items: [{ price: opts.priceId, quantity: 1 }],
     client_reference_id: opts.userId,
     // Both places, so a webhook can always find whose plan this is: the session
     // itself and (once it exists) the subscription it creates.
-    metadata: { userId: opts.userId },
-    subscription_data: { metadata: { userId: opts.userId } },
+    metadata: { userId: opts.userId, ...(opts.metadata ?? {}) },
+    ...(mode === "subscription"
+      ? { subscription_data: { metadata: { userId: opts.userId, ...(opts.metadata ?? {}) } } }
+      : { payment_intent_data: { metadata: { userId: opts.userId, ...(opts.metadata ?? {}) } } }),
     ...(opts.customerId ? { customer: opts.customerId } : { customer_email: opts.email }),
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,

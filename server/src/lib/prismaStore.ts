@@ -79,6 +79,9 @@ export class PrismaStore implements DataStore {
   async countUsers(): Promise<number> {
     return this.prisma.user.count({ where: { deletedAt: null } });
   }
+  async countLifetimeUsers(): Promise<number> {
+    return this.prisma.user.count({ where: { deletedAt: null, lifetimeSince: { not: null } } });
+  }
 
   // sessions ─────────────────────────────────────────────────────────────────
   async createSession(s: Omit<StoredSession, "createdAt">): Promise<StoredSession> {
@@ -336,6 +339,7 @@ function mapUser(u: any): StoredUser {
     plan: u.plan,
     stripeCustomerId: u.stripeCustomerId,
     stripeSubscriptionId: u.stripeSubscriptionId,
+    lifetimeSince: d2s(u.lifetimeSince),
     charactersUsedThisMonth: u.charactersUsedThisMonth,
     characterResetDate: d2s(u.characterResetDate) ?? new Date().toISOString(),
     totalAudioDurationSeconds: u.totalAudioDurationSeconds,

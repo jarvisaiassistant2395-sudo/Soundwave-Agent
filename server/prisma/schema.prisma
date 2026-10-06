@@ -49,6 +49,8 @@ model User {
   name                        String
   avatarUrl                   String?
   plan                        Plan      @default(FREE)
+  // A Founder lifetime: one payment, no renewal. Presence = it was bought.
+  lifetimeSince               DateTime?
   stripeCustomerId            String?
   stripeSubscriptionId        String?
   charactersUsedThisMonth     Int       @default(0)

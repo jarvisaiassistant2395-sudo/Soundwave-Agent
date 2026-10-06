@@ -425,3 +425,135 @@ describe("receipts", () => {
     expect(fallback.body.invoices.map((i: { id: string; stripeInvoiceId?: string }) => i.stripeInvoiceId)).toEqual(["in_local"]);
   });
 });
+
+// ── The Founder lifetime ─────────────────────────────────────────────────────
+// One payment, everything Enterprise gives, no renewal — the offer only a
+// local-first app can make, because a user's marginal cost is their own key and
+// their own CPU. What matters here is that it is bought (never switched on),
+// that it is honoured without a subscription, and that "first 100" is true.
+describe("the Founder lifetime", () => {
+  const price = () => setConfig("stripePriceLifetime", FAKE_PRICES.lifetime);
+
+  it("is offered with the seats that are actually left", async () => {
+    const restore = price();
+    try {
+      const res = await local(request(app).get("/api/v1/billing/plans"));
+      expect(res.status).toBe(200);
+      expect(res.body.lifetime).toMatchObject({ available: true, priceUsd: 199, seats: 100, sold: 0, priceConfigured: true });
+      // Monthly and annual prices are still the only plans on the page.
+      expect(res.body.plans.map((p: { id: string }) => p.id)).toEqual(["FREE", "PRO", "ENTERPRISE"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("is not offered when this deployment has no lifetime price", async () => {
+    const restore = setConfig("stripePriceLifetime", "");
+    try {
+      const res = await local(request(app).get("/api/v1/billing/plans"));
+      expect(res.body.lifetime).toMatchObject({ available: false, reason: "no_price" });
+    } finally {
+      restore();
+    }
+  });
+
+  it("opens a one-payment Checkout, not a subscription", async () => {
+    const restore = price();
+    try {
+      const { cookies } = await account("founder@example.com");
+      const res = await local(
+        request(app).post("/api/v1/billing/create-checkout").set("Cookie", cookies).set("X-CSRF-Token", auth(cookies).csrf).send({ plan: "LIFETIME" }),
+      );
+      expect(res.status).toBe(200);
+      const created = fake.created.find((c) => c.kind === "checkout")!;
+      expect(created.params["mode"]).toBe("payment");
+      expect(created.params["line_items[0][price]"]).toBe(FAKE_PRICES.lifetime);
+      expect(created.params["metadata[kind]"]).toBe("lifetime");
+      // No subscription is created by a one-time payment.
+      expect(created.params["subscription_data[metadata][userId]"]).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  it("gives Enterprise for good when the payment lands, with no subscription", async () => {
+    const restore = price();
+    try {
+      const { user } = await account("buyer@example.com");
+      const event = {
+        id: "evt_lifetime_1",
+        type: "checkout.session.completed",
+        data: {
+          object: {
+            id: "cs_lifetime",
+            mode: "payment",
+            created: 1_760_000_000,
+            client_reference_id: user.id,
+            customer: "cus_founder",
+            metadata: { userId: user.id, kind: "lifetime" },
+          },
+        },
+      };
+      const res = await local(
+        request(app)
+          .post("/api/v1/billing/webhook")
+          .set("Content-Type", "application/json")
+          .set("Stripe-Signature", signWebhookPayload(JSON.stringify(event), config.stripeWebhookSecret))
+          .send(JSON.stringify(event)),
+      );
+      expect(res.status).toBe(200);
+
+      const stored = await (await store.getStore()).findUserById(user.id);
+      expect(stored!.plan).toBe("ENTERPRISE");
+      expect(stored!.lifetimeSince).toBeTruthy();
+      // Still no subscription id: there is nothing to renew, ever.
+      expect(stored!.stripeSubscriptionId ?? null).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("stops offering seats once they are gone, and refuses the checkout", async () => {
+    const restore = setConfig("stripePriceLifetime", FAKE_PRICES.lifetime);
+    const restoreSeats = setConfig("founderSeats", 1);
+    try {
+      const s = await store.getStore();
+      const holder = await s.createUser({ email: "first@example.com", name: "First" });
+      await s.updateUser(holder.id, { lifetimeSince: new Date().toISOString(), plan: "ENTERPRISE" });
+
+      const plans = await local(request(app).get("/api/v1/billing/plans"));
+      expect(plans.body.lifetime).toMatchObject({ available: false, sold: 1, seats: 1, reason: "sold_out" });
+
+      const { cookies } = await account("late@example.com");
+      const res = await local(
+        request(app).post("/api/v1/billing/create-checkout").set("Cookie", cookies).set("X-CSRF-Token", auth(cookies).csrf).send({ plan: "LIFETIME" }),
+      );
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("LIFETIME_SOLD_OUT");
+    } finally {
+      restoreSeats();
+      restore();
+    }
+  });
+
+  it("says on the Billing tab that this account bought one", async () => {
+    const { user, cookies } = await account("founder2@example.com");
+    const s = await store.getStore();
+    await s.updateUser(user.id, { plan: "ENTERPRISE", lifetimeSince: "2026-10-06T09:00:00.000Z" });
+
+    const res = await local(request(app).get("/api/v1/billing/status").set("Cookie", cookies));
+    expect(res.body.plan).toBe("ENTERPRISE");
+    expect(res.body.lifetime).toBe(true);
+  });
+
+  it("can't be switched on through the development route", async () => {
+    const { cookies } = await account("devroute@example.com");
+    const res = await local(
+      request(app).post("/api/v1/billing/apply-plan").set("Cookie", cookies).set("X-CSRF-Token", auth(cookies).csrf).send({ plan: "LIFETIME" }),
+    );
+    // Either "billing is configured here, pay for it" or "that isn't a plan" —
+    // never a free lifetime.
+    expect([400, 409]).toContain(res.status);
+    expect(res.body.error.code).not.toBe("OK");
+  });
+});

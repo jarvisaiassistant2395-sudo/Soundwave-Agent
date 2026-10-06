@@ -31,8 +31,8 @@ export const PLANS: Record<Plan, PlanDefinition> = {
   PRO: {
     id: "PRO",
     name: "Pro",
-    monthlyPrice: 12,
-    annualPricePerMonth: 9.6,
+    monthlyPrice: 15,
+    annualPricePerMonth: 12,
     characterLimit: 200_000,
     maxVideoMb: 500,
     exportsPerHour: 20,

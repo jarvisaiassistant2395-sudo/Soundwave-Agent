@@ -49,6 +49,10 @@ export const config = {
   stripePriceProAnnual: str("STRIPE_PRICE_PRO_ANNUAL", ""),
   stripePriceEnterpriseMonthly: str("STRIPE_PRICE_ENTERPRISE_MONTHLY", ""),
   stripePriceEnterpriseAnnual: str("STRIPE_PRICE_ENTERPRISE_ANNUAL", ""),
+  /** The Founder lifetime price (one payment). Empty = the offer is not sold here. */
+  stripePriceLifetime: str("STRIPE_PRICE_LIFETIME", ""),
+  /** How many lifetime seats exist. Past this, /plans stops offering it. */
+  founderSeats: int("FOUNDER_SEATS", 100),
   ffmpegPath: str("FFMPEG_PATH", ""),
   // YouTube import (yt-dlp). The vendored zipapp is auto-detected (needs python3);
   // set YTDLP_PATH to override with a system binary.
