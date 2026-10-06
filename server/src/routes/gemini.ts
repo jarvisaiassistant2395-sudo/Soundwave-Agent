@@ -381,7 +381,10 @@ router.post("/chats/:id/ask", ...gated, validate({ body: askBody }), async (req,
     noteBrainError(failure, brain.model);
   }
 
-  if (failure) {
+  // A stopped answer is not a lost one: whatever arrived before the person
+  // pressed Stop is kept, marked, so the transcript matches what they read.
+  const stoppedEarly = (stopped || failure?.kind === "aborted") && answer.trim().length > 0;
+  if (failure && !stoppedEarly) {
     const message = describeGeminiError(failure, brain.model, { device: "pc" });
     send({ type: "error", error: failure.kind, message });
     if (!res.writableEnded) res.end();
@@ -391,7 +394,7 @@ router.post("/chats/:id/ask", ...gated, validate({ body: askBody }), async (req,
   const answered: GeminiMessage = {
     id: randomUUID(),
     role: "model",
-    text: answer,
+    text: stoppedEarly ? `${answer.trimEnd()}\n\n_[Stopped.]_` : answer,
     at: now(),
     model: brain.model,
     elapsedMs: now() - startedAt,

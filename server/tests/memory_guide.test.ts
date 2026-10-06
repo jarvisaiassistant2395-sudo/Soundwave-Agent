@@ -247,6 +247,13 @@ describe("the Soundwave guide", () => {
     expect(guide.GUIDE_SECTIONS.map((s) => s.text).join("\n")).not.toMatch(/Deep Focus|Pomodoro/);
     expect(guide.searchGuide("my phone can't connect to the pc").map((s) => s.id)).toContain("phone");
     expect(guide.searchGuide("how to get a gemini api key")[0]!.id).toBe("brain");
+    // The file tab: where a dropped file goes is the thing people ask about.
+    expect(textOf("chat-with-files")).toMatch(/Read on this PC/);
+    expect(textOf("chat-with-files")).toMatch(/Sent to Gemini/);
+    expect(textOf("chat-with-files")).toMatch(/Notebooks/);
+    expect(textOf("chat-with-files")).toMatch(/read on this PC first/);
+    expect(guide.searchGuide("how do I chat with a pdf").map((s) => s.id)).toContain("chat-with-files");
+    expect(guide.searchGuide("notebook with my files").map((s) => s.id)).toContain("chat-with-files");
 
     const tool = guide.guideTool<unknown>();
     expect(await tool.run({ section: "zzqx-wuv" }, {})).toMatchObject({ found: false, sections: guide.GUIDE_IDS });

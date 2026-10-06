@@ -72,6 +72,12 @@ export interface FakeGoogle {
   /** When set, the Files API refuses uploads with this — for the fallback paths. */
   uploadFailure: { status: number; body: unknown } | null;
   /**
+   * Milliseconds between the events of a streamed answer. 0 sends the whole
+   * stream at once (the usual case); a test that needs to interrupt an answer
+   * halfway sets it so there is a halfway to interrupt.
+   */
+  streamPaceMs: number;
+  /**
    * Answers for :streamGenerateContent, in order — SSE events as a raw body.
    * When empty, the queued `gemini` reply is used (its text sent as one chunk).
    */
@@ -97,6 +103,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     geminiUploads: [] as FakeGoogle["geminiUploads"],
     geminiDeleted: [] as string[],
     uploadFailure: null as FakeGoogle["uploadFailure"],
+    streamPaceMs: 0,
     streams: [] as string[],
     generateCalls: () => fake.seen.filter((s) => s.path.includes(":generateContent")),
     reset() {
@@ -112,6 +119,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       fake.geminiUploads.length = 0;
       fake.geminiDeleted.length = 0;
       fake.uploadFailure = null;
+      fake.streamPaceMs = 0;
       fake.streams.length = 0;
     },
   };
@@ -301,6 +309,20 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       const out = answer(seen);
       if (out.raw !== undefined) {
         res.writeHead(out.status ?? 200, { "content-type": "text/event-stream", ...(out.headers ?? {}) });
+        if (fake.streamPaceMs > 0) {
+          const events = out.raw.split("\n\n").filter(Boolean);
+          let index = 0;
+          const timer = setInterval(() => {
+            if (index >= events.length || res.writableEnded || res.destroyed) {
+              clearInterval(timer);
+              if (!res.writableEnded) res.end();
+              return;
+            }
+            res.write(`${events[index]}\n\n`);
+            index += 1;
+          }, fake.streamPaceMs);
+          return;
+        }
         res.end(out.raw);
         return;
       }

@@ -38,6 +38,14 @@ function makePdf(lines: string[]): Buffer {
 
 const local = (req: request.Test) => req.set("Host", "127.0.0.1");
 
+/**
+ * A real port for the one case supertest cannot do: closing the connection
+ * mid-answer, which is what pressing Stop does.
+ */
+let server: import("node:http").Server | null = null;
+let serverUrl = "";
+const httpBase = (): string => serverUrl;
+
 /** Read an SSE body into the events it carried. */
 function events(raw: string): Array<Record<string, unknown>> {
   return raw
@@ -54,9 +62,15 @@ beforeAll(async () => {
   useFakeGoogle(config, fake);
   const { createApp } = await import("../src/app.js");
   app = createApp();
+  const { createServer } = await import("node:http");
+  server = createServer(app);
+  await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as { port: number };
+  serverUrl = `http://127.0.0.1:${address.port}`;
 });
 
 afterAll(async () => {
+  await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
   await fake.close();
 });
 
@@ -244,6 +258,44 @@ describe("asking about a file", () => {
     const stored = await local(request(app).get(`/api/v1/gemini/chats/${chat.body.chat.id}`));
     expect(stored.body.chat.messages).toHaveLength(1); // the question remains
     expect(stored.body.chat.messages[0].role).toBe("user");
+  });
+
+  it("keeps what arrived when the person presses Stop", async () => {
+    // A real connection this time, so the abort is a real disconnect: the
+    // person closes the tab mid-answer and the half they read is not lost.
+    // Slow enough that there is a halfway to interrupt.
+    fake.streamPaceMs = 40;
+    fake.streams.push(sseText(["The first half of an answer, ", "then the person stops reading it."]));
+    const chat = await local(request(app).post("/api/v1/gemini/chats").send({}));
+    const controller = new AbortController();
+    const res = await fetch(`${httpBase()}/api/v1/gemini/chats/${chat.body.chat.id}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Host: "127.0.0.1" },
+      body: JSON.stringify({ question: "Tell me everything." }),
+      signal: controller.signal,
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = "";
+    while (!seen.includes("first half of an answer")) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      seen += decoder.decode(value, { stream: true });
+    }
+    controller.abort();
+
+    // Give the server a moment to notice the disconnect and save the part.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const stored = await local(request(app).get(`/api/v1/gemini/chats/${chat.body.chat.id}`));
+      const model = stored.body.chat.messages.find((m: { role: string }) => m.role === "model");
+      if (model) {
+        expect(model.text).toContain("first half of an answer");
+        expect(model.text).toContain("Stopped");
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error("the stopped answer was never stored");
   });
 
   it("says what is missing when no key is set", async () => {

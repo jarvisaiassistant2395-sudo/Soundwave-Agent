@@ -13,6 +13,7 @@ import { CreatorStudio } from "./pages/CreatorStudio";
 import { VoiceOverlay } from "./pages/VoiceOverlay";
 import { WakeListener } from "./pages/WakeListener";
 import { NotFound } from "./pages/NotFound";
+import { GeminiChat } from "./pages/GeminiChat";
 import { BackgroundServices } from "./components/agent/BackgroundServices";
 
 function ScrollToTop() {
@@ -61,6 +62,14 @@ export default function App() {
           element={
             <AppShell>
               <AgentHub />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <AppShell>
+              <GeminiChat />
             </AppShell>
           }
         />

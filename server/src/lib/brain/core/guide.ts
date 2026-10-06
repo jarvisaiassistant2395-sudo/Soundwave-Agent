@@ -31,10 +31,11 @@ Main parts:
 - Brain: Google Gemini with the user's own free API key (Settings → Brain).
 - Memory: notes the agent saves, a summary of earlier conversations, and the list of shorts made — so it remembers what you did together.
 - Voice: tap the mic, hold it to talk, or press Ctrl+Shift+Space from any app. Speech is recognized on the PC; replies are spoken in Microsoft neural voices.
+- Chat & Files: a separate tab for documents rather than conversation — drop a file in, ask about it, and keep many chats and notebooks (see that guide section).
 - Phone app (Android): the same conversation on the phone. It can keep chatting with the agent even when the PC is off.
 - Morning Setup and the daily briefing: every morning Soundwave researches the topics you chose (anything — AI news, trending GitHub repos…) with Gemini and starts talking when you open the app, with the weather, your shorts and ideas for today; the chip also opens your morning websites and apps on the PC.
 
-Other pages in the left sidebar: Overview (dashboard), Projects (every short), Voice Library, Generate Short, Activity, Settings, Help & Docs.`,
+Other pages in the left sidebar: Overview (dashboard), Projects (every short), Chat & Files (drop in any file and talk to Gemini about it), Voice Library, Generate Short, Activity, Settings, Help & Docs.`,
   },
   {
     id: "command-center",
@@ -249,6 +250,24 @@ Where to see it: Command Center → gear → Memory tab. You can read and delete
 By voice or chat: "remember that I post every day at 6 pm", "what do you remember about me?", "forget that I like Ryan's voice".
 
 Where it's kept: on the PC (%APPDATA%\\Soundwave AI\\data\\agent-memory.json). Paired phones get a copy so they know it when the PC is off; notes saved on the phone go back to the PC when it reconnects. The summary is written by Gemini, so conversation text goes to Google for that. Passwords and API keys are never stored in memory.`,
+  },
+  {
+    id: "chat-with-files",
+    title: "Chat & Files (chat with a PDF, a photo, a spreadsheet or any file)",
+    summary: "the file tab: read a file here or send it to Gemini, many chats, notebooks of sources and notes, what it costs",
+    text: `The sidebar's **Chat & Files** page is for documents rather than for talking to the agent. Drop any file into it — or paste a screenshot — and ask about it; the answer is written out in full formatting (headings, bold, tables, code blocks) and appears as it is written.
+
+What happens to a dropped file depends on what it is, and the chip under the question always says which:
+- Read on this PC (no Gemini quota, nothing leaves the machine): text, code, CSV, JSON, YAML, HTML, RTF, subtitles, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), EPUB, and PDFs that have a text layer.
+- Sent to Gemini (needs the key from Settings → Brain): photos, screenshots, recordings, videos, scanned PDFs, and any document whose text couldn't be read here. It is uploaded to Gemini's File API once and referred to afterwards, so asking again costs nothing extra.
+- Listened to on this PC: a recording or a video when there is no key — the first minute is transcribed locally. The chip says so, and the answer says the transcript is partial.
+A file that reached neither is named in the request, so the answer says "I can't read that" instead of pretending the file was empty.
+
+**Many chats**: every question starts or continues a chat; the list on the left is named after the first thing you asked, and each row can be renamed or deleted. Chats are saved on this PC and nothing is sent anywhere except the questions themselves, which go to Google because that is what Gemini is.
+
+**Notebooks**: the place for the files and links you keep coming back to. A notebook holds sources (files or links you drop in) and notes (typed by hand, or pinned from an answer with "Pin to notebook"). Every question asked inside the notebook is answered against all of its sources and notes at once — good for a contract you keep checking or a project folder. Unreadable sources are uploaded to Gemini once, when they are added.
+
+The small print: answers use the model and key from Settings → Brain and count against the same daily limit. Pressing Stop keeps the part that was already written. A file can be removed from its chip, and removing it deletes Google's copy too. A link added as a source is read on this PC first; a page that refuses to be read is fetched through the same external reader service the agent's page-reading uses.`,
   },
   {
     id: "voice-input",

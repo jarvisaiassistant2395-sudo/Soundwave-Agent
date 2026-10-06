@@ -311,6 +311,38 @@ stand on their own, and renders each as a vertical Short: the video cropped to
 `lib/videoClips.ts` + `brain/core/clips.ts` (pure rules: windows, scoring,
 picking, caption timing).
 
+**Chat & Files** (desktop 1.6.6): a tab of its own for documents rather than for
+talking to the agent — drop in any file (or paste a screenshot) and ask about it.
+What happens to the file is decided per file and always said on the chip under
+the question:
+
+- **read on this PC** — text, code, CSV, JSON, YAML, HTML, RTF, subtitles, Word,
+  Excel, PowerPoint, EPUB, and PDFs with a text layer. No dependency and no
+  Gemini quota: the PDF reader pulls the text out of the content streams itself
+  (Flate, literal and hex strings, PDFDocEncoding and UTF-16) and the Office
+  formats are read straight out of their ZIPs (`lib/docText.ts`, `lib/pdfText.ts`,
+  `lib/zipText.ts` — pure, and unit-tested against real files built byte by byte
+  in the tests);
+- **sent to Gemini** — a photo, a recording, a video, a scanned PDF, or anything
+  nothing here could read. Uploaded once to the Files API and referred to by URI
+  afterwards, so asking again costs nothing extra (`lib/geminiFiles.ts`);
+- **listened to on this PC** — a recording or video when there is no key: the
+  first minute is transcribed locally, and the answer says it is partial.
+
+A file that reached neither is named in the request, so the answer says it
+cannot read that one rather than pretending the file was empty. Answers stream
+in (`core/gemini.ts` gained `streamGenerateContent`, assembled back into the
+ordinary response so the stored answer is identical to a non-streamed one) and
+are written out with real formatting — headings at real sizes, bold, tables as
+tables, code blocks with a Copy button — from a small Markdown parser of our own
+(`frontend/src/lib/markdown.ts` + `components/gemini/Markdown.tsx`; no
+`innerHTML`, links only ever http(s)/mailto, and a half-written answer renders
+without a hiccup). **Many chats** are kept on this PC, each named after its first
+question, renamed or deleted in place; pressing Stop keeps the part already
+written. **Notebooks** hold sources (files or links — a link is read with the
+same reader the agent uses) and notes (typed by hand, or pinned from an answer),
+and every question asked inside one is answered against all of it.
+
 **Where viewers actually were** (desktop 1.5.10): for a YouTube link the clipper
 no longer judges a moment by how lively it sounds. It reads YouTube's own
 most-replayed curve for that video (yt-dlp's `heatmap` — the seconds real

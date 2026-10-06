@@ -39,6 +39,8 @@ interface NavItem {
 const workspaceNav: NavItem[] = [
   { to: "/dashboard", label: "Overview", icon: <LayoutDashboard className="h-4 w-4" />, end: true },
   { to: "/agent", label: "Command Center", icon: <Bot className="h-4 w-4" />, badge: "Live" },
+  // Drop in any file and talk to Gemini about it — chats and notebooks.
+  { to: "/chat", label: "Chat & Files", icon: <Sparkles className="h-4 w-4" /> },
   { to: "/projects", label: "Projects", icon: <FolderKanban className="h-4 w-4" /> },
   { to: "/voices", label: "Voice Library", icon: <Mic className="h-4 w-4" /> },
 ];
