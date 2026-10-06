@@ -326,17 +326,18 @@ jobs:
         working-directory: desktop
         run: node verify-runtime.mjs
 
-      # Artifacts share the repo's Actions storage quota; when it is full the
-      # upload fails, but the installers still go out through the release below.
-      - name: Upload installer artifacts
+      # Artifacts share the repo's Actions storage quota (500 MB on this plan)
+      # and the two exes are ~455 MB together — one run would fill it and the
+      # next upload would fail. The run page keeps the setup exe alone, which is
+      # what a person downloads to install; the portable stays on the
+      # desktop-build pre-release (releases don't count against the quota).
+      - name: Upload the installer as a run artifact
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: soundwave-ai-windows
-          path: desktop/release/*.exe
-          # The installer is ~450 MB; keep runs short-lived so the repo's
-          # Actions storage doesn't fill up again (the old account ran out).
-          retention-days: 7
+          path: desktop/release/SoundwaveAI-Setup-*.exe
+          retention-days: 3
           if-no-files-found: error
 
       # Drive the packaged app like a person: fake microphone → the Command
