@@ -360,6 +360,18 @@ try {
       `The page is only ${pageWidth}px wide (this CI screen), below the 1024px desktop layout, so the rail's pixel geometry isn't assertable here — the minimize button is driven through its own click handler and its state is checked from the DOM.`,
     );
   }
+  // The frame must be rendered exactly once. A page that asks for the frame
+  // itself, on top of the gate that already gives it one, stacks a second
+  // sidebar over the first — invisible in a screenshot, but two buttons share
+  // every test id and the first one to match is the one on top. Ask before
+  // clicking: "the sidebar is 0px wide" is a confusing way to hear about that.
+  const frames = await main.evaluate(() => ({
+    sidebars: document.querySelectorAll('[data-testid="desktop-sidebar"]').length,
+    toggles: document.querySelectorAll('[data-testid="sidebar-toggle"]').length,
+  }));
+  if (frames.sidebars !== 1 || frames.toggles !== 1) {
+    await fail(`the app frame is on screen ${frames.sidebars}× with ${frames.toggles} sidebar toggle(s) — it should be exactly once (a page rendering its own frame nests a second sidebar over the real one)`);
+  }
   // Visible click when the layout shows the button; the same handler when the
   // CI screen is too narrow for the desktop breakpoint.
   const clickToggle = async () => {

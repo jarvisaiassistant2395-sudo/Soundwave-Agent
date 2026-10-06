@@ -55,7 +55,12 @@ function Linked({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** A page of the desktop app: gated, and inside the app's own frame. */
+/**
+ * A page of the desktop app: inside the app's own frame, behind the account
+ * gate. Every page below goes through this — the frame and the gate live here,
+ * once, so a page never renders a second sidebar or a second header by asking
+ * for the frame itself.
+ */
 const shell = (page: ReactNode) => (
   <Linked>
     <AppShell>{page}</AppShell>
@@ -96,79 +101,16 @@ export default function App() {
         {/* Hidden window: listens for "Hey Soundwave" (desktop shell only). */}
         <Route path="/wake" element={<WakeListener />} />
 
-        <Route
-          path="/agent"
-          element={shell(
-            <AppShell>
-              <AgentHub />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/chat"
-          element={shell(
-            <AppShell>
-              <GeminiChat />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/creator"
-          element={shell(
-            <AppShell>
-              <CreatorStudio />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/dashboard"
-          element={shell(
-            <AppShell>
-              <Dashboard />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/projects"
-          element={shell(
-            <AppShell>
-              <Projects />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/settings/*"
-          element={shell(
-            <AppShell>
-              <Settings />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/help"
-          element={shell(
-            <AppShell>
-              <Help />
-            </AppShell>,
-          )}
-        />
+        <Route path="/agent" element={shell(<AgentHub />)} />
+        <Route path="/chat" element={shell(<GeminiChat />)} />
+        <Route path="/creator" element={shell(<CreatorStudio />)} />
+        <Route path="/dashboard" element={shell(<Dashboard />)} />
+        <Route path="/projects" element={shell(<Projects />)} />
+        <Route path="/settings/*" element={shell(<Settings />)} />
+        <Route path="/help" element={shell(<Help />)} />
         {/* The page behind the bottom-left profile banner. */}
-        <Route
-          path="/profile"
-          element={shell(
-            <AppShell>
-              <Profile />
-            </AppShell>,
-          )}
-        />
-        <Route
-          path="/voices"
-          element={shell(
-            <AppShell>
-              <VoiceLibrary standalone={false} />
-            </AppShell>,
-          )}
-        />
+        <Route path="/profile" element={shell(<Profile />)} />
+        <Route path="/voices" element={shell(<VoiceLibrary standalone={false} />)} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>
