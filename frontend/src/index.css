@@ -279,7 +279,7 @@ html.sw-overlay #root {
   cursor: pointer;
 }
 .sw-pill-button:hover {
-  border-color: rgba(34, 211, 238, 0.4);
+  border-color: rgba(255, 255, 255, 0.2);
   color: #ffffff;
 }
 .sw-chip {
@@ -393,12 +393,13 @@ html.sw-overlay #root {
   transform: none;
 }
 .sw-btn-primary {
-  background: #22d3ee;
-  color: #04191f;
-  box-shadow: 0 10px 24px -14px rgba(34, 211, 238, 0.85);
+  background: #2563eb;
+  color: #ffffff;
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 .sw-btn-primary:hover:not(:disabled) {
-  background: #67e8f9;
+  background: #3b82f6;
 }
 .sw-btn-secondary {
   border-color: rgba(255, 255, 255, 0.1);

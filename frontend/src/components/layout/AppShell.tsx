@@ -129,7 +129,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const breadcrumb = getBreadcrumb();
   // The Command Center fills exactly one window on desktop-sized screens: the
   // page itself never scrolls (its left column and chat scroll on their own).
-  const isCommandCenter = location.pathname.startsWith("/agent");
+  // These two pages own their own scroll areas and use the width they are
+  // given: the Command Center and Chat & Files. Everything else is a
+  // centred column of prose, which is what max-w-7xl below is for.
+  const isFullBleed =
+    location.pathname.startsWith("/agent") || location.pathname.startsWith("/chat");
 
   /**
    * The sidebar. `rail` is the minimized form: a 4rem column with the icons and
@@ -299,7 +303,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div
       className={cn(
         "min-h-screen bg-[#000000] text-gray-100 flex flex-col",
-        isCommandCenter && "lg:h-screen lg:min-h-0 lg:overflow-hidden",
+        isFullBleed && "lg:h-screen lg:min-h-0 lg:overflow-hidden",
       )}
     >
       {/* Desktop sidebar — 15rem, or the 4rem rail when minimized */}
@@ -339,7 +343,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </AnimatePresence>
 
       {/* Main column */}
-      <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60", isCommandCenter && "lg:min-h-0")}>
+      <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60", isFullBleed && "lg:min-h-0")}>
         {/* Header Bar */}
         <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#000000]/90 backdrop-blur-md">
           <div className="flex h-full items-center justify-between px-4 sm:px-6">
@@ -387,7 +391,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main
           className={cn(
             "flex-1 w-full mx-auto",
-            isCommandCenter
+            isFullBleed
               ? "max-w-none px-2 sm:px-4 py-3 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden lg:[&>*]:flex-1"
               : "max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
           )}

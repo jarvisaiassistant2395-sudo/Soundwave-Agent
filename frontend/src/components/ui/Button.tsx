@@ -15,18 +15,18 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-cyan-400 text-[#04191f] hover:bg-cyan-300 active:bg-cyan-500 border border-cyan-300/40 font-semibold shadow-[0_10px_24px_-14px_rgba(34,211,238,0.85)]",
+    "bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700 shadow-sm border border-blue-500/30 font-medium",
   outline:
-    "border border-white/10 bg-[#14161d] text-gray-200 hover:border-white/20 hover:bg-[#191c25] font-medium",
-  ghost: "text-gray-400 hover:text-white hover:bg-white/[0.05] font-medium",
+    "border border-white/10 text-gray-300 hover:border-white/20 hover:text-white hover:bg-white/[0.04] font-medium",
+  ghost: "text-gray-400 hover:text-white hover:bg-white/[0.04] font-medium",
   danger: "bg-red-600/90 hover:bg-red-500 text-white border border-red-500/30 font-medium",
   subtle: "bg-white/[0.06] hover:bg-white/[0.1] text-gray-200 border border-white/[0.08] font-medium",
 };
 
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs gap-1.5 rounded-lg",
+  sm: "h-8 px-2.5 text-xs gap-1.5 rounded-lg",
   md: "h-9 px-3.5 text-sm gap-2 rounded-lg",
-  lg: "h-11 px-5 text-base gap-2.5 rounded-xl",
+  lg: "h-11 px-5 text-base gap-2.5 rounded-lg",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -39,7 +39,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap cursor-pointer",
-        "select-none transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0c0f]",
+        "transition-colors duration-150 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#000000]",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none",
         variants[variant],
         sizes[size],
