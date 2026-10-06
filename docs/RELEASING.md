@@ -322,12 +322,12 @@ gates:
 powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1
 ```
 
-That is: backend `npm ci` → typecheck → tests → build; frontend `npm ci` →
-build; the runtime binaries staged into `desktop/bin` (ffmpeg, yt-dlp, the
-caption font, whisper.cpp v1.9.2 + the English model, the Microsoft C++ runtime
-next to it); the licence audit; the desktop helper tests; `assemble.mjs`;
-`smoke.mjs`; `electron-builder --win`; and `verify-runtime.mjs`. The installers
-land in `desktop/release/`. Useful switches:
+That is: ffmpeg staged into `desktop/bin` **first** (see below); backend `npm ci`
+→ typecheck → tests → build; frontend `npm ci` → build; the rest of the runtime
+binaries into `desktop/bin` (yt-dlp, the caption font, whisper.cpp v1.9.2 + the
+English model, the Microsoft C++ runtime next to it); the licence audit; the
+desktop helper tests; `assemble.mjs`; `smoke.mjs`; `electron-builder --win`; and
+`verify-runtime.mjs`. The installers land in `desktop/release/`. Useful switches:
 
 | Switch | What it does |
 | --- | --- |
@@ -335,6 +335,16 @@ land in `desktop/release/`. Useful switches:
 | `-SkipTests` | Skips the three test suites (typechecks and builds only) |
 | `-SkipBinaries` | Reuses what is already in `desktop/bin` — the fast rebuild |
 | `-PublishTag v1.6.7` | Uploads the finished installers to that GitHub Release (needs `gh`) |
+
+ffmpeg comes before the tests on purpose. The render suites build their own
+fixtures with ffmpeg, and a home PC may have an old one on `PATH` — conda ships
+4.2/4.3, which has no `gradients` source, and an active conda environment sits
+ahead of a winget install, so `winget install Gyan.FFmpeg` says "already
+installed" while the build uses 4.2. The script stages the ffmpeg the installer
+ships and exports `FFMPEG_PATH`, so the tests run against the binary customers
+get; where that build lacks a feature, the suites skip a test instead of failing
+it. CI does not need this because GitHub's Windows runner arrives with a current
+ffmpeg on `PATH`.
 
 The first run downloads ~500 MB and takes a while; later runs reuse
 `desktop/bin`. It needs Windows: the payload is Windows binaries, the speech
