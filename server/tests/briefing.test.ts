@@ -8,6 +8,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { call, startFakeGoogle, text, useFakeGoogle, type FakeGoogle, type Seen } from "./helpers/fakeGoogle.js";
+import { minutesAgo, minutesFromNow } from "./helpers/clock.js";
 
 vi.hoisted(() => {
   process.env.DESKTOP_APP = "1";
@@ -84,10 +85,11 @@ function routeGemini(opts: { briefing?: string; searchFails?: boolean } = {}) {
   };
 }
 
-function minutesAgo(n: number): string {
-  const d = new Date(Date.now() - n * 60_000);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+// The plan times these tests use ("a couple of minutes ago") come from
+// helpers/clock.ts: subtracting minutes from Date.now() crosses midnight, and
+// at 00:01 "2 minutes ago" is yesterday's 23:59 — a time later today, so the
+// briefing is neither due nor in its window. That is exactly how this suite
+// failed in CI once, at 00:00 UTC, for a reason unrelated to the change.
 
 describe("the briefing plan (in the agent's memory)", () => {
   it("is set in Settings → Morning Setup and shown to the agent and the phone", async () => {
@@ -194,6 +196,25 @@ describe("researching the topics", () => {
     expect(research.topicKeywords("the latest news about open-source, free AI tools")).toBe("open source AI tools");
     expect(research.topicKeywords("New trending GitHub repositories")).toBe("");
     expect(research.parseRss("<item><title>A &amp; B</title><link>https://l</link></item>")).toEqual([{ title: "A & B", url: "https://l", detail: undefined, from: "Google News" }]);
+  });
+});
+
+describe("the clock the briefing window is measured with", () => {
+  it("never names a time later today, even a minute after midnight", () => {
+    // 00:01 local: "3 minutes ago" would be 23:58 — yesterday. The helper
+    // clamps to 00:00, which is in the past and inside the 10-hour window.
+    const justAfterMidnight = new Date(2026, 9, 6, 0, 1, 0, 0);
+    expect(minutesAgo(3, justAfterMidnight)).toBe("00:00");
+    expect(coreMorning.briefingDue("00:00", justAfterMidnight)).toBe(true);
+    expect(coreMorning.inBriefingWindow("00:00", justAfterMidnight)).toBe(true);
+    // Away from midnight it is the plain subtraction it looks like.
+    const afternoon = new Date(2026, 9, 6, 14, 30, 0, 0);
+    expect(minutesAgo(20, afternoon)).toBe("14:10");
+    expect(coreMorning.briefingDue("14:10", afternoon)).toBe(true);
+    // A plan time that hasn't arrived yet is not due, and "later today" stays today.
+    expect(coreMorning.briefingDue("23:00", afternoon)).toBe(false);
+    expect(minutesFromNow(30, new Date(2026, 9, 6, 23, 45, 0, 0))).toBe("23:59");
+    expect(minutesFromNow(30, afternoon)).toBe("15:00");
   });
 });
 

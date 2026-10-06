@@ -33,6 +33,7 @@ const listener = await import("../src/lib/companion/listener.js");
 const conversation = await import("../src/lib/conversation.js");
 const phone = await import("../../mobile/src/lib/protocol.js");
 const { CompanionClient, pairWithPc } = await import("../../mobile/src/lib/client.js");
+const { minutesAgo, minutesFromNow } = await import("./helpers/clock.js");
 const offline = await import("../../mobile/src/lib/offline.js");
 const memory = await import("../src/lib/memory.js");
 const morning = await import("../src/lib/morning.js");
@@ -383,10 +384,6 @@ describe("when the PC is off, the phone chats on its own", () => {
 });
 
 describe("the morning briefing on the phone", () => {
-  const minutesAgo = (n: number) => {
-    const d = new Date(Date.now() - n * 60_000);
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  };
   const searchAnswer = () => ({
     body: {
       candidates: [
@@ -432,8 +429,9 @@ describe("the morning briefing on the phone", () => {
     // asking, so `prepare` must still write it. This is the CI failure that
     // said "your PC has no briefing to read out yet" while the PC had topics
     // and a key and wrote it minutes later, on its own schedule.
-    const later = new Date(Date.now() + 30 * 60_000);
-    const time = `${String(later.getHours()).padStart(2, "0")}:${String(later.getMinutes()).padStart(2, "0")}`;
+    // Clamped to today (helpers/clock.ts): at 23:45 "+30 minutes" would name a
+    // time tomorrow, and "a time later today" is what this test is about.
+    const time = minutesFromNow(30);
     memory.setBriefingPlan({ topics: ["new trending GitHub repositories"], time, auto: true });
     const client = await pairedClient();
 
