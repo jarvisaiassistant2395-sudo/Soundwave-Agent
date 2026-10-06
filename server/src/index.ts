@@ -15,6 +15,7 @@ import { initTrendScout } from "./lib/trends.js";
 import { initPublishPlan } from "./lib/publishPlan.js";
 import { initReminders } from "./lib/reminders.js";
 import { initEmailSchedule } from "./lib/emailSchedule.js";
+import { initPostSchedule } from "./lib/postSchedule.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[soundwave] Handled asynchronous rejection:", reason);
@@ -80,6 +81,9 @@ async function main() {
   // Email the person scheduled ("send this at 5 pm"): it goes out at that
   // moment with no second confirmation, and catches up if the PC was off.
   initEmailSchedule();
+  // Shorts that were told to post themselves do it on their own clock — the
+  // first tick soon after boot is also the catch-up for a PC that was off.
+  initPostSchedule();
   if (config.companionAvailable) {
     initCompanion().catch((err) => console.warn("[companion] could not start:", (err as Error).message));
   }

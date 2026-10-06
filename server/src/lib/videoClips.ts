@@ -51,6 +51,8 @@ import {
   type ViewSignals,
 } from "./brain/core/interest.js";
 import { loadTrendDigest } from "./trends.js";
+// What this channel's own posted clips did — the picker leans on results, not vibes.
+import { audienceBrief } from "./postSchedule.js";
 import {
   DEFAULT_CLIPS,
   MAX_CLIPS,
@@ -551,7 +553,7 @@ async function askPicker(
 ): Promise<string> {
   const brain = activeBrain();
   if (!brain) return "";
-  const ask = buildPickerAsk(windows, snippets, count, focus, evidence);
+  const ask = buildPickerAsk(windows, snippets, count, focus, evidence, audienceBrief());
   const models = [...new Set([brain.model, FALLBACK_MODEL])];
   for (const model of models) {
     try {

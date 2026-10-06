@@ -90,6 +90,13 @@ export function buildPickerAsk(
    * has always been, which is what a video with no published replay data gets.
    */
   evidence?: Array<string[] | undefined>,
+  /**
+   * What this person's own channel already rewarded (lib/postSchedule.ts's
+   * audienceBrief). Optional, and only ever present once clips have actually
+   * been posted and their numbers read back — an opinion about what works is
+   * worth less than this channel's own record of it.
+   */
+  learnt?: string,
 ): { system: string; user: string } {
   const hasEvidence = Boolean(evidence?.some((lines) => lines && lines.length));
   const system = [
@@ -101,6 +108,9 @@ export function buildPickerAsk(
       ? "Where a window says MEASURED, that is real audience data — YouTube's own most-replayed curve, comments that name a timecode, or words that match what is getting views this week. It outranks your own impression of the words: prefer a window with measured interest over one without, and say which measured signal you used in the reason."
       : "",
     focus?.trim() ? `The person asked for: ${focus.trim()}` : "",
+    learnt?.trim()
+      ? `What has actually worked on this person's own channel (real posted clips and their results): ${learnt.trim()} Lean towards the kind of moment that earned those numbers, without copying them.`
+      : "",
     'Answer with JSON only: [{"start": <seconds from the start of the video>, "end": <seconds>, "title": "<max 60 characters, no quotes>", "reason": "<one short sentence: why this moment works>"}]',
   ]
     .filter(Boolean)

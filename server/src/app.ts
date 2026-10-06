@@ -24,6 +24,7 @@ import creatorRoutes from "./routes/creator.js";
 import geminiRoutes from "./routes/gemini.js";
 import ghostRoutes from "./routes/ghost.js";
 import youtubeRoutes from "./routes/youtube.js";
+import postRoutes from "./routes/posts.js";
 import emailRoutes from "./routes/email.js";
 import { clipsRoutes } from "./routes/clips.js";
 import { watchRoutes } from "./routes/watch.js";
@@ -101,6 +102,7 @@ export function createApp() {
   app.use("/api/v1/creator", creatorRoutes);
   app.use("/api/v1/ghost", ghostRoutes);
   app.use("/api/v1/youtube", youtubeRoutes);
+  app.use("/api/v1/posts", postRoutes);
   app.use("/api/v1/email", emailRoutes);
   // Cutting Shorts out of a long video, started from the Command Center or the
   // agent's make_shorts_from_video tool — the same job either way.

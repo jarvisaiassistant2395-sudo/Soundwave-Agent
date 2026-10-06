@@ -27,6 +27,7 @@ import { gmailService } from "../gmail.js";
 import { cancelScheduledEmail, listScheduledEmails, scheduleEmail } from "../emailSchedule.js";
 import { workspaceService } from "../googleWorkspace.js";
 import { planStatus } from "../publishPlan.js";
+import { cancelScheduledPost, listScheduledPosts, performanceSummary, schedulePost, PostError } from "../postSchedule.js";
 import { clock } from "./core/transcript.js";
 import { addWatch, kickChannelWatch, listWatches, removeWatch, watchStatuses } from "../channelWatch.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../orbitalBackground.js";
@@ -237,6 +238,123 @@ export const AGENT_TOOLS: AgentTool[] = [
         rendering,
         renderingNow: rendering.length > 0,
         backgrounds: { unusedLeft: orbital.available, used: orbital.usedCount, channelVideos: orbital.catalogSize },
+      };
+    },
+  },
+
+  {
+    declaration: {
+      name: "schedule_short",
+      description:
+        "Put a finished clip up on the person's YouTube channel at a chosen time. Give the clip's job id (from make_shorts_from_video or list_my_videos), the title to publish it under, and when it should go up in the person's own words (\"tomorrow at 9\", \"at 17:30\", \"in 2 hours\"). It posts by itself — Soundwave has to be running on the PC when the moment comes, and the post is cancellable until then. Only call this when the person asked for the clip to go up; making a clip is not posting it.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          jobId: { type: "STRING", description: "The clip's job id (the id the render reported, or one from list_my_videos)." },
+          title: { type: "STRING", description: 'The published title, in the person\'s voice. No hashtags — those are added for Shorts automatically.' },
+          when: { type: "STRING", description: '"tomorrow at 9", "at 17:30", "in 2 hours", "friday at 8am".' },
+          description: { type: "STRING", description: "The YouTube description. Optional; a line drawn from what the clip is about is fine." },
+          tags: { type: "ARRAY", items: { type: "STRING" }, description: "A few tags. Optional." },
+          privacy: { type: "STRING", description: '"public" (default), "unlisted" or "private".' },
+          channel: { type: "STRING", description: "Which connected channel, by name or id. Optional — the default channel is used." },
+        },
+        required: ["jobId", "title", "when"],
+      },
+    },
+    sideEffect: true,
+    async run(args, ctx) {
+      try {
+        const post = schedulePost({
+          jobId: str(args.jobId, 200),
+          title: str(args.title, 200),
+          when: str(args.when, 120),
+          description: str(args.description, 4_000),
+          tags: Array.isArray(args.tags) ? (args.tags as unknown[]).map((t) => String(t)) : undefined,
+          privacy: args.privacy === "unlisted" || args.privacy === "private" ? args.privacy : undefined,
+          channelId: str(args.channel, 80) || null,
+        });
+        ctx.effects.log.push(`Scheduled “${post.title}” for ${post.atLocal}`);
+        return {
+          ok: true,
+          id: post.id,
+          channel: post.channelName,
+          title: post.title,
+          when: post.when,
+          at: post.at,
+          atLocal: post.atLocal,
+          note: `It goes up by itself at ${post.atLocal} — as long as Soundwave is running on the PC then. Say the word and I'll cancel it.`,
+        };
+      } catch (err) {
+        if (err instanceof PostError) return { ok: false, reason: err.message };
+        throw err;
+      }
+    },
+  },
+  {
+    declaration: {
+      name: "list_scheduled_posts",
+      description:
+        "What is waiting to go up on YouTube, soonest first, and what happened to the ones already posted. Call it when someone asks what's queued, or before cancelling one so the title is right.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    async run() {
+      const { scheduled, history } = listScheduledPosts();
+      return {
+        ok: true,
+        waiting: scheduled.map((p) => ({ id: p.id, title: p.title, channel: p.channelName, when: p.when, atLocal: p.atLocal, status: p.status })),
+        recent: history.slice(0, 5).map((p) => ({
+          title: p.title,
+          status: p.status,
+          channel: p.channelName,
+          ...(p.youtubeUrl ? { url: p.youtubeUrl } : {}),
+          ...(p.error ? { error: p.error.slice(0, 200) } : {}),
+        })),
+        performance: performanceSummary(),
+        note: scheduled.length ? undefined : "Nothing is waiting to be posted.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "cancel_scheduled_post",
+      description: "Cancel a clip that is waiting to be posted — by its title or by what it was about (\"the space facts one\").",
+      parameters: {
+        type: "OBJECT",
+        properties: { which: { type: "STRING", description: "The title, or words from it, or the id from list_scheduled_posts." } },
+        required: ["which"],
+      },
+    },
+    sideEffect: true,
+    async run(args) {
+      const result = cancelScheduledPost(str(args.which, 200));
+      if (!result.ok) return { ok: false, reason: result.error };
+      return { ok: true, cancelled: { title: result.cancelled?.title, atLocal: result.cancelled?.atLocal } };
+    },
+  },
+  {
+    declaration: {
+      name: "my_short_performance",
+      description:
+        "How the clips posted to this person's own channel have actually done: views, likes and comments per clip, read back from YouTube. Use it when someone asks how a Short did or what is working, and let it shape what you suggest making next.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    async run() {
+      const { history } = listScheduledPosts();
+      const posted = history
+        .filter((p) => p.status === "posted")
+        .map((p) => ({
+          title: p.title,
+          postedAt: p.postedAt ?? null,
+          url: p.youtubeUrl ?? null,
+          views: p.stats?.views ?? null,
+          likes: p.stats?.likes ?? null,
+          comments: p.stats?.comments ?? null,
+          measuredAt: p.stats ? new Date(p.stats.at).toISOString() : null,
+        }));
+      return {
+        summary: performanceSummary(),
+        clips: posted.slice(0, 10),
+        note: posted.length ? "Numbers come back every few hours while the app runs." : "Nothing has been posted from here yet.",
       };
     },
   },

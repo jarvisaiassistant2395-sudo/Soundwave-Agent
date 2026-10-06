@@ -434,7 +434,20 @@ describe("Chat answered by Gemini", () => {
       fake.queue.push(text("Hi."));
       await chat("hi");
       const names = generateCalls()[0]!.body.tools[0].functionDeclarations.map((d: { name: string }) => d.name);
-      expect(names).toEqual(["make_youtube_short", "get_short_progress", "list_my_videos", "show_video", "soundwave_guide"]);
+      // Posting is not PC control: a hosted server can hold a schedule and post
+      // from it too (the clip and the channel live wherever this process does),
+      // so the four post tools stay available while the PC ones don't.
+      expect(names).toEqual([
+        "make_youtube_short",
+        "get_short_progress",
+        "schedule_short",
+        "list_scheduled_posts",
+        "cancel_scheduled_post",
+        "my_short_performance",
+        "list_my_videos",
+        "show_video",
+        "soundwave_guide",
+      ]);
       const instruction = generateCalls()[0]!.body.systemInstruction.parts[0].text;
       expect(instruction).not.toMatch(/open_website|with remember and forget|Your memory:/);
     } finally {
