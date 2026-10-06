@@ -27,6 +27,7 @@ import {
   Sunrise,
   Trash,
   Plus,
+  Wand2,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { EmailDraftCard } from "../components/agent/EmailDraftCard";
@@ -75,7 +76,10 @@ import { BrainPill } from "../components/agent/BrainPill";
 import { ChannelRow, type YtChannelView } from "../components/agent/ChannelRow";
 import { ClipsCard } from "../components/agent/ClipsCard";
 import { WatchCard } from "../components/agent/WatchCard";
-import { NicheButton, NICHES } from "../components/agent/niches";
+import { NicheButton, NicheSuggestionCard, NICHES, type NicheInfo } from "../components/agent/niches";
+import { AgentModeChips, AgentModeNote, AgentModePicker } from "../components/agent/AgentModePicker";
+import { MODES_CHANGED_EVENT, type ModesChangedDetail } from "../lib/agentModes";
+import { announceNichesChanged, useNiches } from "../lib/agentNiches";
 
 export type { ShortBackground };
 
@@ -148,6 +152,8 @@ const ORBITAL_CHANNEL_URL = "https://www.youtube.com/@OrbitalNCG";
 /** The render quality and narration length the person picked last (remembered). */
 const QUALITY_KEY = "soundwave_short_quality";
 const LENGTH_KEY = "soundwave_short_seconds";
+// The "Viral edit" switch (photos, sound effects, a beat, a moving camera).
+const VIRAL_EDIT_KEY = "soundwave_short_viral_edit";
 
 /** The center column (orb + dock) never scrolls: the orb shrinks to fit the window. */
 const ORB_MAX = 300;
@@ -191,6 +197,11 @@ export function AgentHub() {
   const [orbitalStatus, setOrbitalStatus] = useState<OrbitalStatus | null>(null);
   const [trendStatus, setTrendStatus] = useState<TrendStatus | null>(null);
   const [trendRefreshing, setTrendRefreshing] = useState(false);
+  // The Generate tab's niches: the researched nine plus whatever Soundwave has
+  // added since (GET /agent/niches). The agent can add one mid-conversation —
+  // its reply carries nichesChanged, and the grid is refetched.
+  const { state: nicheState, addSuggestion, remove: removeNiche } = useNiches();
+  const [addingNicheId, setAddingNicheId] = useState<string | null>(null);
   const [trendNote, setTrendNote] = useState<string | null>(null);
   const [orbitalHistoryOpen, setOrbitalHistoryOpen] = useState(false);
   const [isRefreshingOrbital, setIsRefreshingOrbital] = useState(false);
@@ -248,6 +259,68 @@ export function AgentHub() {
     [localVoiceStatus],
   );
 
+  /**
+   * The Generate tab's grid. The researched nine keep their order and their
+   * icons; whatever Soundwave added (a subject it found climbing this week)
+   * sits in front of them, badged, until it is no longer new. The fallback
+   * list is the researched nine, so the grid is complete even if the API is
+   * unreachable.
+   */
+  const nicheTiles = useMemo<NicheInfo[]>(() => {
+    const icons: Record<string, string> = Object.fromEntries(NICHES.map((n) => [n.id, n.iconName]));
+    const served = nicheState?.niches ?? [];
+    const added = served
+      .filter((n) => n.added)
+      .map((n): NicheInfo => ({
+        id: n.id,
+        name: n.name,
+        desc: n.description,
+        iconName: icons[n.id] ?? "radar",
+        added: true,
+        fresh: Boolean(nicheState?.added.find((a) => a.id === n.id)?.fresh),
+        ...(n.source ? { source: n.source } : {}),
+        ...(n.why ? { why: n.why } : {}),
+      }));
+    const researched: NicheInfo[] = served.length
+      ? served.filter((n) => !n.added).map((n): NicheInfo => ({ id: n.id, name: n.name, desc: n.description, iconName: icons[n.id] ?? "sparkles" }))
+      : NICHES;
+    // A niche the agent added this very minute is in `added` but might not be in
+    // the catalog yet (the reply arrives before the refetch): keep it visible.
+    for (const a of nicheState?.added ?? []) {
+      if (!added.some((n) => n.id === a.id)) {
+        added.push({ id: a.id, name: a.name, desc: a.description, iconName: icons[a.id] ?? "radar", added: true, fresh: a.fresh, source: a.source, ...(a.why ? { why: a.why } : {}) });
+      }
+    }
+    return [...added, ...researched.filter((n) => !added.some((a) => a.id === n.id))];
+  }, [nicheState]);
+
+  const nicheSuggestions = nicheState?.suggestions ?? [];
+  const nicheLimitReached = (nicheState?.added.length ?? 0) >= (nicheState?.maxAdded ?? 12);
+
+  const handleAddSuggestion = async (id: string) => {
+    const suggestion = nicheSuggestions.find((s) => s.id === id);
+    if (!suggestion) return;
+    setAddingNicheId(id);
+    const added = await addSuggestion(suggestion);
+    setAddingNicheId(null);
+    if (added) {
+      setSelectedNiche(added.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+      toast.success(`“${added.name}” is in the picker — pick it and press Generate.`);
+    } else {
+      toast.error("Could not add that niche just now.");
+    }
+  };
+
+  const handleRemoveNiche = async (id: string, name: string) => {
+    const ok = await removeNiche(id);
+    if (!ok) {
+      toast.error("Could not remove that niche just now.");
+      return;
+    }
+    toast.success(`“${name}” is out of the picker.`);
+    if (selectedNiche === id) setSelectedNiche("psychology");
+  };
+
   const handleVoiceChange = (v: string) => {
     if (!isKnownVoice(v)) return;
     setSelectedVoice(v);
@@ -270,6 +343,13 @@ export function AgentHub() {
   const pickSeconds = (value: number) => {
     setSeconds(value);
     localStorage.setItem(LENGTH_KEY, String(value));
+  };
+  // On by default: a short with popup photos, sounds and a moving camera is the
+  // one worth publishing. The switch is remembered like quality and length.
+  const [viralEdit, setViralEdit] = useState<boolean>(() => localStorage.getItem(VIRAL_EDIT_KEY) !== "off");
+  const pickViralEdit = (value: boolean) => {
+    setViralEdit(value);
+    localStorage.setItem(VIRAL_EDIT_KEY, value ? "on" : "off");
   };
   const [isGenerating, setIsGenerating] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -758,6 +838,20 @@ export function AgentHub() {
       if (videoLink) {
         setCompletedVideoUrl(videoLink);
       }
+      // The agent changed its own voice mid-conversation (the set_mode tool):
+      // the header's mode pill follows at once, without waiting for its poll.
+      if (data.modeChanged) {
+        window.dispatchEvent(new CustomEvent<ModesChangedDetail>(MODES_CHANGED_EVENT, { detail: { persona: data.modeChanged.persona as ModesChangedDetail["persona"], address: data.modeChanged.address } }));
+      }
+      // It added (or removed) a niche in the Generate tab: refetch and say so.
+      if (data.nichesChanged?.length) {
+        announceNichesChanged({ name: data.nichesChanged[0] });
+        toast.success(
+          data.nichesChanged.length === 1
+            ? `“${data.nichesChanged[0]}” is in the Generate tab now.`
+            : `${data.nichesChanged.length} niches changed in the Generate tab.`,
+        );
+      }
       setChatMessages((prev) => [...prev, aiMsg]);
       speakText(aiMsg.text);
       if (startedShortJob(data) && activeJobIdRef.current !== data.jobId) {
@@ -951,7 +1045,15 @@ export function AgentHub() {
             setChatMessages((prev) =>
               prev.some((m) => m.jobId === jobId && m.jobState === "done")
                 ? prev
-                : [...prev, completionMessage(jobId, topic, { videoUrl, youtubeUrl: job.settings?.youtubeUrl, background: job.settings?.background })],
+                : [
+                    ...prev,
+                    completionMessage(jobId, topic, {
+                      videoUrl,
+                      youtubeUrl: job.settings?.youtubeUrl,
+                      background: job.settings?.background,
+                      storyboard: job.settings?.storyboard,
+                    }),
+                  ],
             );
           } else if (job.status === "FAILED") {
             setChatMessages((prev) =>
@@ -1351,11 +1453,17 @@ export function AgentHub() {
           videoUrl: finalVideoUrl,
           youtubeUrl: resultData.youtubeUrl,
           background,
+          storyboard: resultData.storyboard ?? resultData.settings?.storyboard,
         });
         setChatMessages((prev) => (prev.some((m) => m.jobId === jobId && m.jobState === "done") ? prev : [...prev, successNotice]));
         speakText(hasYt ? "Your short has been rendered and posted to YouTube Shorts!" : "Your video has finished rendering and is ready to download!");
         void notifyJobOutcome({ id: jobId, status: "COMPLETED", topic, youtubeUrl: resultData.youtubeUrl });
-        toast.success(hasYt ? "Published to YouTube!" : "Video Ready", hasYt ? resultData.youtubeUrl : "Short generated successfully.");
+        const edit = resultData.storyboard as { beats?: number; photos?: number; sounds?: number } | undefined;
+        const editLine =
+          edit && edit.beats
+            ? `${edit.beats} beats · ${edit.photos ?? 0} photo${edit.photos === 1 ? "" : "s"} · ${edit.sounds ?? 0} sound${edit.sounds === 1 ? "" : "s"}`
+            : "Short generated successfully.";
+        toast.success(hasYt ? "Published to YouTube!" : "Video Ready", hasYt ? resultData.youtubeUrl : editLine);
         finish();
       };
 
@@ -1456,6 +1564,7 @@ export function AgentHub() {
         // written for that niche even with a custom topic typed in.
         ...(customTopic.trim() ? {} : { niche: selectedNiche }),
         async: true,
+        enhance: viralEdit,
         autoPublishYouTube: ytAutoPublish,
         youtubePrivacy: ytPrivacy,
       };
@@ -1500,34 +1609,45 @@ export function AgentHub() {
   return (
     // lg+: exactly the window's height — nothing on the page scrolls except the
     // left column's cards and the conversation. The middle (orb + dock) is fixed.
-    <div className="flex flex-col gap-3 bg-[#050506] text-gray-100 select-none font-sans p-3 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
+    <div className="flex flex-col gap-3 bg-[#08090c] text-gray-100 select-none font-sans p-3 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden">
       {/* ── 1. TOP HUD STATUS BAR ─────────────────────────────────────── */}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-xl border border-[#1A1B21] bg-[#0A0A0C]/80 backdrop-blur-md">
-        {/* Left: Assistant Title & Online Status */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm sm:text-base font-extrabold tracking-[0.25em] text-cyan-400 font-mono">
-            {assistantName}
+      <header className="sw-card flex shrink-0 flex-wrap items-center justify-between gap-3 px-3.5 py-2.5">
+        {/* Left: who this is, whether it is live, and which mode it speaks in */}
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="sw-avatar h-8 w-8 shrink-0 text-[13px] font-bold tracking-tight">
+            {assistantName.replace(/[^A-Za-z]/g, "").slice(0, 1) || "S"}
           </span>
-          <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-400 font-mono">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Online
-          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-[13px] font-semibold tracking-tight text-white">{assistantName}</span>
+              <span className="sw-badge sw-badge-live shrink-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Online
+              </span>
+            </div>
+            <span className="mt-0.5 hidden items-center gap-2 text-[11px] text-gray-500 sm:flex">
+              <span>Command Center</span>
+              <span className="text-gray-700">·</span>
+              <span className="truncate">{selectedVoice ? displayNameFor(selectedVoice) : "Voice"}</span>
+            </span>
+          </div>
           <BrainPill status={brain} />
         </div>
 
-        {/* Center: Time & Date Capsule */}
-        <div className="flex items-center gap-2 rounded-full border border-[#24252D] bg-[#101013] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
-          <Clock className="h-3.5 w-3.5 text-cyan-400" />
-          <span className="text-white font-semibold">{currentTimeStr || "2:52:27 PM"}</span>
-          <span className="hidden text-gray-500 xl:inline">|</span>
-          <span className="hidden text-gray-300 xl:inline">{currentDateStr || "September 20, 2026"}</span>
+        {/* Center: the mode it talks in, and the clock */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <AgentModePicker />
+          <div className="sw-pill font-mono text-[11px] tabular-nums">
+            <Clock className="h-3.5 w-3.5 text-gray-500" />
+            <span className="font-semibold text-white">{currentTimeStr || "—"}</span>
+            <span className="hidden text-gray-500 xl:inline">{currentDateStr}</span>
+          </div>
         </div>
 
-        {/* Right: Voice Capsule, Orbital Background Capsule & Settings Gear Button */}
+        {/* Right: voice, backgrounds, settings */}
         <div className="flex items-center gap-2">
-          {/* Soundwave voice (replies + shorts) */}
-          <div className="flex items-center gap-1.5 rounded-full border border-[#24252D] bg-[#101013] px-2.5 py-1 text-xs text-gray-300 font-mono">
-            <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
+          <div className="sw-pill text-[11px]">
+            <Volume2 className="h-3.5 w-3.5 text-gray-500" />
             <select
               value={selectedVoice}
               onChange={(e) => handleVoiceChange(e.target.value)}
@@ -1536,12 +1656,12 @@ export function AgentHub() {
               aria-label="Agent voice"
             >
               {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
-                <option disabled value="__kokoro_status" className="bg-[#0A0A0C] text-gray-400">
+                <option disabled value="__kokoro_status" className="bg-[#0b0c0f] text-gray-400">
                   {localVoiceSetupLabel(localVoiceStatus.setup)}
                 </option>
               )}
               {voiceChoices.map((v) => (
-                <option key={v.id} value={v.id} className="bg-[#0A0A0C] text-white">
+                <option key={v.id} value={v.id} className="bg-[#0b0c0f] text-white">
                   {agentVoiceLabel(v.id)}
                 </option>
               ))}
@@ -1554,8 +1674,8 @@ export function AgentHub() {
               setOrbitalHistoryOpen(true);
               fetchOrbitalStatus();
             }}
-            className="flex items-center gap-1.5 rounded-full border border-[#24252D] bg-[#101013] px-3 py-1 text-xs text-gray-300 font-mono hover:border-cyan-500/40 transition-colors cursor-pointer"
-            title="Orbital NCG videos the agent hasn't used yet"
+            className="sw-pill sw-pill-button font-mono text-[11px] tabular-nums"
+            title="Unused Orbital NCG backgrounds"
           >
             <Youtube className="h-3.5 w-3.5 text-red-500" />
             <span className="font-semibold text-white">{orbitalStatus?.available ?? "—"}</span>
@@ -1563,11 +1683,11 @@ export function AgentHub() {
 
           <button
             onClick={() => setSettingsOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#24252D] bg-[#101013] text-gray-300 hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer"
-            title="Assistant Settings"
-            aria-label="Settings"
+            className="sw-btn sw-btn-secondary h-9 w-9 p-0"
+            title="Assistant settings"
+            aria-label="Assistant settings"
           >
-            <SettingsIcon className="h-4 w-4" />
+            <SettingsIcon className="h-4 w-4 text-gray-300" />
           </button>
         </div>
       </header>
@@ -1583,52 +1703,39 @@ export function AgentHub() {
           }`}
         >
           {/* Card 1: System Stats */}
-          <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-3 font-mono">
-            <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-              <span className="flex items-center gap-1.5 font-semibold text-gray-200">
-                <Cpu className="h-3.5 w-3.5 text-cyan-400" />
+          <div className="sw-card p-3.5">
+            <div className="sw-card-head">
+              <span className="sw-card-head-main">
+                <Cpu className="h-3.5 w-3.5" />
                 System
               </span>
-              <button
-                onClick={() => void refreshStats()}
-                className="text-gray-400 hover:text-cyan-400 transition-colors"
-                title="Refresh stats"
-              >
+              <button onClick={() => void refreshStats()} className="sw-btn sw-btn-ghost h-6 w-6 p-0" title="Refresh stats" aria-label="Refresh stats">
                 <RefreshCw className="h-3 w-3" />
               </button>
             </div>
-
-            {/* 3 Metric Tiles */}
-            <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-1.5">
-                <span className="text-[10px] text-gray-400 block">CPU</span>
-                <span className="text-xs font-bold text-white">{stats.cpuUsage != null ? `${stats.cpuUsage}%` : "—"}</span>
+            <div className="grid grid-cols-3 gap-2 pt-3">
+              <div className="sw-tile">
+                <span className="sw-tile-label">CPU</span>
+                <span className="sw-tile-value">{stats.cpuUsage != null ? `${stats.cpuUsage}%` : "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-1.5">
-                <span className="text-[10px] text-gray-400 block">Memory</span>
-                <span className="text-xs font-bold text-white">{stats.memoryPercent != null ? `${stats.memoryPercent}%` : "—"}</span>
+              <div className="sw-tile">
+                <span className="sw-tile-label">Memory</span>
+                <span className="sw-tile-value">{stats.memoryPercent != null ? `${stats.memoryPercent}%` : "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-1.5">
-                <span className="text-[10px] text-gray-400 block">Disk</span>
-                <span className="block text-xs font-bold leading-tight text-white">
-                  {stats.diskUsedGB != null ? (
-                    <>
-                      {stats.diskUsedGB}/<wbr />
-                      {stats.diskTotalGB} GB
-                    </>
-                  ) : (
-                    "—"
-                  )}
+              <div className="sw-tile">
+                <span className="sw-tile-label">Disk</span>
+                <span className="sw-tile-value text-[11px]">
+                  {stats.diskUsedGB != null ? `${stats.diskUsedGB}/${stats.diskTotalGB} GB` : "—"}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Card 2: Orbital NCG Background Source */}
-          <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2.5 font-mono">
-            <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-              <span className="flex items-center gap-1.5 font-semibold text-gray-200">
-                <Film className="h-3.5 w-3.5 text-cyan-400" />
+          <div className="sw-card space-y-2.5 p-3.5">
+            <div className="sw-card-head">
+              <span className="sw-card-head-main">
+                <Film className="h-3.5 w-3.5" />
                 Backgrounds
               </span>
               <div className="flex items-center gap-2">
@@ -1638,8 +1745,9 @@ export function AgentHub() {
                     setOrbitalHistoryOpen(true);
                     fetchOrbitalStatus();
                   }}
-                  className="text-gray-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                  className="sw-btn sw-btn-ghost h-6 w-6 p-0"
                   title="Show the Orbital videos already used"
+                  aria-label="Show the Orbital videos already used"
                 >
                   <Clock className="h-3.5 w-3.5" />
                 </button>
@@ -1647,8 +1755,9 @@ export function AgentHub() {
                   type="button"
                   onClick={handleRefreshOrbital}
                   disabled={isRefreshingOrbital}
-                  className="text-gray-400 hover:text-cyan-400 transition-colors cursor-pointer disabled:opacity-50"
+                  className="sw-btn sw-btn-ghost h-6 w-6 p-0"
                   title="Re-check the channel for new uploads"
+                  aria-label="Re-check the channel for new uploads"
                 >
                   <RefreshCw className={`h-3 w-3 ${isRefreshingOrbital ? "animate-spin" : ""}`} />
                 </button>
@@ -1672,7 +1781,7 @@ export function AgentHub() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-2 space-y-0.5" title="Last imported background">
+            <div className="rounded-lg border border-white/6 bg-[#08090c] p-2 space-y-0.5" title="Last imported background">
               {orbitalStatus?.lastUsed ? (
                 <a
                   href={orbitalStatus.lastUsed.url}
@@ -1702,10 +1811,10 @@ export function AgentHub() {
           </div>
 
           {/* YouTube Shorts Studio & Automation Card */}
-          <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2.5 font-mono">
-            <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-              <span className="flex items-center gap-1.5 font-semibold text-gray-200">
-                <Youtube className="h-3.5 w-3.5 text-red-500" />
+          <div className="sw-card space-y-2.5 p-3.5">
+            <div className="sw-card-head">
+              <span className="sw-card-head-main">
+                <Youtube className="h-3.5 w-3.5" />
                 YouTube
               </span>
               <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
@@ -1769,7 +1878,7 @@ export function AgentHub() {
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
-                className="flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-[#1A1B21] bg-[#050506] text-gray-300 transition-all hover:border-cyan-400 hover:text-white cursor-pointer"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-lg border border-white/6 bg-[#08090c] text-gray-300 transition-all hover:border-cyan-300/70 hover:text-white cursor-pointer"
                 title="YouTube setup"
                 aria-label="YouTube setup"
               >
@@ -1788,14 +1897,14 @@ export function AgentHub() {
 
           {/* Persistent Latest Rendered Video Card */}
           {completedVideoUrl && (
-            <div className="rounded-xl border border-cyan-500/40 bg-[#0A0A0C] p-3.5 space-y-2.5 font-mono shadow-lg shadow-cyan-950/30">
-              <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-                <span className="flex items-center gap-1.5 font-semibold text-cyan-300">
-                  <Film className="h-3.5 w-3.5 text-cyan-400" />
+            <div className="sw-card sw-card-accent space-y-2.5 p-3.5">
+              <div className="sw-card-head">
+                <span className="sw-card-head-main text-cyan-100">
+                  <Film className="h-3.5 w-3.5" />
                   Latest short
                 </span>
               </div>
-              <div className="relative aspect-[9/16] max-h-44 w-full rounded-lg border border-[#1A1B21] bg-black overflow-hidden flex items-center justify-center mx-auto">
+              <div className="relative aspect-[9/16] max-h-44 w-full rounded-lg border border-white/6 bg-black overflow-hidden flex items-center justify-center mx-auto">
                 <video
                   src={completedVideoUrl}
                   controls
@@ -1808,7 +1917,7 @@ export function AgentHub() {
                   href={lastBackground.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 rounded-md border border-[#24252D] bg-[#050506] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
+                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-[#08090c] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
                   title={`Imported via the YouTube link importer: ${lastBackground.url}`}
                 >
                   <Youtube className="h-3 w-3 shrink-0 text-red-500" />
@@ -1856,37 +1965,33 @@ export function AgentHub() {
           )}
 
           {/* Card 4: System Uptime & Automation */}
-          <div className="rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-3.5 space-y-2.5 font-mono">
-            <div className="flex items-center justify-between border-b border-[#1A1B21] pb-1.5 text-xs">
-              <span className="flex items-center gap-1.5 font-semibold text-gray-200">
-                <Activity className="h-3.5 w-3.5 text-cyan-400" />
+          <div className="sw-card space-y-2.5 p-3.5">
+            <div className="sw-card-head">
+              <span className="sw-card-head-main">
+                <Activity className="h-3.5 w-3.5" />
                 Uptime
               </span>
-              <span className="text-[11px] text-cyan-400">{formatUptime(uptimeSeconds)}</span>
+              <span className="sw-tile-value text-[11px] text-cyan-300">{formatUptime(uptimeSeconds)}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-1.5">
-                <span className="text-[10px] text-gray-400 block">Session</span>
-                <span className="text-xs font-bold text-white">{sessionCount}</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="sw-tile">
+                <span className="sw-tile-label">Session</span>
+                <span className="sw-tile-value">{sessionCount}</span>
               </div>
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-1.5">
-                <span className="text-[10px] text-gray-400 block">Commands</span>
-                <span className="text-xs font-bold text-white">{commandsCount}</span>
+              <div className="sw-tile">
+                <span className="sw-tile-label">Commands</span>
+                <span className="sw-tile-value">{commandsCount}</span>
               </div>
             </div>
 
-            {/* System Load */}
-            <div className="space-y-1 pt-1">
-              <div className="flex justify-between text-[10px] text-gray-400">
+            <div className="space-y-1.5 pt-0.5">
+              <div className="flex items-center justify-between text-[11px] text-gray-500">
                 <span>Load</span>
-                <span>{stats.loadPercent != null ? `${stats.loadPercent}%` : "—"}</span>
+                <span className="font-mono tabular-nums text-gray-300">{stats.loadPercent != null ? `${stats.loadPercent}%` : "—"}</span>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#050506]">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-400 to-blue-500"
-                  style={{ width: `${stats.loadPercent ?? 0}%` }}
-                />
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500" style={{ width: `${stats.loadPercent ?? 0}%` }} />
               </div>
             </div>
           </div>
@@ -1905,14 +2010,15 @@ export function AgentHub() {
               onOrbClick={toggleListening}
             />
 
-            {/* Assistant Name Label */}
-            <h2 className="text-lg font-bold tracking-[0.25em] text-white font-mono mt-1">
+            {/* Who is listening */}
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-white">
               {assistantName}
             </h2>
+            <AgentModeNote className="mt-1" />
 
-            {/* Dynamic Status Capsule */}
+            {/* What it is doing right now, in one line */}
             <div className="mt-3">
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#24252D] bg-[#101013] px-4 py-1 text-xs text-gray-300 font-mono shadow-inner">
+              <span className="sw-pill px-4 py-1.5 text-xs">
                 <span className={`h-2 w-2 rounded-full animate-pulse ${isMicActive ? "bg-emerald-400" : micPhase === "transcribing" ? "bg-cyan-400" : "bg-emerald-400"}`} />
                 {micPhase === "starting"
                   ? "Starting mic…"
@@ -1937,8 +2043,9 @@ export function AgentHub() {
           <div className="flex shrink-0 items-center gap-3 pt-4">
             <button
               onClick={() => setGeneratorModalOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#24252D] bg-[#101013] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer shadow-md shadow-cyan-950/20"
-              title="1-Click Viral Short Generator"
+              className="sw-btn sw-btn-secondary h-11 w-11 p-0 text-cyan-300 hover:border-cyan-300/70/40"
+              title="Make a short — pick a niche or a topic"
+              aria-label="Make a short"
             >
               <Film className="h-5 w-5" />
             </button>
@@ -1957,12 +2064,12 @@ export function AgentHub() {
               onContextMenu={(e) => e.preventDefault()}
               className={`relative flex h-12 w-12 touch-none items-center justify-center rounded-xl border transition-all cursor-pointer ${
                 isMicActive
-                  ? "border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-lg shadow-emerald-500/25"
+                  ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-300 shadow-lg shadow-emerald-500/20"
                   : micPhase === "transcribing"
-                  ? "border-cyan-400/60 bg-cyan-500/10 text-cyan-300"
+                  ? "border-cyan-400/50 bg-cyan-500/10 text-cyan-300"
                   : voiceInputStatus && !voiceInputStatus.available
-                  ? "border-[#24252D] bg-[#101013] text-gray-500 hover:border-amber-500/40"
-                  : "border-[#24252D] bg-[#101013] text-gray-300 hover:border-cyan-500/50 hover:text-white"
+                  ? "border-white/8 bg-[#14161d] text-gray-500 hover:border-amber-500/40"
+                  : "border-white/10 bg-[#14161d] text-gray-300 hover:border-cyan-300/70/40 hover:text-white"
               }`}
               style={isMicActive ? { boxShadow: `0 0 0 ${2 + Math.round(capture.level * 10)}px rgba(52, 211, 153, 0.22)` } : undefined}
               title={
@@ -1988,15 +2095,16 @@ export function AgentHub() {
 
             <button
               onClick={() => setMacrosModalOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#24252D] bg-[#101013] text-purple-400 hover:border-purple-500/50 hover:text-white transition-all cursor-pointer"
-              title="Ghost Operator Macro Automations"
+              className="sw-btn sw-btn-secondary h-11 w-11 p-0 text-violet-300 hover:border-violet-400/40"
+              title="Ghost Operator — macro automations"
+              aria-label="Ghost Operator macro automations"
             >
               <Workflow className="h-5 w-5" />
             </button>
 
             <button
               onClick={() => setSettingsOpen(true)}
-              className="flex h-12 w-12 items-center justify-center rounded-xl border border-[#24252D] bg-[#101013] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer"
+              className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-[#14161d] text-cyan-400 hover:border-cyan-500/50 hover:text-white transition-all cursor-pointer"
               title="Orb States & Assistant Settings"
             >
               <SettingsIcon className="h-5 w-5" />
@@ -2005,11 +2113,21 @@ export function AgentHub() {
         </div>
 
         {/* ── RIGHT COLUMN: CONVERSATION STREAM & INPUT (3.5 cols) ─────── */}
-        <div className="lg:col-span-4 rounded-xl border border-[#1A1B21] bg-[#0A0A0C] p-4 flex flex-col h-[640px] lg:h-auto lg:min-h-0 font-mono">
+        <div className="sw-card lg:col-span-4 flex h-[640px] flex-col p-4 lg:h-auto lg:min-h-0">
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between border-b border-[#1A1B21] pb-3">
-            <h3 className="text-sm font-semibold text-white">Chat</h3>
-            <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/6 pb-3">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-white">
+                Conversation
+                {isGenerating && <Loader2 className="h-3 w-3 animate-spin text-cyan-300" />}
+              </h3>
+              <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-500">
+                <AgentModeNote />
+                <span className="text-gray-700">·</span>
+                <span>{chatMessages.length} messages</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={() => {
                   const cleared: ChatMessage = {
@@ -2025,7 +2143,7 @@ export function AgentHub() {
                   void clearSharedConversation([cleared]);
                   toast.info("Log Cleared", "Message buffer reset.");
                 }}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#24252D] bg-[#050506] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                className="sw-btn sw-btn-ghost h-7 w-7 p-0"
                 title="Clear the conversation"
                 aria-label="Clear the conversation"
               >
@@ -2034,7 +2152,7 @@ export function AgentHub() {
 
               <button
                 onClick={handleExtractConversation}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-[#24252D] bg-[#050506] text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                className="sw-btn sw-btn-ghost h-7 w-7 p-0"
                 title="Export the conversation as a .txt"
                 aria-label="Export the conversation"
               >
@@ -2044,17 +2162,25 @@ export function AgentHub() {
           </div>
 
           {/* Messages Feed — the conversation scrolls inside its own box */}
-          <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3 py-3 pr-1 text-xs">
+          <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3.5 py-4 pr-1">
             {chatMessages.map((msg) => (
               <div
                 key={msg.id}
-                className={`rounded-xl p-3 leading-relaxed transition-all ${
-                  msg.sender === "user"
-                    ? "bg-[#101116] border border-cyan-800/40 text-cyan-100 ml-6"
-                    : "bg-[#070F1E] border border-[#24252D] text-gray-200 mr-2"
-                }`}
+                className={`flex gap-2.5 ${msg.sender === "user" ? "flex-row-reverse" : "flex-row"}`}
               >
-                <div className="whitespace-pre-line text-xs">{msg.text}</div>
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
+                    msg.sender === "user"
+                      ? "border-white/10 bg-white/[0.04] text-gray-400"
+                      : "border-cyan-400/25 bg-cyan-500/10 text-cyan-200",
+                  )}
+                  aria-hidden
+                >
+                  {msg.sender === "user" ? "YOU" : "SW"}
+                </span>
+                <div className={cn("sw-bubble min-w-0 max-w-[92%] sw-rise", msg.sender === "user" ? "sw-bubble-user" : "sw-bubble-agent")}>
+                <div className="whitespace-pre-line text-[13px]">{msg.text}</div>
                 {msg.emailDraftIds?.map((draftId) => <EmailDraftCard key={draftId} draftId={draftId} />)}
                 {/* What the agent actually sent on the person's instruction: the
                     exact recipient and subject, so "sent" is never just a claim. */}
@@ -2105,14 +2231,14 @@ export function AgentHub() {
                 {/* Inline Video Player & Download Button */}
                 {Boolean(msg.videoUrl || msg.downloadUrl) && (
                   <div className="mt-2.5 rounded-lg border border-cyan-500/30 bg-[#040814] p-2.5 space-y-2 font-mono">
-                    <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-[#1A1B21] pb-1">
+                    <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-white/6 pb-1">
                       <span className="flex items-center gap-1.5">
                         <Film className="h-3.5 w-3.5 text-cyan-400" />
                         Short
                       </span>
                     </div>
 
-                    <div className="relative rounded-lg overflow-hidden border border-[#24252D] bg-black max-h-52 flex justify-center items-center">
+                    <div className="relative rounded-lg overflow-hidden border border-white/10 bg-black max-h-52 flex justify-center items-center">
                       <video
                         src={msg.videoUrl || msg.downloadUrl}
                         controls
@@ -2126,7 +2252,7 @@ export function AgentHub() {
                         href={msg.background.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded-md border border-[#24252D] bg-[#050506] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
+                        className="flex items-center gap-1.5 rounded-md border border-white/10 bg-[#08090c] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
                         title={`Imported via the YouTube link importer: ${msg.background.url}`}
                       >
                         <Youtube className="h-3 w-3 shrink-0 text-red-500" />
@@ -2169,8 +2295,8 @@ export function AgentHub() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between text-[10px] text-gray-500 mt-2 pt-1 border-t border-white/[0.04]">
-                  <span className="flex items-center gap-1 uppercase text-[9px] font-bold tracking-wider text-cyan-400">
+                <div className="sw-bubble-meta">
+                  <span className="sw-bubble-tag">
                     {msg.via === "phone" && <Smartphone className="h-2.5 w-2.5" aria-label="From your phone" />}
                     {msg.viaVoice && <Mic className="h-2.5 w-2.5" aria-label="Spoken" />}
                     {msg.briefingDate && <Sunrise className="h-2.5 w-2.5 text-amber-300" aria-label="Morning briefing" />}
@@ -2203,15 +2329,16 @@ export function AgentHub() {
                     <span>{msg.time}</span>
                   </div>
                 </div>
+                </div>
               </div>
             ))}
           </div>
 
           {/* Command Prompt Input Bar */}
-          <div className="shrink-0 pt-2 border-t border-[#1A1B21] space-y-2">
+          <div className="shrink-0 space-y-2 border-t border-white/6 pt-3">
             {/* Live short progress (Generate button or chat request) */}
             {isGenerating && (
-              <div className="rounded-lg border border-cyan-500/30 bg-[#050506] px-2.5 py-1.5 space-y-1 font-mono">
+              <div className="rounded-lg border border-cyan-500/30 bg-[#08090c] px-2.5 py-1.5 space-y-1 font-mono">
                 <div className="flex items-center justify-between gap-2 text-[10px]">
                   <span className="truncate text-gray-300" title={currentStep}>
                     🎬 {currentStep}
@@ -2231,40 +2358,48 @@ export function AgentHub() {
               </div>
             )}
 
-            {/* Quick Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto text-[10px] text-gray-400 pb-1">
+            {/* Quick actions, one row above the field */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
               <button
                 onClick={() => void runMorningSetup()}
                 disabled={isRunningMorning}
                 data-testid="morning-chip"
-                title="Opens your morning websites and apps and gives you today's briefing (Settings → Morning Setup)"
-                className="shrink-0 rounded-md border border-[#24252D] bg-[#050506] px-2 py-0.5 hover:text-cyan-300 transition-colors disabled:opacity-60"
+                title="Run Morning Setup: opens your morning sites and gives today's briefing"
+                className="sw-chip shrink-0"
               >
-                <Sunrise className="h-3.5 w-3.5" />
+                <Sunrise className="h-3.5 w-3.5 text-amber-300" />
+                Morning
               </button>
               <button
                 onClick={() => setGeneratorModalOpen(true)}
-                className="shrink-0 rounded-md border border-[#24252D] bg-[#050506] p-1.5 hover:text-cyan-300 transition-colors cursor-pointer"
+                className="sw-chip shrink-0"
                 title="Make a short"
-                aria-label="Make a short"
               >
-                <Film className="h-3.5 w-3.5" />
+                <Film className="h-3.5 w-3.5 text-cyan-300" />
+                Make a short
               </button>
+              {nicheSuggestions.length > 0 && (
+                <button
+                  onClick={() => setGeneratorModalOpen(true)}
+                  className="sw-chip shrink-0 border-cyan-500/30 text-cyan-200"
+                  title={nicheSuggestions.map((s) => s.name).join(", ")}
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  {nicheSuggestions.length} going viral
+                </button>
+              )}
             </div>
 
-            <form onSubmit={handleUserSubmit} className="flex gap-2">
+            <form onSubmit={handleUserSubmit} className="flex items-end gap-2">
               <input
                 type="text"
-                placeholder="Message…"
+                placeholder="Ask anything, or say what to make…"
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
-                className="flex-1 rounded-xl border border-[#24252D] bg-[#050506] px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none transition-colors"
+                className="sw-input flex-1 py-2.5 text-[13px]"
+                aria-label="Message the assistant"
               />
-              <button
-                type="submit"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-[#050506] font-bold shadow-lg shadow-cyan-500/30 transition-all cursor-pointer"
-                title="Send"
-              >
+              <button type="submit" className="sw-btn sw-btn-primary h-10 w-10 shrink-0 p-0" title="Send" aria-label="Send">
                 <Send className="h-4 w-4" />
               </button>
             </form>
@@ -2280,12 +2415,22 @@ export function AgentHub() {
           title="New short"
           size="lg"
         >
-          <div className="space-y-4 font-mono text-xs">
-            {/* Niche Grid */}
-            <div className="space-y-1.5">
-              <label className="font-semibold text-gray-300">Topic</label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {NICHES.map((n) => (
+          <div className="space-y-5">
+            {/* Niche Grid — the researched nine, plus whatever Soundwave added */}
+            <section className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="sw-section-label">
+                  <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+                  Pick a niche
+                </h3>
+                {(nicheState?.added.length ?? 0) > 0 && (
+                  <span className="text-[11px] text-gray-500">
+                    {nicheState!.added.length} added by Soundwave · {nicheState!.maxAdded} max
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {nicheTiles.map((n) => (
                   <NicheButton
                     key={n.id}
                     niche={n}
@@ -2293,31 +2438,61 @@ export function AgentHub() {
                     expanded={nicheInfo === n.id}
                     onSelect={() => setSelectedNiche(n.id)}
                     onToggleInfo={() => setNicheInfo((was) => (was === n.id ? null : n.id))}
+                    {...(n.added ? { onRemove: () => void handleRemoveNiche(n.id, n.name) } : {})}
                   />
                 ))}
               </div>
-            </div>
+              {nicheSuggestions.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <p className="sw-section-label">
+                    <TrendingUp className="h-3.5 w-3.5 text-cyan-300" />
+                    Going viral this week — not covered yet
+                  </p>
+                  {nicheSuggestions.map((s) => (
+                    <NicheSuggestionCard
+                      key={s.id}
+                      suggestion={s}
+                      busy={addingNicheId === s.id}
+                      disabled={nicheLimitReached}
+                      onAdd={() => void handleAddSuggestion(s.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* How the assistant talks while it works on this one */}
+            <section className="space-y-2.5 rounded-xl border border-white/8 bg-[#07080a] p-3">
+              <span className="sw-section-label">
+                <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+                How the assistant talks to you
+              </span>
+              <AgentModeChips />
+            </section>
 
             {/* Custom Topic Input */}
-            <div className="space-y-1">
-              <label className="font-semibold text-gray-300">Or a topic of your own</label>
+            <section className="space-y-2">
+              <label className="sw-label" htmlFor="short-topic">
+                Or a topic of your own
+              </label>
               <input
+                id="short-topic"
                 type="text"
                 placeholder="e.g. Why Intelligent People Procrastinate More"
                 value={customTopic}
                 onChange={(e) => setCustomTopic(e.target.value)}
-                className="w-full rounded-lg border border-[#24252D] bg-[#050506] px-3 py-2 text-xs text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none"
+                className="sw-input"
               />
-            </div>
+            </section>
 
             {/* Voice & Resolution */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="font-semibold text-gray-300">Voice</label>
+            <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="sw-label">Narrator voice</label>
                 <select
                   value={selectedVoice}
                   onChange={(e) => handleVoiceChange(e.target.value)}
-                  className="w-full rounded-lg border border-[#24252D] bg-[#050506] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                  className="sw-select py-2 text-[12.5px]"
                 >
                   {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
                     <option disabled value="__kokoro_status">
@@ -2332,44 +2507,82 @@ export function AgentHub() {
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-gray-300 font-semibold">Quality</label>
+              <div>
+                <label className="sw-label">Quality</label>
                 <select
                   value={resolution}
                   onChange={(e) => pickResolution(e.target.value as "720p" | "1080p")}
-                  className="w-full rounded-lg border border-[#24252D] bg-[#050506] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                  className="sw-select py-2 text-[12.5px]"
                 >
                   <option value="1080p">1080p · 60fps</option>
                   <option value="720p">720p · 60fps</option>
                 </select>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-gray-300 font-semibold">Length</label>
+              <div>
+                <label className="sw-label">Length</label>
                 <select
                   value={seconds}
                   onChange={(e) => pickSeconds(Number(e.target.value))}
-                  className="w-full rounded-lg border border-[#24252D] bg-[#050506] px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                  className="sw-select py-2 text-[12.5px]"
                 >
-                  <option value={30}>30s</option>
-                  <option value={60}>60s</option>
-                  <option value={90}>90s</option>
+                  <option value={30}>30 seconds</option>
+                  <option value={60}>60 seconds</option>
+                  <option value={90}>90 seconds</option>
                 </select>
               </div>
-            </div>
+            </section>
+
+            {/* The viral edit: what turns gameplay + a voice into a short that
+                holds. Every part of it is optional, and off renders the plain
+                short Soundwave made before. */}
+            <section className="space-y-2 rounded-xl border border-white/8 bg-[#07080a] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="sw-section-label">
+                    <Wand2 className="h-3.5 w-3.5 text-cyan-300" />
+                    Viral edit
+                  </span>
+                  <p className="mt-1 text-[11px] leading-snug text-gray-500">
+                    Photos that pop up on the words they show, sound effects, a beat under the voice and a
+                    moving camera — planned around the script. Off is the plain render: gameplay, voice and captions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => pickViralEdit(!viralEdit)}
+                  aria-pressed={viralEdit}
+                  aria-label="Viral edit"
+                  className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                    viralEdit ? "bg-cyan-400 text-[#08090c]" : "bg-[#14161d] text-gray-400 hover:text-white"
+                  }`}
+                >
+                  {viralEdit ? "ON" : "OFF"}
+                </button>
+              </div>
+              {viralEdit && (
+                <ul className="flex flex-wrap gap-1.5 pt-0.5">
+                  <li className="sw-chip">Hook &amp; follow cards</li>
+                  <li className="sw-chip">Popup photos</li>
+                  <li className="sw-chip">Sound effects</li>
+                  <li className="sw-chip">Beat under the voice</li>
+                  <li className="sw-chip">Moving camera</li>
+                </ul>
+              )}
+            </section>
 
             {/* What's viral right now: read free from YouTube's Shorts search twice a
                 day (no Gemini); the scripts are written to it. Checked/forced here. */}
-            <div className="rounded-lg border border-[#24252D] bg-[#050506] p-2.5 space-y-1.5">
+            <section className="space-y-2 rounded-xl border border-white/8 bg-[#07080a] p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-300">
-                  <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />
-                  Trends
+                <span className="sw-section-label">
+                  <TrendingUp className="h-3.5 w-3.5 text-cyan-300" />
+                  What's working this week
                 </span>
                 <button
                   onClick={refreshTrends}
                   disabled={trendRefreshing || trendStatus?.refreshing}
-                  className="flex h-6 w-6 items-center justify-center rounded-md border border-[#24252D] text-gray-300 transition-colors hover:border-cyan-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                  className="sw-btn sw-btn-ghost h-6 w-6 p-0"
                   title="Check YouTube again now (free)"
                   aria-label="Check YouTube again now"
                 >
@@ -2391,7 +2604,7 @@ export function AgentHub() {
                     ))}
                   </ul>
                   {Boolean(trendStatus.ideas?.length) && (
-                    <div className="space-y-1 border-t border-[#24252D] pt-1.5">
+                    <div className="space-y-1 border-t border-white/10 pt-1.5">
                       <p className="text-[10px] font-semibold text-amber-400/90">Ideas for today (free)</p>
                       <ul className="space-y-1">
                         {trendStatus.ideas!.slice(0, 2).map((idea, i) => (
@@ -2404,7 +2617,7 @@ export function AgentHub() {
                                 setCustomTopic(hook);
                                 setGeneratorModalOpen(true);
                               }}
-                              className="shrink-0 rounded border border-[#24252D] px-1.5 py-0.5 text-[9px] text-cyan-300 transition-colors hover:border-cyan-500 hover:text-white cursor-pointer"
+                              className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[9px] text-cyan-300 transition-colors hover:border-cyan-500 hover:text-white cursor-pointer"
                               title="Use this idea as the topic"
                             >
                               Use
@@ -2420,7 +2633,7 @@ export function AgentHub() {
                     </p>
                   )}
                   {Boolean(trendStatus.top?.length) && (
-                    <ul className="space-y-0.5 border-t border-[#24252D] pt-1">
+                    <ul className="space-y-0.5 border-t border-white/10 pt-1">
                       {trendStatus.top!.slice(0, 3).map((t) => (
                         <li key={t.id} className="text-[10px] leading-snug line-clamp-1">
                           <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 hover:text-cyan-200" title={`${t.title}${t.channel ? ` — ${t.channel}` : ""}`}>
@@ -2435,10 +2648,10 @@ export function AgentHub() {
                 <p className="text-[10px] text-gray-500">Not checked yet — reads YouTube's popular Shorts by itself twice a day.</p>
               )}
               {trendNote && <p className="text-[10px] text-amber-400/80 leading-normal">{trendNote}</p>}
-            </div>
+            </section>
 
             {/* Background Footage Source: Orbital NCG via the YouTube link importer */}
-            <div className="rounded-lg border border-[#24252D] bg-[#050506] p-2.5 space-y-2">
+            <section className="space-y-2.5 rounded-xl border border-white/8 bg-[#08090c] p-3">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-semibold text-gray-300" title="From youtube.com/@OrbitalNCG, never reused">Background</span>
                 <span className="font-bold text-cyan-400">
@@ -2466,21 +2679,17 @@ export function AgentHub() {
                   <Clock className="text-cyan-400" />
                 </IconButton>
               </div>
-            </div>
+            </section>
 
             {/* YouTube Shorts Auto-Publish Section */}
-            <div className="rounded-lg border border-red-500/30 bg-red-950/20 p-2.5 space-y-2">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-gray-200 flex items-center gap-1.5">
+            <section className="space-y-2.5 rounded-xl border border-red-500/20 bg-red-950/10 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="sw-section-label text-gray-300">
                   <Youtube className="h-3.5 w-3.5 text-red-500" />
                   Auto-post
                 </span>
-                <span className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${
-                  ytStatus.connected
-                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                    : "bg-gray-800 text-gray-400 border border-gray-700"
-                }`}>
-                  {ytStatus.connected ? (ytStatus.channelTitle || "LINKED") : "NOT LINKED"}
+                <span className={ytStatus.connected ? "sw-badge sw-badge-live" : "sw-badge"}>
+                  {ytStatus.connected ? ytStatus.channelTitle || "Linked" : "Not linked"}
                 </span>
               </div>
 
@@ -2490,14 +2699,14 @@ export function AgentHub() {
                     type="checkbox"
                     checked={ytAutoPublish}
                     onChange={(e) => setYtAutoPublish(e.target.checked)}
-                    className="rounded border-[#24252D] bg-[#050506] text-red-600 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                    className="rounded border-white/10 bg-[#08090c] text-red-600 focus:ring-0 cursor-pointer h-3.5 w-3.5"
                   />
                   <span>Post after rendering</span>
                 </label>
                 <select
                   value={ytPrivacy}
                   onChange={(e) => setYtPrivacy(e.target.value as any)}
-                  className="rounded border border-[#24252D] bg-[#050506] px-2 py-0.5 text-[10px] text-white focus:outline-none"
+                  className="rounded border border-white/10 bg-[#08090c] px-2 py-0.5 text-[10px] text-white focus:outline-none"
                 >
                   <option value="public">Public</option>
                   <option value="unlisted">Unlisted</option>
@@ -2518,11 +2727,11 @@ export function AgentHub() {
                   Connect YouTube
                 </button>
               )}
-            </div>
+            </section>
 
             {/* Progress Bar */}
             {isGenerating && (
-              <div className="space-y-1 rounded-lg border border-[#24252D] bg-[#050506] p-2.5">
+              <div className="space-y-1.5 rounded-xl border border-cyan-500/25 bg-[#08090c] p-3">
                 <div className="flex justify-between text-[11px] text-gray-300">
                   <span>{currentStep}</span>
                   <span className="text-cyan-400 font-bold">{progressPercent}%</span>
@@ -2538,7 +2747,7 @@ export function AgentHub() {
 
             {/* Video & Script Preview */}
             {(completedVideoUrl || generatedScript) && (
-              <div className="rounded-lg border border-cyan-500/30 bg-[#050506] p-3 space-y-2">
+              <div className="rounded-lg border border-cyan-500/30 bg-[#08090c] p-3 space-y-2">
                 {completedVideoUrl && (
                   <video
                     src={completedVideoUrl}
@@ -2548,7 +2757,7 @@ export function AgentHub() {
                   />
                 )}
                 {generatedScript && (
-                  <div className="text-[10px] text-gray-300 bg-[#050B14] p-2 rounded border border-[#24252D] max-h-24 overflow-y-auto whitespace-pre-wrap">
+                  <div className="text-[10px] text-gray-300 bg-[#050B14] p-2 rounded border border-white/10 max-h-24 overflow-y-auto whitespace-pre-wrap">
                     {generatedScript}
                   </div>
                 )}
@@ -2593,9 +2802,15 @@ export function AgentHub() {
               </div>
             )}
 
-            <div className="pt-3 border-t border-[#24252D] flex justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-4">
+              <span className="sw-hint">
+                {customTopic.trim() ? `Topic: “${customTopic.trim()}”` : `Niche: ${nicheTiles.find((n) => n.id === selectedNiche)?.name ?? selectedNiche}`}
+                {" · "}
+                {resolution} · {seconds}s
+              </span>
+              <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => setGeneratorModalOpen(false)}>
-                Close
+                Cancel
               </Button>
               <Button
                 variant="primary"
@@ -2606,6 +2821,7 @@ export function AgentHub() {
               >
                 {isGenerating ? "Rendering…" : "Generate short"}
               </Button>
+              </div>
             </div>
           </div>
         </Modal>
@@ -2627,7 +2843,7 @@ export function AgentHub() {
               {macrosList.map((m) => (
                 <div
                   key={m.id}
-                  className="rounded-lg border border-[#24252D] bg-[#050506] p-3 flex items-center justify-between"
+                  className="rounded-lg border border-white/10 bg-[#08090c] p-3 flex items-center justify-between"
                 >
                   <div>
                     <h4 className="text-xs font-bold text-white">{m.name}</h4>
@@ -2651,7 +2867,7 @@ export function AgentHub() {
               ))}
             </div>
 
-            <div className="pt-2 border-t border-[#24252D] flex justify-end">
+            <div className="pt-2 border-t border-white/10 flex justify-end">
               <Button variant="outline" size="sm" onClick={() => setMacrosModalOpen(false)}>
                 Close
               </Button>
@@ -2677,14 +2893,14 @@ export function AgentHub() {
         >
           <div className="space-y-4 font-mono text-xs">
             {/* Settings Tab Navigation */}
-            <div className="flex border-b border-[#24252D] pb-2 gap-2">
+            <div className="flex border-b border-white/10 pb-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSettingsTab("general")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "general"
                     ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A0A0C] border border-[#1A1B21]"
+                    : "text-gray-400 hover:text-white bg-[#0b0c0f] border border-white/6"
                 }`}
               >
                 <SettingsIcon className="h-3.5 w-3.5" />
@@ -2697,7 +2913,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "memory"
                     ? "bg-violet-500/20 text-violet-300 border border-violet-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A0A0C] border border-[#1A1B21]"
+                    : "text-gray-400 hover:text-white bg-[#0b0c0f] border border-white/6"
                 }`}
               >
                 <Brain className="h-3.5 w-3.5 text-violet-400" />
@@ -2710,7 +2926,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "youtube"
                     ? "bg-red-500/20 text-red-300 border border-red-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A0A0C] border border-[#1A1B21]"
+                    : "text-gray-400 hover:text-white bg-[#0b0c0f] border border-white/6"
                 }`}
               >
                 <Youtube className="h-3.5 w-3.5 text-red-500" />
@@ -2723,7 +2939,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "email"
                     ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A0A0C] border border-[#1A1B21]"
+                    : "text-gray-400 hover:text-white bg-[#0b0c0f] border border-white/6"
                 }`}
               >
                 <Mail className="h-3.5 w-3.5" />
@@ -2735,7 +2951,7 @@ export function AgentHub() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   settingsTab === "orb"
                     ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm"
-                    : "text-gray-400 hover:text-white bg-[#0A0A0C] border border-[#1A1B21]"
+                    : "text-gray-400 hover:text-white bg-[#0b0c0f] border border-white/6"
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5 text-purple-400" />
@@ -2752,12 +2968,12 @@ export function AgentHub() {
                     type="text"
                     value={assistantName}
                     onChange={(e) => setAssistantName(e.target.value)}
-                    className="w-full rounded-lg border border-[#24252D] bg-[#050506] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                    className="w-full rounded-lg border border-white/10 bg-[#08090c] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
 
                 {/* Voice Talent Selection */}
-                <div className="space-y-2 p-3 rounded-lg border border-[#24252D] bg-[#050506]">
+                <div className="space-y-2 p-3 rounded-lg border border-white/10 bg-[#08090c]">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-white">Voice</p>
                     <button
@@ -2779,7 +2995,7 @@ export function AgentHub() {
                   <select
                     value={selectedVoice}
                     onChange={(e) => handleVoiceChange(e.target.value)}
-                    className="w-full rounded-lg border border-[#24252D] bg-[#101013] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                    className="w-full rounded-lg border border-white/10 bg-[#14161d] px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                   >
                     {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
                       <option disabled value="__kokoro_status">
@@ -2794,7 +3010,7 @@ export function AgentHub() {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between p-2.5 rounded-lg border border-[#24252D] bg-[#050506]">
+                <div className="flex items-center justify-between p-2.5 rounded-lg border border-white/10 bg-[#08090c]">
                   <p className="text-xs font-bold text-white">Speak replies</p>
                   <button
                     type="button"
@@ -2808,7 +3024,7 @@ export function AgentHub() {
                 </div>
 
                 {/* Voice input (local speech recognition) */}
-                <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg border border-[#24252D] bg-[#050506]">
+                <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg border border-white/10 bg-[#08090c]">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-white">Voice input</p>
                     <p className="text-[10px] text-gray-400">
@@ -2841,7 +3057,7 @@ export function AgentHub() {
                   <div className="flex items-center justify-between">
                     <label className="text-gray-300 font-semibold">Notes ({memoryState?.notes.length ?? 0}/{memoryState?.maxNotes ?? 60})</label>
                   </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1 border border-[#24252D] rounded-lg p-2 bg-[#050506]">
+                  <div className="max-h-48 overflow-y-auto space-y-1 border border-white/10 rounded-lg p-2 bg-[#08090c]">
                     {!memoryState || memoryState.notes.length === 0 ? (
                       <p className="p-1 text-[11px] text-gray-500">No notes yet.</p>
                     ) : (
@@ -2882,7 +3098,7 @@ export function AgentHub() {
                         }
                       }}
                       data-testid="memory-input"
-                      className="flex-1 rounded-lg border border-[#24252D] bg-[#050506] px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-violet-400 focus:outline-none"
+                      className="flex-1 rounded-lg border border-white/10 bg-[#08090c] px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:border-violet-400 focus:outline-none"
                     />
                     <Button
                       variant="outline"
@@ -2901,7 +3117,7 @@ export function AgentHub() {
 
                 <div className="space-y-1.5" data-testid="memory-briefing">
                   <label className="font-semibold text-gray-300">Briefing</label>
-                  <div className="rounded-lg border border-[#24252D] bg-[#050506] p-2.5 text-[11px] text-gray-300">
+                  <div className="rounded-lg border border-white/10 bg-[#08090c] p-2.5 text-[11px] text-gray-300">
                     {memoryState?.briefing ? (
                       <>
                         <span className="text-amber-200">
@@ -2921,7 +3137,7 @@ export function AgentHub() {
 
                 <div className="space-y-1.5">
                   <label className="font-semibold text-gray-300">Summary</label>
-                  <div className="rounded-lg border border-[#24252D] bg-[#050506] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap" data-testid="memory-summary">
+                  <div className="rounded-lg border border-white/10 bg-[#08090c] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap" data-testid="memory-summary">
                     {memoryState?.summary ? (
                       <>
                         {memoryState.summary.text}
@@ -2933,7 +3149,7 @@ export function AgentHub() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-1.5 border-t border-[#24252D]/60 pt-1">
+                <div className="flex items-center justify-end gap-1.5 border-t border-white/10/60 pt-1">
                   {memoryState?.summary && (
                     <IconButton
                       label="Forget the summary"
@@ -2960,7 +3176,7 @@ export function AgentHub() {
                 agent may send. Everything it sends is listed right here. */}
             {settingsTab === "email" && (
               <div className="space-y-3.5 animate-fadeIn">
-                <div className="rounded-lg border border-cyan-500/30 bg-[#050506] p-3 space-y-3">
+                <div className="rounded-lg border border-cyan-500/30 bg-[#08090c] p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-white">
                       <Mail className="h-4 w-4 text-cyan-300" />
@@ -2975,7 +3191,7 @@ export function AgentHub() {
                   ) : (
                     <p className="text-[11px] text-gray-400">Connect the Google account Soundwave should use for email, contacts, calendar and Drive. It uses the Google OAuth client configured in YouTube settings.</p>
                   )}
-                  <div className="rounded-md border border-[#24252D] bg-[#0A0A0C] p-2.5 text-[10px] leading-relaxed text-gray-300">
+                  <div className="rounded-md border border-white/10 bg-[#0b0c0f] p-2.5 text-[10px] leading-relaxed text-gray-300">
                     Soundwave can <b className="text-cyan-200">read your inbox</b>, <b className="text-cyan-200">write drafts</b>, and <b className="text-cyan-200">send email when you tell it to</b> — plus look up your contacts, read the next days of your calendar and find files on Drive (all read-only). Sending from chat is on by default and capped below; every message it sends is listed here, and a draft card still asks you to confirm before anything the agent saved goes out. When you ask it to read or write a message, that content goes to the Gemini provider configured in Settings → Brain. Instructions inside an email are never treated as yours.
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2986,11 +3202,11 @@ export function AgentHub() {
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => void handleDisconnectGmail()}>Disconnect Google</Button>
                     )}
-                    <button type="button" onClick={() => { void fetchGmailStatus(); void fetchGmailPolicy(); void fetchGmailScheduled(); }} className="rounded-lg border border-[#24252D] px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
+                    <button type="button" onClick={() => { void fetchGmailStatus(); void fetchGmailPolicy(); void fetchGmailScheduled(); }} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
                   </div>
 
                   {gmailStatus.connected && (
-                    <div className="flex flex-wrap gap-1.5 border-t border-[#24252D] pt-2.5" data-testid="google-scopes">
+                    <div className="flex flex-wrap gap-1.5 border-t border-white/10 pt-2.5" data-testid="google-scopes">
                       {([
                         ["Gmail", gmailStatus.scopes?.gmail],
                         ["Contacts", gmailStatus.scopes?.contacts],
@@ -3001,7 +3217,7 @@ export function AgentHub() {
                           key={label}
                           className={cn(
                             "rounded border px-1.5 py-0.5 text-[9px]",
-                            granted ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-[#24252D] bg-[#0A0A0C] text-gray-500",
+                            granted ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-[#0b0c0f] text-gray-500",
                           )}
                           title={granted ? `${label} is allowed` : `Not allowed — reconnect Google and allow ${label}`}
                         >
@@ -3017,7 +3233,7 @@ export function AgentHub() {
                 </div>
 
                 {/* Sending from chat: the switch, the daily cap, and the record. */}
-                <div className="rounded-lg border border-[#24252D] bg-[#050506] p-3 space-y-3" data-testid="gmail-sending-policy">
+                <div className="rounded-lg border border-white/10 bg-[#08090c] p-3 space-y-3" data-testid="gmail-sending-policy">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="flex items-center gap-1.5 text-[11px] font-bold text-white">
@@ -3052,7 +3268,7 @@ export function AgentHub() {
                         if (value !== gmailPolicy?.dailyLimit) void saveGmailPolicy({ dailyLimit: value });
                         else previewDailyLimit(value);
                       }}
-                      className="w-16 rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1 text-[11px] text-white focus:border-cyan-400 focus:outline-none"
+                      className="w-16 rounded border border-white/10 bg-[#0b0c0f] px-2 py-1 text-[11px] text-white focus:border-cyan-400 focus:outline-none"
                       data-testid="gmail-daily-limit"
                     />
                   </div>
@@ -3060,7 +3276,7 @@ export function AgentHub() {
                   {/* Email the agent wrote when asked, going out at a set time on
                       its own — with the text readable here before it does, and a
                       Cancel that really cancels (nothing is sent afterwards). */}
-                  <div className="border-t border-[#24252D] pt-2.5" data-testid="gmail-scheduled">
+                  <div className="border-t border-white/10 pt-2.5" data-testid="gmail-scheduled">
                     <div className="flex items-center gap-2">
                       <Clock className="h-3.5 w-3.5 text-cyan-300" />
                       <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Waiting to go out</p>
@@ -3071,7 +3287,7 @@ export function AgentHub() {
                     {gmailScheduled?.scheduled?.length ? (
                       <ul className="mt-2 space-y-2">
                         {gmailScheduled.scheduled.map((entry) => (
-                          <li key={entry.id} className="rounded-md border border-cyan-500/25 bg-[#0A0A0C] p-2.5" data-testid="gmail-scheduled-row">
+                          <li key={entry.id} className="rounded-md border border-cyan-500/25 bg-[#0b0c0f] p-2.5" data-testid="gmail-scheduled-row">
                             <div className="flex items-start gap-2">
                               <span className="mt-0.5 shrink-0 rounded bg-cyan-500/15 px-1.5 py-px text-[9px] font-bold text-cyan-300">
                                 {entry.status === "sending" ? "SENDING" : "SCHEDULED"}
@@ -3096,7 +3312,7 @@ export function AgentHub() {
                                 type="button"
                                 onClick={() => void cancelScheduledEmail(entry.id, entry.subject)}
                                 disabled={cancellingScheduledId === entry.id}
-                                className="shrink-0 rounded border border-[#24252D] px-2 py-1 text-[10px] text-gray-400 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
+                                className="shrink-0 rounded border border-white/10 px-2 py-1 text-[10px] text-gray-400 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
                                 data-testid="gmail-scheduled-cancel"
                               >
                                 {cancellingScheduledId === entry.id ? "Cancelling…" : "Cancel"}
@@ -3134,7 +3350,7 @@ export function AgentHub() {
                   </div>
 
                   {gmailPolicy?.sent?.length ? (
-                    <div className="border-t border-[#24252D] pt-2.5">
+                    <div className="border-t border-white/10 pt-2.5">
                       <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Sent through Soundwave</p>
                       <ul className="mt-1.5 space-y-1">
                         {gmailPolicy.sent.slice(0, 5).map((entry, i) => (
@@ -3151,7 +3367,7 @@ export function AgentHub() {
                       </ul>
                     </div>
                   ) : (
-                    <p className="border-t border-[#24252D] pt-2.5 text-[10px] text-gray-500">Nothing has been sent through Soundwave yet.</p>
+                    <p className="border-t border-white/10 pt-2.5 text-[10px] text-gray-500">Nothing has been sent through Soundwave yet.</p>
                   )}
 
                   <p className="text-[9px] leading-relaxed text-gray-500">
@@ -3164,7 +3380,7 @@ export function AgentHub() {
             {/* TAB 2: YouTube & Shorts — connecting, then auto-publish */}
             {settingsTab === "youtube" && (
               <div className="space-y-3.5 animate-fadeIn">
-                <div className="p-3 rounded-lg border border-red-500/30 bg-[#050506] space-y-2.5">
+                <div className="p-3 rounded-lg border border-red-500/30 bg-[#08090c] space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Youtube className="h-4 w-4 text-red-500" />
@@ -3250,7 +3466,7 @@ export function AgentHub() {
                             value={ytClientPaste}
                             onChange={(e) => setYtClientPaste(e.target.value)}
                             placeholder="Paste the client_secret_….json you downloaded — or the Client ID and the secret together"
-                            className="w-full rounded border border-[#24252D] bg-[#0A0A0C] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
+                            className="w-full rounded border border-white/10 bg-[#0b0c0f] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
                           />
                           <div className="flex flex-wrap items-center gap-2">
                             <button
@@ -3283,7 +3499,7 @@ export function AgentHub() {
                           value={ytClientPaste}
                           onChange={(e) => setYtClientPaste(e.target.value)}
                           placeholder="Your own client: paste the client_secret_….json — or the Client ID and secret together"
-                          className="w-full rounded border border-[#24252D] bg-[#0A0A0C] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
+                          className="w-full rounded border border-white/10 bg-[#0b0c0f] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none font-mono resize-y"
                         />
                       )}
                       <ol className="list-decimal space-y-1 pl-4" data-testid="yt-steps">
@@ -3316,7 +3532,7 @@ export function AgentHub() {
                           placeholder="1//04..."
                           value={ytRefreshToken}
                           onChange={(e) => setYtRefreshToken(e.target.value)}
-                          className="w-full rounded border border-[#24252D] bg-[#0A0A0C] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
+                          className="w-full rounded border border-white/10 bg-[#0b0c0f] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
                         />
                         <p className="mt-1 text-gray-500">Needs a “Web application” client with https://developers.google.com/oauthplayground as redirect URI and the scopes youtube.upload + youtube.readonly.</p>
                       </div>
@@ -3348,7 +3564,7 @@ export function AgentHub() {
                         type="checkbox"
                         checked={ytAutoPublish}
                         onChange={(e) => setYtAutoPublish(e.target.checked)}
-                        className="rounded border-[#24252D] bg-[#050506] text-red-600 focus:ring-0 cursor-pointer"
+                        className="rounded border-white/10 bg-[#08090c] text-red-600 focus:ring-0 cursor-pointer"
                       />
                       <span>Auto-post after rendering</span>
                     </label>
@@ -3358,7 +3574,7 @@ export function AgentHub() {
                       <select
                         value={ytPrivacy}
                         onChange={(e) => setYtPrivacy(e.target.value as any)}
-                        className="rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1 text-[10px] text-white focus:outline-none"
+                        className="rounded border border-white/10 bg-[#0b0c0f] px-2 py-1 text-[10px] text-white focus:outline-none"
                       >
                         <option value="public">Public</option>
                         <option value="unlisted">Unlisted</option>
@@ -3367,12 +3583,12 @@ export function AgentHub() {
                     </div>
                   </div>
 
-                  <div className="flex justify-end items-center gap-2 pt-2 border-t border-[#24252D]/60">
+                  <div className="flex justify-end items-center gap-2 pt-2 border-t border-white/10/60">
                     <button
                       type="button"
                       onClick={handleTestYt}
                       disabled={isTestingYt}
-                      className="rounded border border-[#24252D] bg-[#0A0A0C] hover:bg-[#15161B] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                      className="rounded border border-white/10 bg-[#0b0c0f] hover:bg-[#15161B] text-gray-200 px-3 py-1.5 text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
                     >
                       {isTestingYt ? "Testing…" : "Test"}
                     </button>
@@ -3388,7 +3604,7 @@ export function AgentHub() {
                 </div>
 
                 {/* Channels: where regular Shorts are published */}
-                <div className="p-3 rounded-lg border border-[#1A1B21] bg-[#050506] space-y-2" data-testid="yt-channels">
+                <div className="p-3 rounded-lg border border-white/6 bg-[#08090c] space-y-2" data-testid="yt-channels">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <Workflow className="h-4 w-4 text-cyan-400" />
@@ -3405,7 +3621,7 @@ export function AgentHub() {
                   </p>
 
                   {ytChannels.length === 0 ? (
-                    <p className="rounded border border-[#24252D] bg-[#0A0A0C] px-2 py-1.5 text-[10px] text-gray-500">
+                    <p className="rounded border border-white/10 bg-[#0b0c0f] px-2 py-1.5 text-[10px] text-gray-500">
                       Connect YouTube above — each sign-in adds one channel. (Soundwave can't create a channel for you.)
                     </p>
                   ) : (
@@ -3434,7 +3650,7 @@ export function AgentHub() {
             {/* TAB 3: Thinking Orb Visualizer */}
             {settingsTab === "orb" && (
               <div className="space-y-3 animate-fadeIn">
-                <div className="p-3 rounded-lg border border-[#24252D] bg-[#050506] space-y-2">
+                <div className="p-3 rounded-lg border border-white/10 bg-[#08090c] space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold text-white">Orb</p>
                     <span
@@ -3459,7 +3675,7 @@ export function AgentHub() {
                         className={`rounded-lg border px-2.5 py-2 text-left font-mono text-[11px] transition-all cursor-pointer ${
                           orbMode === st.id
                             ? "border-cyan-400 bg-cyan-500/20 font-bold text-cyan-200 shadow-sm shadow-cyan-500/30"
-                            : "border-[#1A1B21] bg-[#0A0A0C] text-gray-400 hover:border-[#2A2C36] hover:text-white"
+                            : "border-white/6 bg-[#0b0c0f] text-gray-400 hover:border-[#2A2C36] hover:text-white"
                         }`}
                       >
                         <div className="font-semibold">{st.label}</div>
@@ -3519,15 +3735,15 @@ export function AgentHub() {
             </p>
 
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-2">
+              <div className="rounded-lg border border-white/6 bg-[#08090c] p-2">
                 <span className="text-[10px] text-gray-400 block">On channel</span>
                 <span className="text-sm font-bold text-white">{orbitalStatus?.catalogSize ?? "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-2">
+              <div className="rounded-lg border border-white/6 bg-[#08090c] p-2">
                 <span className="text-[10px] text-gray-400 block">Not used yet</span>
                 <span className="text-sm font-bold text-cyan-300">{orbitalStatus?.available ?? "—"}</span>
               </div>
-              <div className="rounded-lg border border-[#1A1B21] bg-[#050506] p-2">
+              <div className="rounded-lg border border-white/6 bg-[#08090c] p-2">
                 <span className="text-[10px] text-gray-400 block">Used</span>
                 <span className="text-sm font-bold text-emerald-400">{orbitalStatus?.usedCount ?? 0}</span>
               </div>
@@ -3541,13 +3757,13 @@ export function AgentHub() {
             <div className="space-y-1.5">
               <h4 className="text-[11px] font-bold text-gray-200">Used ({orbitalStatus?.usedCount ?? 0})</h4>
               {!orbitalStatus || orbitalStatus.used.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-[#1A1B21] bg-[#050506] p-3 text-center text-[11px] text-gray-500">
+                <p className="rounded-lg border border-dashed border-white/6 bg-[#08090c] p-3 text-center text-[11px] text-gray-500">
                   Nothing used yet.
                 </p>
               ) : (
                 <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.used.map((u) => (
-                    <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#1A1B21] bg-[#050506] px-2.5 py-1.5">
+                    <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#08090c] px-2.5 py-1.5">
                       <div className="min-w-0">
                         <span className="block truncate text-[11px] text-white" title={u.title}>
                           {u.title}
@@ -3577,7 +3793,7 @@ export function AgentHub() {
                 <h4 className="text-[11px] font-bold text-amber-300">Skipped ({orbitalStatus.skipped.length})</h4>
                 <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.skipped.map((sk) => (
-                    <div key={sk.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#050506] px-2.5 py-1.5">
+                    <div key={sk.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#08090c] px-2.5 py-1.5">
                       <div className="min-w-0">
                         <span className="block truncate text-[11px] text-white" title={sk.title}>
                           {sk.title}

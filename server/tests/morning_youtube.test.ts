@@ -141,7 +141,11 @@ describe("running Morning Setup", () => {
 
     const req = fake.generateCalls()[0]!;
     expect(req.path).toBe("/v1beta/models/gemini-3.8-flash:generateContent");
-    expect(req.body.systemInstruction.parts[0].text).toBe(coreMorning.MORNING_INSTRUCTION);
+    // The briefing is written in the agent's current mode, after the fixed
+    // briefing instruction (brain/core/morning.ts imports it into the request).
+    const instruction = String(req.body.systemInstruction.parts[0].text);
+    expect(instruction.startsWith(coreMorning.MORNING_INSTRUCTION)).toBe(true);
+    expect(instruction).toMatch(/your mode is “/);
     const prompt = req.body.contents[0].parts[0].text as string;
     expect(prompt).toMatch(/Weather: In Kruševac it's 14°C and partly cloudy/);
     expect(prompt).toMatch(/Shorts since your last Morning Setup \(20 hours ago\):\n- finished: “black holes”/);

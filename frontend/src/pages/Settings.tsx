@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Smartphone,
+  Sparkles,
   Sunrise,
   Trash2,
   TriangleAlert,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../store/auth";
 import { toast } from "../store/toast";
+import { AgentModeChips } from "../components/agent/AgentModePicker";
 import { http } from "../lib/api";
 import { cn } from "../lib/cn";
 import { formatNumber } from "../lib/format";
@@ -346,6 +348,16 @@ function PreferencesTab() {
 
   return (
     <>
+      <Card title="The assistant's mode" icon={<Sparkles className="h-4 w-4" />}>
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            How it talks to you everywhere — the Command Center, the voice bar and the phone. It can also change this
+            itself: ask it to "be more professional" or "call me boss".
+          </p>
+          <AgentModeChips />
+        </div>
+      </Card>
+
       <Card title="Defaults & Agent Appearance" icon={<Palette className="h-4 w-4" />}>
         <div className="space-y-4">
           <div>

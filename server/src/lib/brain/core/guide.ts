@@ -64,20 +64,23 @@ Assistant Configuration (gear) has five tabs: General & Voice (assistant name, S
     summary: "how to start a short (chat, Generate button, generator window) and what happens step by step",
     text: `Three ways to make a short:
 1. Ask in the chat (PC or phone): "make a short about black holes". Add details if you like — audience, tone, facts to include ("for kids", "mention the event horizon"). The agent passes them on to the script.
-2. The film button in the dock, the "🎬 Make Short" chip or "Generate Short" in the sidebar open the 1-Click Viral Short Generator: pick a niche (Psychology & Dark Mind Tricks, Mind-Bending Facts, Untold History, Money & Wealth, AI & Future Tech, Deep Motivation, Cosmic Horror) or type a custom topic, choose the narrator voice and resolution (720p renders fastest, 1080p is sharper), optionally tick "Automatically post to YouTube Shorts after rendering", then press "Generate Short".
+2. The film button in the dock, the "🎬 Make Short" chip or "Generate Short" in the sidebar open the 1-Click Viral Short Generator: pick a niche (Psychology & Dark Mind Tricks, Mind-Bending Facts, Untold History, Money & Wealth, AI & Future Tech, Deep Motivation, Cosmic Horror) or type a custom topic, choose the narrator voice and resolution (720p renders fastest, 1080p is sharper), leave "Viral edit" on (popup photos, sound effects, a beat and a moving camera) or switch it off for a plain short, optionally tick "Automatically post to YouTube Shorts after rendering", then press "Generate Short".
 3. From the phone app, by typing or talking.
 
 What happens (a few minutes; a progress bar shows each step):
 1. Script: Gemini writes a 90–140 word narration for the topic, with a hook first. Without a Gemini key the agent uses a built-in viral script.
 2. Voiceover in the chosen Soundwave voice (Microsoft neural voice, needs the internet).
 3. Word-by-word captions, timed to the voice.
-4. Background: the agent picks an Orbital NCG video it has never used, pastes its link into the YouTube link importer and imports only the stretch of gameplay the short needs.
-5. Render: FFmpeg makes a vertical 9:16 MP4 (720p or 1080p).
-6. If YouTube is linked and auto-publish is on, it uploads the short.
+4. The edit (with "Viral edit" on): the agent plans a storyboard around the sentences the narrator actually speaks — a hook card in the first second, a photo popping in over the gameplay on the sentence it illustrates (freely-licensed pictures read from Wikimedia Commons, credited in the video's description), sound effects built on this PC (a riser at the start, a whoosh on each cut, an impact on the hook, a ding on the follow card), a quiet beat under the voice that ducks when the narrator talks, and a slow camera move so the gameplay is never a still frame.
+5. Background: the agent picks an Orbital NCG video it has never used, pastes its link into the YouTube link importer and imports only the stretch of gameplay the short needs.
+6. Render: FFmpeg makes a vertical 9:16 MP4 (720p or 1080p) — the photos, cards and sounds (5 and 6 are one pass) — then the file is finished.
+7. If YouTube is linked and auto-publish is on, it uploads the short.
 
 When it's done the video appears in the conversation with a player, "Download Video (MP4)" and "Post to YouTube"; it's also in the Latest Rendered Video card and on the Projects page. On the phone it shows a Watch button. With notifications on, Windows tells you when it's ready.
 
 Only one short renders at a time — asking again while one is rendering just tells you it's busy. The video files are kept on the PC in %APPDATA%\\Soundwave AI\\uploads.
+
+The photos and the sound effects are fetched/built once and cached on the PC (photos under %APPDATA%\\Soundwave AI\\photos, sounds under ...\\sfx): a second short reuses them without touching the network or the renderer. Every photo comes from Wikimedia Commons (public domain or a free licence); pictures whose licence isn't free are never used, and the photographers are named in the description of the published short.
 
 To cut Shorts out of a video that already exists (a long recording, someone else's video), that's a different thing: see "Shorts from a long video" — the agent listens to it and clips the best moments.`,
   },

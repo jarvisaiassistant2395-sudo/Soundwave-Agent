@@ -7,6 +7,7 @@ import { ytDlpJsRuntime } from "./lib/jsRuntime.js";
 import { initConversation } from "./lib/conversation.js";
 import { initCompanion } from "./lib/companion/listener.js";
 import { initMemory } from "./lib/memory.js";
+import { initNiches } from "./lib/brain/niches.js";
 import { initBriefingScheduler } from "./lib/briefing.js";
 import { initChannelWatch } from "./lib/channelWatch.js";
 import { initClips } from "./lib/videoClips.js";
@@ -61,6 +62,9 @@ async function main() {
   initClips();
   // The agent's memory keeps a summary of what falls out of the recent conversation.
   initMemory();
+  // Niches the agent (or the person) added to the Generate tab: loaded now so
+  // the very first script written this session already knows them.
+  initNiches();
   // The morning briefing: prepared when it's due, spoken when an app is opened.
   initBriefingScheduler();
   // Watched YouTube channels: new uploads are clipped by themselves.

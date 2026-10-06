@@ -24,6 +24,8 @@ import { agentInstruction, plainReply, type MemoryForPrompt } from "./prompt.js"
 import { memoryForPrompt } from "../memory.js";
 import { DEFAULT_SECONDS } from "./core/viral.js";
 import { DEFAULT_AGENT_VOICE } from "../edgeTts.js";
+import { personaLine, type PersonaId } from "./core/persona.js";
+import { activePersona } from "./persona.js";
 
 export { buildRequest, contentsFor, HISTORY_MESSAGES, searchRefused, TURN_BUDGET_MS };
 
@@ -55,14 +57,24 @@ export interface BrainDeps {
 const chatGenerate = (args: Parameters<typeof generateContent>[0]) => generateContent({ ...args, purpose: "chat" });
 const defaultDeps: BrainDeps = { generate: chatGenerate, now: () => new Date(), memory: memoryForPrompt };
 
-/** Words for the reply when Gemini didn't give any (it acted, or it was blocked). */
-function fallbackText(effects: ToolEffects, finish: string): string {
-  if (effects.short?.alreadyRunning) return `I'm still rendering the short about “${effects.short.topic}”. I'll post it here as soon as it's done.`;
-  if (effects.short) return `On it — I'm making a short about “${effects.short.topic}”. It'll show up here when it's rendered.`;
+/**
+ * Words for the reply when Gemini didn't give any (it acted, or it was blocked).
+ * The mode speaks these itself: they are the agent's own voice, and they are the
+ * replies people hear most often when a short starts — so they carry the mode.
+ */
+function fallbackText(effects: ToolEffects, finish: string, persona: PersonaId, address: string | null): string {
+  const say = (key: Parameters<typeof personaLine>[1], vars: { topic?: string; log?: string } = {}) =>
+    personaLine(persona, key, { address, ...vars });
+  if (effects.short?.alreadyRunning) {
+    return say("alreadyRunning", { topic: effects.short.topic }) || `I'm still rendering the short about “${effects.short.topic}”. I'll post it here as soon as it's done.`;
+  }
+  if (effects.short) {
+    return say("onIt", { topic: effects.short.topic }) || `On it — I'm making a short about “${effects.short.topic}”. It'll show up here when it's rendered.`;
+  }
   if (effects.video) return `Here's your short about “${effects.video.topic}”.`;
-  if (effects.log.length) return `Done: ${effects.log.join("; ")}.`;
-  if (wasBlocked(finish)) return "Sorry, I can't help with that one.";
-  return "Sorry — Gemini didn't give me an answer that time. Try asking again.";
+  if (effects.log.length) return say("done", { log: effects.log.join("; ") }) || `Done: ${effects.log.join("; ")}.`;
+  if (wasBlocked(finish)) return say("refused") || "Sorry, I can't help with that one.";
+  return say("failed") || "Sorry — Gemini didn't give me an answer that time. Try asking again.";
 }
 
 export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps: BrainDeps = defaultDeps): Promise<ChatReply> {
@@ -78,6 +90,9 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
   };
   const tools = deps.tools ?? toolsFor(ctx);
   const memory = deps.memory ? await deps.memory().catch(() => null) : null;
+  // The mode is read per turn, not cached at boot: the person can change it
+  // mid-conversation (the picker, or by asking the agent to switch).
+  const { id: persona, address } = activePersona();
 
   let result;
   try {
@@ -91,7 +106,7 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
       tools,
       ctx,
       instruction: ({ tools: names, webSearch }) =>
-        agentInstruction({ tools: names, webSearch, now: deps.now(), surface: input.via === "phone" ? "phone" : "pc", memory }),
+        agentInstruction({ tools: names, webSearch, now: deps.now(), surface: input.via === "phone" ? "phone" : "pc", persona, address, memory }),
       generate: deps.generate,
       signal: input.signal,
       onSearchRefused: () => markSearchUnavailable(),
@@ -106,7 +121,7 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
   if (result.answered) noteBrainOk(result.model, result.latencyMs);
 
   let text = plainReply(result.text);
-  if (!text) text = fallbackText(ctx.effects, result.finish);
+  if (!text) text = fallbackText(ctx.effects, result.finish, persona, address);
   text += sourcesLine(result.grounding);
 
   const reply: ChatReply = {
@@ -115,7 +130,11 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
     tag: ctx.effects.tag ?? "VOICE",
     brain: { provider: "gemini", model: result.model, ...(result.switched ? { fallbackFrom: brain.model } : {}) },
   };
-  const { short, video, log, emailDraftIds, emailSent, emailScheduled } = ctx.effects;
+  const { short, video, log, emailDraftIds, emailSent, emailScheduled, nichesChanged, modeChanged } = ctx.effects;
+  // The app's pickers follow the agent: a niche added to the Generate tab, or
+  // the mode it just switched itself into.
+  if (nichesChanged?.length) reply.nichesChanged = nichesChanged;
+  if (modeChanged) reply.modeChanged = modeChanged;
   if (short) {
     Object.assign(reply, {
       action: "soundwave_shorts",

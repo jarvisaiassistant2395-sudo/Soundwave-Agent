@@ -14,7 +14,10 @@ import { connectedPhone, pairedPhones } from "../companion/service.js";
 import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
 import { DEFAULT_CLIPS, MAX_CLIPS } from "./core/clips.js";
-import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS } from "./core/viral.js";
+import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, HOOK_PATTERNS, NICHES, nicheCatalog } from "./core/viral.js";
+import { PERSONA_IDS, isPersonaId, personaAddress, personaById } from "./core/persona.js";
+import { cleanAddress, savePersonaSettings } from "./persona.js";
+import { addAddedNiche, nichesStatus, removeAddedNiche } from "./niches.js";
 import { DEFAULT_WATCH_CLIPS, MAX_WATCHES, MAX_WATCH_CLIPS, parseChannelInput } from "./core/watch.js";
 import { clipsBusy, startClipsJob } from "../videoClips.js";
 import { defaultEyes, type Eyes } from "../eyes.js";
@@ -55,6 +58,10 @@ export interface ToolEffects {
   emailSent?: Array<{ to: string; subject: string }>;
   /** Emails the agent wrote now and sent later, at the moment the person named. */
   emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
+  /** Niches the agent put in (or took out of) the Generate tab, for the app to notice. */
+  nichesChanged?: string[];
+  /** The mode it switched itself into, so the app's picker follows at once. */
+  modeChanged?: { persona: string; name: string; address: string | null };
   tag?: "SYS" | "RPA" | "VOICE" | "AUDIO";
 }
 
@@ -93,7 +100,7 @@ export const AGENT_TOOLS: AgentTool[] = [
     declaration: {
       name: "make_youtube_short",
       description:
-        "Start making a vertical YouTube Short (60 seconds by default): a script written for the topic and checked against what holds viewers — hook, a turn in the middle, payoff and a looping ending — narrated in the agent's Soundwave voice with word-by-word subtitles, over a gameplay background from the Orbital NCG YouTube channel that hasn't been used before. It renders at 1080p 60fps in the background for a few minutes and the finished video is posted in this chat automatically. Only one short renders at a time. Use it whenever the user asks you to make, generate or create a short, video, reel or TikTok.",
+        "Start making a vertical YouTube Short (60 seconds by default): a script written for the topic and checked against what holds viewers — hook, a turn in the middle, payoff and a looping ending — narrated in the agent's Soundwave voice with word-by-word subtitles, over a gameplay background from the Orbital NCG YouTube channel that hasn't been used before. On top of that it plans a real edit around what the narration says: a hook card in the first second, popup photos (freely-licensed, from Wikimedia Commons — the photographers are credited in the description), sound effects a riser, whooshes on the cuts, an impact on the hook — a quiet percussion bed under the voice, and a slowly moving camera. It renders at 1080p 60fps in the background for a few minutes and the finished video is posted in this chat automatically. Only one short renders at a time. Use it whenever the user asks you to make, generate or create a short, video, reel or TikTok.",
       parameters: {
         type: "OBJECT",
         properties: {
@@ -113,6 +120,11 @@ export const AGENT_TOOLS: AgentTool[] = [
             type: "STRING",
             description:
               "Optional: which connected YouTube channel this Short should be posted to (its name, e.g. \"My facts channel\"). Leave out to post to the default channel. Call list_youtube_channels when you don't know the channel names.",
+          },
+          viralEdit: {
+            type: "BOOLEAN",
+            description:
+              "Optional, default true: the popup photos, sound effects, music bed and camera move. Set false only when the person explicitly asked for a plain short (just gameplay, the voice and captions) or when photos are getting in the way.",
           },
         },
         required: ["topic"],
@@ -182,6 +194,7 @@ export const AGENT_TOOLS: AgentTool[] = [
           seconds,
           voice: ctx.voice,
           resolution: ctx.resolution,
+          ...(args.viralEdit === false ? { enhance: false } : {}),
           ...(target ? { youtubeChannelId: target.id, autoPublishYouTube: true } : {}),
           userId: ctx.userId,
         });
@@ -716,7 +729,7 @@ AGENT_TOOLS.push(
     declaration: {
       name: "whats_trending",
       description:
-        "What is actually working on YouTube Shorts right now: twice a day the app reads this week's most popular Shorts from YouTube's own search (free, no AI quota) and this returns the digest — fastest climbers, hook shapes that are landing, rising hashtags and topics, typical length, the hottest niche — plus the top Shorts themselves (title, views, channel, link). Use it when the user asks what's trending or viral, why a short underperformed, or what to make next. The scripts the app writes already follow this digest; say how old it is when you use it.",
+        "What is actually working on YouTube Shorts right now: twice a day the app reads this week's most popular Shorts from YouTube's own search (free, no AI quota) and this returns the digest — fastest climbers, hook shapes that are landing, rising hashtags and topics, typical length, the hottest niche — plus the top Shorts themselves (title, views, channel, link), and any rising subject no niche covers yet (those are candidates for add_viral_niche). Use it when the user asks what's trending or viral, why a short underperformed, or what to make next. The scripts the app writes already follow this digest; say how old it is when you use it.",
       parameters: { type: "OBJECT", properties: {} },
     },
     available: (ctx) => ctx.desktop,
@@ -728,6 +741,12 @@ AGENT_TOOLS.push(
           reason: "I haven't been able to read this week's popular Shorts from YouTube yet. I'll try again in the background; until then I write from the standing research.",
         };
       }
+      const uncovered = nichesStatus().suggestions.map((s) => ({
+        subject: s.name,
+        why: s.why,
+        evidence: s.evidence,
+        note: "No niche covers this yet — add_viral_niche puts it in the Generate tab.",
+      }));
       return {
         ok: true,
         researchedAt: status.researchedAt,
@@ -737,6 +756,7 @@ AGENT_TOOLS.push(
         sources: status.sources,
         via: status.via === "youtube" ? "YouTube's own Shorts search (this week, by popularity)" : "web search",
         topShorts: status.top.slice(0, 8).map((t) => ({ title: t.title, views: t.views, channel: t.channel, url: t.url, niche: t.query })),
+        ...(uncovered.length ? { risingUncovered: uncovered } : {}),
         note: status.due
           ? `This research is ${status.ageDays === 0 ? "from today" : `${status.ageDays} days old`} — it refreshes by itself twice a day.`
           : "Fresh research — the newest scripts are written to this.",
@@ -1448,6 +1468,156 @@ AGENT_TOOLS.push(
     async run(args) {
       const files = await workspaceService.searchDrive(str(args.query, 200), typeof args.limit === "number" ? args.limit : undefined);
       return files.length ? { count: files.length, files } : { count: 0, note: `Nothing on the Drive matched “${str(args.query, 200)}”.` };
+    },
+  },
+);
+
+// ── The agent's mode, and the niches it adds when something goes viral ──────
+// The mode (brain/core/persona.ts) is a setting the person can change in the
+// Command Center; these tools let them change it by asking, in the same breath,
+// and let the agent keep the Generate tab current with what it finds climbing.
+
+AGENT_TOOLS.push(
+  {
+    declaration: {
+      name: "set_mode",
+      description:
+        "Change the mode you speak in — how you talk to the person: Executive Assistant (formal, addresses them as sir), Friendly, Hype Coach, Analyst or Calm. Call this when they ask for a different way of talking (“be more professional”, “call me sir”, “talk normally”, “be brief”, “stop being so formal”), or when they tell you how to address them (“call me boss”). It takes effect immediately and stays until it is changed again. Name the modes by their plain names in the confirmation.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          mode: {
+            type: "STRING",
+            description: "One of: professional, friendly, coach, analyst, calm. Pick the closest mode to what they asked for.",
+            enum: ["professional", "friendly", "coach", "analyst", "calm"],
+          },
+          address: {
+            type: "STRING",
+            description: 'Optional: how to address them from now on, for the modes that use a title — e.g. "sir", "boss", "Alex". Omit to keep the mode\'s own default.',
+          },
+        },
+        required: ["mode"],
+      },
+    },
+    // This PC's app only: the mode is a local setting (DATA_DIR/persona.json),
+    // the same way the brain settings are — a hosted server has no such file.
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const wanted = str(args.mode, 20).toLowerCase();
+      if (!isPersonaId(wanted)) {
+        return { ok: false, error: `There is no mode called “${wanted}”. The modes are: ${PERSONA_IDS.join(", ")}.` };
+      }
+      const address = typeof args.address === "string" ? cleanAddress(args.address) : undefined;
+      const settings = savePersonaSettings({ persona: wanted, ...(address ? { address } : {}) });
+      const persona = personaById(settings.persona);
+      ctx.effects.modeChanged = { persona: persona.id, name: persona.name, address: personaAddress(persona, settings.address) };
+      return {
+        ok: true,
+        mode: persona.id,
+        modeName: persona.name,
+        address: personaAddress(persona, settings.address),
+        note: `Every reply from now on is in ${persona.name}.`,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "add_viral_niche",
+      description:
+        "Add a niche to the Generate tab in the app, so the person can make Shorts in it with one press. Use this when you find a subject that is genuinely climbing on Shorts and the nine researched niches do not cover it — a format, a theme, a wave you saw in whats_trending, in the top Shorts, or in what the person told you. Keep it specific enough to write scripts for (“Morning Routine Hacks”, not “Lifestyle”). Give the evidence you saw in why. Check the existing list first (list_niches): adding a niche that is already there is refused. Say in your reply that it is now in the Generate tab.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING", description: 'The niche name as the picker should show it, e.g. "Street Food Stories". Two to four words.' },
+          description: { type: "STRING", description: "One line under the name: what this niche is about, for the person choosing it." },
+          why: { type: "STRING", description: "The evidence: which Shorts or trend lines showed you this is working, with the numbers if you have them." },
+          audience: { type: "STRING", description: "Optional: who watches this niche, so the scripts can talk to them." },
+          angles: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Optional: 3–5 places the ideas come from in this niche (an endless well, not one topic).",
+          },
+          hooks: {
+            type: "ARRAY",
+            items: { type: "STRING" },
+            description: "Optional hook shapes that fit, from the list_niches answer's availableHooks.",
+          },
+          never: { type: "STRING", description: "Optional: the one trap that would kill this niche, so scripts avoid it." },
+        },
+        required: ["name", "why"],
+      },
+    },
+    // The Generate tab and its niche store live on this PC.
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const result = addAddedNiche({
+        name: str(args.name, 40),
+        short: str(args.description, 120),
+        why: str(args.why, 400),
+        audience: str(args.audience, 200),
+        angles: Array.isArray(args.angles) ? args.angles.map((a) => str(a, 140)).filter(Boolean) : undefined,
+        hooks: Array.isArray(args.hooks) ? args.hooks.map((h) => str(h, 40)).filter(Boolean) : undefined,
+        never: str(args.never, 240),
+        source: "agent",
+      });
+      if (!result.ok) return { added: false, error: result.error };
+      ctx.effects.nichesChanged = [...(ctx.effects.nichesChanged ?? []), result.niche.name];
+      return {
+        added: true,
+        niche: { id: result.niche.id, name: result.niche.name, description: result.niche.short },
+        note: "It is in the Generate tab now, badged as new — the person can pick it and press Generate.",
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "list_niches",
+      description:
+        "Every niche the Generate tab offers: the nine researched ones, whatever was added since (with why it was added), the hook shapes available, and the subjects the trend scan says are climbing but that no niche covers yet. Call this before add_viral_niche, and whenever the person asks what they can make shorts about.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    available: (ctx) => ctx.desktop,
+    async run() {
+      const status = nichesStatus();
+      return {
+        researched: nicheCatalog()
+          .filter((n) => !n.added)
+          .map((n) => ({ id: n.id, name: n.name, about: n.description })),
+        added: status.added,
+        suggestions: status.suggestions.map((s) => ({ name: s.name, why: s.why, evidence: s.evidence })),
+        availableHooks: HOOK_PATTERNS.map((h) => ({ id: h.id, shape: h.shape })),
+        maxAdded: status.max,
+      };
+    },
+  },
+  {
+    declaration: {
+      name: "remove_niche",
+      description:
+        "Take a niche that was added (not one of the nine researched ones) out of the Generate tab. Use it when the person says a niche is not interesting any more, or when the limit is reached and a better one should take its place. Always confirm which one first if you are not sure.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          niche: { type: "STRING", description: "The niche's id or name, as list_niches showed it." },
+        },
+        required: ["niche"],
+      },
+    },
+    available: (ctx) => ctx.desktop,
+    sideEffect: true,
+    async run(args, ctx) {
+      const wanted = str(args.niche, 40);
+      const removed = removeAddedNiche(wanted);
+      if (!removed) {
+        return {
+          removed: false,
+          error: `“${wanted}” is not an added niche${NICHES.some((n) => n.id === wanted.toLowerCase() || n.name.toLowerCase() === wanted.toLowerCase()) ? " — it is one of the nine researched ones, which always stay" : ""}.`,
+        };
+      }
+      ctx.effects.nichesChanged = [...(ctx.effects.nichesChanged ?? []), removed.name];
+      return { removed: true, niche: { id: removed.id, name: removed.name }, note: "It is out of the Generate tab." };
     },
   },
 );

@@ -137,6 +137,31 @@ and refuses local and private addresses. The stealth browser for the hardest
 pages is a separate, explicit download (`STEALTH=1 ./install.sh`) and the service
 says so instead of claiming to be ready.
 
+**The viral edit — popup photos, sound effects and a moving camera** (desktop
+1.7.0): a short was gameplay, a voice and captions, and nothing ever *changed*
+on screen. Now every short is planned frame by frame against the narration's
+own sentences (`server/src/lib/brain/core/storyboard.ts` — the plan, pure and
+shared; `brain/shortMedia.ts` — the part that touches the world): a **hook card**
+lands in the first second with an impact, **photos pop in** on exactly the
+sentence they illustrate (freely-licensed pictures from Wikimedia Commons, no
+key, non-free licences refused, every photographer credited in the description —
+`lib/photos.ts`), a **stat card** holds the number the sentence is about,
+**sound effects** a riser in the first second, a whoosh on each cut, a ding under
+the follow card — are *synthesized on this PC with FFmpeg* from recipes in
+`lib/sfx.ts` (nothing licensed, nothing downloaded, cached under `DATA_DIR/sfx`),
+a **percussion bed** runs under the voice and ducks while it speaks
+(`sidechaincompress`), and the camera **punches in on each beat** instead of
+showing a still frame (`lib/ffmpeg.ts` builds the whole graph; the ASS file
+carries the cards on their own layer above the captions). Gemini plans it when
+there is a key and the script plans it when there isn't; a plan is normalized
+before it renders (timings snapped to sentences, photos capped at six, sounds
+spaced, the follow card never covered), and every part of it can be switched off
+in the generator's **Viral edit** switch or with `enhance: false` — which renders
+exactly what earlier versions did. There is one `-filter_complex` graph and it is
+readable as a string: `server/tests/short_render.test.ts` asserts the beats, the
+mix and the camera move without running FFmpeg, then renders a real short and
+probes the file it produced.
+
 **Captions have a font** (desktop 1.6.5): shorts are rendered with the font
 Soundwave ships — Inter (OFL-1.1, `assets/fonts/`), the same family the app's
 interface uses — instead of asking ffmpeg for "DejaVu Sans" and letting each

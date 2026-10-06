@@ -85,7 +85,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             ref={panelRef}
             tabIndex={-1}
             className={cn(
-              "relative w-full max-h-[88vh] flex flex-col rounded-card border border-gray-700 bg-panel shadow-2xl outline-none overflow-hidden",
+              "relative flex max-h-[88vh] w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0b0c0f] shadow-2xl shadow-black/70 outline-none",
               sizes[size],
             )}
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -93,21 +93,21 @@ export function Modal({ open, onClose, title, description, children, footer, siz
             exit={{ opacity: 0, scale: 0.96, y: 12 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            <div className="flex shrink-0 items-center justify-between gap-4 px-5 py-3.5 border-b border-gray-800 bg-[#060607]/80">
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-white/8 px-5 py-4">
               <div className="min-w-0">
-                {title && <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">{title}</h2>}
-                {description && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
+                {title && <h2 className="truncate text-[15px] font-semibold tracking-tight text-white">{title}</h2>}
+                {description && <p className="mt-0.5 text-[12px] leading-snug text-gray-400">{description}</p>}
               </div>
               <button
                 onClick={onClose}
                 aria-label="Close dialog"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-all duration-200 hover:bg-gray-800 hover:text-white cursor-pointer"
+                className="sw-btn sw-btn-ghost h-8 w-8 shrink-0 p-0"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 overscroll-contain">{children}</div>
-            {footer && <div className="shrink-0 flex justify-end gap-3 border-t border-gray-800 bg-[#060607]/60 px-5 py-3.5">{footer}</div>}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">{children}</div>
+            {footer && <div className="flex shrink-0 justify-end gap-3 border-t border-white/8 px-5 py-3.5">{footer}</div>}
           </motion.div>
         </div>
       )}

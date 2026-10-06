@@ -33,6 +33,9 @@ import { activeBrain } from "../lib/brain/settings.js";
 import { writeShortScript } from "../lib/brain/script.js";
 import { wordCount } from "../lib/brain/prompt.js";
 import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, WORDS_PER_SECOND } from "../lib/brain/core/viral.js";
+import { planShortMedia } from "../lib/brain/shortMedia.js";
+import { storyboardSummary, type StoryboardSummary } from "../lib/brain/core/storyboard.js";
+import type { MediaInput } from "../lib/ffmpeg.js";
 
 // ── Scripts for Soundwave Agent ─────────────────────────────────────────────
 // The bank of ready-to-speak narrations lives in brain/core/viral.ts, next to
@@ -146,6 +149,12 @@ export interface BuildShortOptions {
   niche?: string;
   voice?: string;
   resolution?: "720p" | "1080p";
+  /**
+   * The viral edit: popup photos, sound effects, a music bed and a camera move
+   * planned from the narration (see brain/shortMedia.ts). On by default; false
+   * renders exactly what Soundwave made before this existed.
+   */
+  enhance?: boolean;
   /** Which connected channel this one goes to (id or name). */
   youtubeChannelId?: string;
   userId?: string;
@@ -164,6 +173,10 @@ export interface BuildShortResult {
   duration: number;
   cuesCount: number;
   background: ShortBackgroundInfo;
+  /** What the edit actually put on screen (absent when it was a plain render). */
+  storyboard?: StoryboardSummary;
+  /** The photographers whose pictures are in the short (published in its description). */
+  credits?: string[];
   youtubeUrl?: string;
   youtubeVideoId?: string;
 }
@@ -307,7 +320,46 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       shadowY: 2,
     };
 
-    // 4. Background (46% -> 58%): import an unused Orbital NCG video.
+    // 4. The edit (44% -> 46%): what is on screen besides the gameplay.
+    //    A storyboard planned around the narration's own sentences popup photos
+    //    from Wikimedia Commons, sound effects built on this PC, a percussion
+    //    bed and a camera move — all optional, none of it able to fail the
+    //    render (see lib/brain/shortMedia.ts).
+    let media: MediaInput | undefined;
+    let storyboard: StoryboardSummary | undefined;
+    let credits: string[] = [];
+    if (params.enhance !== false) {
+      await reportProgress(45, "Planning the edit: photos, sound effects, camera move...");
+      try {
+        const plan = await planShortMedia({
+          script,
+          timings: ttsResult.wordTimings,
+          duration: ttsResult.duration,
+          topic: params.topic,
+          ...(params.niche ? { nicheId: params.niche } : {}),
+          seconds,
+          width: dims.width,
+          height: dims.height,
+          log: (line) => console.log(`[agentShort] ${line}`),
+        });
+        media = plan.media;
+        storyboard = plan.summary;
+        credits = plan.credits;
+        jobSettings = { ...jobSettings, storyboard, editSource: plan.source, editNotes: plan.notes, editCredits: credits };
+        const bits = [
+          storyboard.photos ? `${storyboard.photos} photo${storyboard.photos === 1 ? "" : "s"}` : "",
+          storyboard.sounds ? `${storyboard.sounds} sound${storyboard.sounds === 1 ? "" : "s"}` : "",
+          storyboard.music === "pulse" ? "a beat" : "",
+          "a moving camera",
+        ].filter(Boolean);
+        await reportProgress(46, `Edit ready: ${bits.join(", ")}. Importing background gameplay...`);
+      } catch (err) {
+        // A storyboard that couldn't be planned is not a failed short.
+        console.warn(`[agentShort] the viral edit couldn't be planned (${(err as Error).message}); rendering the plain short`);
+      }
+    }
+
+    // 5. Background (46% -> 58%): import an unused Orbital NCG video.
     stage = "background";
     let progressChain: Promise<void> = Promise.resolve();
     orbital = await importUnusedOrbitalVideo({
@@ -358,6 +410,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       subtitles: finalCues,
       subtitleStyle: tiktokStyle,
       settings: exportSettings,
+      ...(media ? { media } : {}),
       outputPath: outPath,
       onProgress: async (ffmpegPct) => {
         // Map FFmpeg 0..100% to overall 58..96%
@@ -396,7 +449,8 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
         const pubTitle = rawTitle.endsWith(".") ? rawTitle.slice(0, -1) : rawTitle;
         const privacy = params.youtubePrivacy || channel?.privacy || ytConfig.defaultPrivacy || "public";
         const tags = params.youtubeTags || ytConfig.defaultTags || ["shorts", "viral"];
-        const description = `${script}\n\nBackground gameplay: ${background.title} by ${ORBITAL_CHANNEL_NAME} (${background.url})`;
+        const creditBlock = credits.length ? `\n\nPhotos (Wikimedia Commons): ${credits.slice(0, 8).join(" · ")}` : "";
+        const description = `${script}\n\nBackground gameplay: ${background.title} by ${ORBITAL_CHANNEL_NAME} (${background.url})${creditBlock}`;
 
         const uploadRes = channel
           ? await youtubeService.uploadWithToken(await accessTokenFor(channel), {
@@ -441,6 +495,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
         step: finalStep,
         voice,
         duration: ttsResult.duration,
+        ...(storyboard ? { storyboard, editCredits: credits } : {}),
         youtubeUrl: ytResult?.youtubeUrl ?? null,
         youtubeChannel: ytResult?.channelName ?? null,
         youtubeError: publishError,
@@ -459,6 +514,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       script,
       duration: ttsResult.duration,
       background,
+      ...(storyboard ? { storyboard } : {}),
     });
 
     return {
@@ -469,6 +525,8 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       duration: ttsResult.duration,
       cuesCount: finalCues.length,
       background,
+      ...(storyboard ? { storyboard } : {}),
+      ...(credits.length ? { credits } : {}),
       youtubeUrl: ytResult?.youtubeUrl,
       youtubeVideoId: ytResult?.videoId,
     };
@@ -513,6 +571,8 @@ const generateShortSchema = z.object({
   seconds: z.number().int().min(15).max(180).default(60),
   /** The niche picked in the generator (script recipes in brain/core/viral). */
   niche: z.string().max(40).optional(),
+  /** The viral edit (popup photos, sound effects, a beat, a moving camera). */
+  enhance: z.boolean().default(true),
   /** Which connected channel it goes to (id or name) — see /youtube/channels. */
   youtubeChannelId: z.string().max(80).optional(),
   async: z.boolean().default(false),
@@ -583,6 +643,8 @@ router.post("/generate-short", optionalAuth, validate({ body: generateShortSchem
     voice: body.voice,
     subtitleStyle: "TikTok #8B5CF6 Montserrat 800 56px middle",
     background: BACKGROUND_POLICY,
+    // What the "Viral edit" switch in the generator sends.
+    viralEdit: { photos: body.enhance, soundEffects: body.enhance, music: body.enhance, cameraMove: body.enhance },
   });
 
   try {
@@ -593,6 +655,7 @@ router.post("/generate-short", optionalAuth, validate({ body: generateShortSchem
       voice: body.voice,
       resolution: body.resolution,
       seconds: body.seconds,
+      enhance: body.enhance,
       niche: body.niche,
       youtubeChannelId: body.youtubeChannelId,
       userId,
@@ -629,6 +692,7 @@ router.post("/generate-short", optionalAuth, validate({ body: generateShortSchem
       duration: result.duration,
       cues: result.cuesCount,
       background: result.background,
+      ...(result.storyboard ? { storyboard: result.storyboard, credits: result.credits ?? [] } : {}),
       defaults: defaults(body),
     });
   } catch (err: any) {
@@ -703,8 +767,18 @@ router.get("/defaults", (_req, res) => {
     },
     workflow: {
       oneClickEndpoint: "POST /api/v1/agent/generate-short",
-      body: { topic: "motivation", voice: "en-US-GuyNeural", resolution: "720p" },
+      body: { topic: "motivation", voice: "en-US-GuyNeural", resolution: "720p", enhance: true },
       result: "downloadUrl -> ~/Downloads/soundwave_short_*.mp4",
+    },
+    // The viral edit (brain/core/storyboard.ts + brain/shortMedia.ts): popup
+    // photos, sound effects, a beat under the voice, cards and a camera move,
+    // planned around the narration. `enhance: false` renders the plain short.
+    viralEdit: {
+      enabledByDefault: true,
+      photos: "Wikimedia Commons (free licences only; every picture is credited in the description)",
+      soundEffects: "built on this PC with FFmpeg from lib/sfx.ts and cached in DATA_DIR/sfx",
+      storyboard:
+        "planned by Gemini around the narration's own sentences; without a key it is built from the script (brain/core/storyboard.ts)",
     },
   });
 });

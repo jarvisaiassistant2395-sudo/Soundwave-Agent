@@ -160,6 +160,10 @@ export interface ChatReply {
   emailSent?: Array<{ to: string; subject: string }>;
   /** Emails the agent queued for a later moment (the same shape the chat stores). */
   emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
+  /** Niches the agent added to (or removed from) the Generate tab this turn. */
+  nichesChanged?: string[];
+  /** The mode it switched itself into (its set_mode tool). */
+  modeChanged?: { persona: string; name?: string; address: string | null };
   videoUrl?: string;
   downloadUrl?: string;
   tag?: ChatMessage["tag"];
@@ -238,7 +242,7 @@ export interface ShortJob {
   progress?: number;
   outputUrl?: string | null;
   errorMessage?: string | null;
-  settings?: { topic?: string; step?: string; youtubeUrl?: string; background?: ShortBackground; script?: string } | null;
+  settings?: { topic?: string; step?: string; youtubeUrl?: string; background?: ShortBackground; script?: string; storyboard?: ShortStoryboard } | null;
 }
 
 function formatClock(secs: number): string {
@@ -259,22 +263,42 @@ export function jobOutcomeId(jobId: string, state: "done" | "failed"): string {
 }
 
 /** The "your short is ready" message (with player + download) for a finished job. */
+/** What the viral edit put on screen (job.settings.storyboard, brain/core/storyboard.ts). */
+export interface ShortStoryboard {
+  beats?: number;
+  photos?: number;
+  cards?: number;
+  sounds?: number;
+  music?: "none" | "pulse";
+}
+
 export function completionMessage(
   jobId: string,
   topic: string,
-  result: { videoUrl: string; youtubeUrl?: string | null; background?: ShortBackground | null },
+  result: { videoUrl: string; youtubeUrl?: string | null; background?: ShortBackground | null; storyboard?: ShortStoryboard | null },
 ): ChatMessage {
-  const { videoUrl, youtubeUrl, background } = result;
+  const { videoUrl, youtubeUrl, background, storyboard } = result;
   const backgroundLine = background
     ? `\nBackground: "${background.title}" (${describeSection(background.section)}) — Orbital NCG video imported via the YouTube link importer: ${background.url}`
     : "";
+  // What the edit did — the difference between this and a voice over gameplay.
+  const part = (n: number | undefined, one: string) => (n ? `${n} ${one}${n === 1 ? "" : "s"}` : "");
+  const editBits = [
+    part(storyboard?.photos, "popup photo"),
+    part(storyboard?.sounds, "sound effect"),
+    storyboard?.music === "pulse" ? "a beat under the voice" : "",
+    storyboard?.beats ? "a moving camera" : "",
+  ].filter(Boolean);
+  const editLine = editBits.length ? `\nEdit: ${storyboard?.beats ?? 0} beats — ${editBits.join(", ")}.` : "";
   return {
     id: jobOutcomeId(jobId, "done"),
     sender: "assistant",
     text:
       (youtubeUrl
         ? `Rendered viral short for "${topic}" and automatically published it to YouTube Shorts: ${youtubeUrl}`
-        : `Rendered viral short for "${topic}". Your video is ready to preview, download, or post to YouTube!`) + backgroundLine,
+        : `Rendered viral short for "${topic}". Your video is ready to preview, download, or post to YouTube!`) +
+      editLine +
+      backgroundLine,
     time: chatTime(),
     at: Date.now(),
     tag: "AUDIO",

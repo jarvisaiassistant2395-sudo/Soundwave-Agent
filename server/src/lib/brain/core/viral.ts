@@ -172,8 +172,69 @@ export const NICHES: Niche[] = [
 
 export const NICHE_IDS = NICHES.map((n) => n.id);
 
+// ── Niches added later (lib/brain/niches.ts) ────────────────────────────────
+// The nine above are the researched floor: they ship with the app and never
+// change. On top of them sit the niches Soundwave adds when it finds something
+// new climbing this week on Shorts — the agent's add_viral_niche tool, or the
+// person's own button in the Generate tab. They are held here (and not in a
+// file) because this module is shared with the phone app while the PC is off,
+// and it must stay dependency-free.
+let EXTRA: AddedNiche[] = [];
+
+/** A niche added on top of the researched nine, with where it came from. */
+export interface AddedNiche extends Niche {
+  /** When it was added (ms epoch). */
+  addedAt?: number;
+  /** The agent found it climbing this week, or the person added it themselves. */
+  source?: "agent" | "user";
+  /** The evidence: the Shorts and the trend lines that made it worth adding. */
+  why?: string;
+}
+
+/** Replace the added niches. Called by the store on load and after every change. */
+export function registerExtraNiches(list: AddedNiche[] | undefined): void {
+  EXTRA = Array.isArray(list) ? [...list] : [];
+}
+
+/** The niches added on top of the researched nine. */
+export function extraNiches(): AddedNiche[] {
+  return [...EXTRA];
+}
+
+/** Every niche the app can write a script for right now, researched ones first. */
+export function allNiches(): Niche[] {
+  return [...NICHES, ...EXTRA];
+}
+
 export function nicheById(id: string | undefined): Niche {
-  return NICHES.find((n) => n.id === id) ?? NICHES[1]!;
+  return EXTRA.find((n) => n.id === id) ?? NICHES.find((n) => n.id === id) ?? NICHES[1]!;
+}
+
+/** Subject words of a niche, for matching a loose topic against it. */
+export function nicheKeywords(niche: Niche): string[] {
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const chunk of [niche.name, niche.short, ...niche.angles]) {
+    for (const raw of String(chunk).toLowerCase().split(/[^\p{L}\p{N}']+/u)) {
+      const word = raw.replace(/^'+|'+$/g, "");
+      if (word.length < 5 || seen.has(word)) continue;
+      seen.add(word);
+      words.push(word);
+    }
+  }
+  return words;
+}
+
+/** The added niche a loose topic clearly belongs to (two subject words, or one long one). */
+export function closestAddedNiche(topic: string): Niche | null {
+  const t = String(topic ?? "").toLowerCase();
+  if (!t.trim() || !EXTRA.length) return null;
+  let best: { niche: Niche; hits: number } | null = null;
+  for (const niche of EXTRA) {
+    const hits = nicheKeywords(niche).filter((w) => t.includes(w)).length;
+    if (hits >= 2 && (!best || hits > best.hits)) best = { niche, hits };
+  }
+  return best?.niche ?? null;
 }
 
 /** Which niche a loose topic belongs to (the agent and the Generate button). */
@@ -181,8 +242,15 @@ export function detectNiche(topic: string): Niche {
   const t = String(topic ?? "").toLowerCase().trim();
   // An exact id or full name is the caller naming the niche (the Generate
   // button sends one) — never guess it into another one from a short label.
-  const exact = NICHES.find((n) => n.id === t || n.name.toLowerCase() === t);
+  // Added niches are checked first: a topic the agent just added is a better
+  // answer than the researched one the keywords happen to resemble.
+  const exact = allNiches().find((n) => n.id === t || n.name.toLowerCase() === t);
   if (exact) return exact;
+  // An added niche whose own subject words appear in the topic wins over the
+  // researched keyword table: the agent added it because people are posting
+  // about exactly this, so its recipe is the closer one.
+  const added = closestAddedNiche(t);
+  if (added) return added;
   const has = (...words: string[]) => words.some((w) => t.includes(w));
   if (has("psych", "brain", "behav", "mind trick", "persuasi", "body language", "bias", "attachment")) return nicheById("psychology");
   if (has("money", "finance", "invest", "saving", "credit", "debt", "salary", "stock", "wealth", "budget", "tax")) return nicheById("finance");
@@ -623,9 +691,26 @@ export function buildScriptInstruction(opts: ScriptInstructionOptions): string {
   return lines.join("\n");
 }
 
+export interface NicheCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  hooks: string[];
+  sampleScripts: string[];
+  audience: string;
+  /** Added on top of the researched nine (a new one found going viral, or one the person made). */
+  added?: boolean;
+  /** Where an added niche came from: “agent” (the assistant found it), “user”. */
+  source?: "agent" | "user";
+  /** The evidence the agent saw when it added it. */
+  why?: string;
+  /** When it was added (ms epoch, ISO in API answers). */
+  addedAt?: number;
+}
+
 /** The catalog the app and the API expose (one source of truth). */
-export function nicheCatalog(): Array<{ id: string; name: string; description: string; hooks: string[]; sampleScripts: string[]; audience: string }> {
-  return NICHES.map((n) => ({
+export function nicheCatalog(): NicheCatalogEntry[] {
+  const researched = NICHES.map((n) => ({
     id: n.id,
     name: n.name,
     description: n.short,
@@ -633,4 +718,19 @@ export function nicheCatalog(): Array<{ id: string; name: string; description: s
     sampleScripts: SAMPLE_SCRIPTS[n.id] ?? [],
     audience: n.audience,
   }));
+  // Added niches come first in the answer so the app can badge them as new
+  // without re-sorting, and each carries why it was added.
+  const added: NicheCatalogEntry[] = EXTRA.map((n) => ({
+    id: n.id,
+    name: n.name,
+    description: n.short,
+    hooks: n.hooks.map((h) => hookById(h)?.example ?? h),
+    sampleScripts: SAMPLE_SCRIPTS[n.id] ?? [],
+    audience: n.audience,
+    added: true,
+    source: n.source ?? "agent",
+    ...(n.why ? { why: n.why } : {}),
+    ...(n.addedAt ? { addedAt: n.addedAt } : {}),
+  }));
+  return [...researched, ...added];
 }

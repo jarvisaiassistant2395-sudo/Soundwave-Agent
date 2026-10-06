@@ -185,3 +185,333 @@ html.sw-overlay #root {
   white-space: pre-wrap;
   transition: color 120ms ease-in-out;
 }
+
+/* ══ Soundwave UI kit ═════════════════════════════════════════════════════
+   One place for the surfaces the Command Center is built from. The palette is
+   deliberately quiet — near-black panels, hairline borders, a single accent —
+   so the agent's output (the orb, the video, the numbers) is the loud thing on
+   screen. Everything here is used by the pages instead of hand-written hex.
+
+   Surfaces:  #0B0C0F panel · #101218 elevated · #07080A inset
+   Hairlines: rgba(255,255,255,0.06) rest → 0.12 hover → cyan when active
+   Type:      13px base, 12px muted, 11px labels; mono only for values/ids.
+
+   ── Cards ────────────────────────────────────────────────────────────── */
+
+.sw-card {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0) 42%), #0b0c0f;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 28px -22px rgba(0, 0, 0, 0.9);
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+.sw-card:hover {
+  border-color: rgba(255, 255, 255, 0.11);
+}
+.sw-card-accent {
+  border-color: rgba(34, 211, 238, 0.28);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.06), rgba(255, 255, 255, 0) 46%), #0b0c0f;
+}
+
+/* The title row of a card: icon, label, and whatever sits on the right. */
+.sw-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #e8eaf0;
+}
+.sw-card-head svg {
+  color: #6b7280;
+}
+.sw-card-head-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A small metric inside a card. */
+.sw-tile {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #07080a;
+  padding: 8px 10px;
+}
+.sw-tile-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7b8291;
+}
+.sw-tile-value {
+  display: block;
+  margin-top: 2px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f4f6fa;
+}
+
+/* ── Chips, pills and badges ──────────────────────────────────────────── */
+
+.sw-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #101218;
+  padding: 4px 11px;
+  font-size: 12px;
+  color: #c6cbd6;
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+.sw-pill-button {
+  cursor: pointer;
+}
+.sw-pill-button:hover {
+  border-color: rgba(34, 211, 238, 0.4);
+  color: #ffffff;
+}
+.sw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #07080a;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #9aa1af;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+}
+.sw-chip:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+  color: #e6f9ff;
+}
+.sw-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa1af;
+}
+.sw-badge-new {
+  border-color: rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.12);
+  color: #67e8f9;
+}
+.sw-badge-live {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+}
+
+/* ── Fields ───────────────────────────────────────────────────────────── */
+
+.sw-input,
+.sw-select,
+.sw-textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: #07080a;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: #f4f6fa;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.sw-input::placeholder,
+.sw-textarea::placeholder {
+  color: #656c7a;
+}
+.sw-input:hover,
+.sw-select:hover,
+.sw-textarea:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.sw-input:focus,
+.sw-select:focus,
+.sw-textarea:focus {
+  outline: none;
+  border-color: rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.13);
+}
+.sw-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b92a1;
+  margin-bottom: 6px;
+}
+.sw-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #7b8291;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+.sw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.08s ease;
+}
+.sw-btn:active {
+  transform: translateY(1px);
+}
+.sw-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.sw-btn-primary {
+  background: #22d3ee;
+  color: #04191f;
+  box-shadow: 0 10px 24px -14px rgba(34, 211, 238, 0.85);
+}
+.sw-btn-primary:hover:not(:disabled) {
+  background: #67e8f9;
+}
+.sw-btn-secondary {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #14161d;
+  color: #e8eaf0;
+}
+.sw-btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #191c25;
+}
+.sw-btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: #9aa1af;
+}
+.sw-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f6fa;
+}
+
+/* ── Chat bubbles ─────────────────────────────────────────────────────── */
+
+.sw-bubble {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.62;
+}
+.sw-bubble-agent {
+  border-color: rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0)) , #0b0d12;
+  color: #e6e9ef;
+}
+.sw-bubble-user {
+  border-color: rgba(34, 211, 238, 0.22);
+  background: rgba(14, 116, 144, 0.18);
+  color: #e6f9ff;
+}
+.sw-bubble-meta {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: #6b7280;
+}
+.sw-bubble-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #67e8f9;
+}
+
+/* ── The agent's avatar / initial mark ────────────────────────────────── */
+
+.sw-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: linear-gradient(160deg, rgba(34, 211, 238, 0.22), rgba(34, 211, 238, 0.04));
+  color: #a5f3fc;
+}
+
+/* ── Section labels & dividers ────────────────────────────────────────── */
+
+.sw-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7b8291;
+}
+.sw-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Motion: a soft entry for panels and toasts (respecting reduced motion). */
+@keyframes sw-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sw-rise {
+  animation: sw-rise 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw-rise,
+  .sw-btn,
+  .sw-chip,
+  .sw-pill,
+  .sw-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}

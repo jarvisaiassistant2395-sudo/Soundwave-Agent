@@ -7,8 +7,12 @@ import { resolveYtDlpPath } from "../lib/ytdlp.js";
 import { getStore } from "../lib/store.js";
 import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../lib/orbitalBackground.js";
 import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, startShortJob } from "./agentShort.js";
-import { nicheCatalog } from "../lib/brain/core/viral.js";
+import { NICHES, nicheCatalog } from "../lib/brain/core/viral.js";
+import { PERSONA_IDS, isPersonaId } from "../lib/brain/core/persona.js";
+import { loadPersonaSettings, personaStatus, savePersonaSettings } from "../lib/brain/persona.js";
+import { addAddedNiche, nicheSlug, nichesStatus, removeAddedNiche, suggestionToNiche, type AddNicheResult } from "../lib/brain/niches.js";
 import { TREND_REFRESH_DAYS, refreshTrends, trendsStatus } from "../lib/trends.js";
+import { ApiError } from "../middleware/error.js";
 import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, noteVoiceFailure, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
 import { isLocalVoiceId, synthesizeLocalVoice } from "../lib/kokoro.js";
 import { getConversation } from "../lib/conversation.js";
@@ -446,11 +450,112 @@ router.get("/status", async (_req, res) => {
   });
 });
 
-// GET /niches — the researched niches, their hook shapes and sample scripts.
-// One source of truth: brain/core/viral.ts (the same recipes the script
-// writer is given, and the same samples the no-key fallback speaks).
+// GET /niches — every niche the Generate tab offers: the nine researched ones
+// (brain/core/viral.ts — the same recipes the script writer is given and the
+// same samples the no-key fallback speaks) plus whatever the agent has added
+// since (lib/brain/niches.ts), newest first and badged. It also carries the
+// subjects the trend scan says are climbing that no niche covers yet, so the
+// app can offer them with one press.
 router.get("/niches", (_req, res) => {
-  res.json({ niches: nicheCatalog() });
+  const status = nichesStatus();
+  res.json({ niches: nicheCatalog(), added: status.added, suggestions: status.suggestions, maxAdded: status.max });
+});
+
+// POST /niches — add one to the Generate tab. Either a subject the trend scan
+// suggested ({ suggestion: "morningroutine" }) or one of the person's own
+// ({ name, description }). The agent's add_viral_niche tool writes to the same
+// store, so the picker and the tool never disagree.
+const addNicheSchema = z.object({
+  suggestion: z.string().trim().max(60).optional(),
+  name: z.string().trim().min(3).max(40).optional(),
+  description: z.string().trim().max(120).optional(),
+  why: z.string().trim().max(400).optional(),
+  audience: z.string().trim().max(200).optional(),
+  angles: z.array(z.string().trim().max(140)).max(5).optional(),
+  hooks: z.array(z.string().trim().max(40)).max(4).optional(),
+  never: z.string().trim().max(240).optional(),
+});
+
+router.post("/niches", validate({ body: addNicheSchema }), (req, res, next) => {
+  try {
+    const body = req.body as z.infer<typeof addNicheSchema>;
+    let result: AddNicheResult;
+    if (body.suggestion) {
+      const wanted = body.suggestion.toLowerCase();
+      const suggestion = nichesStatus().suggestions.find(
+        (s) => s.id.toLowerCase() === wanted || s.name.toLowerCase() === wanted || nicheSlug(s.name) === nicheSlug(wanted),
+      );
+      if (!suggestion) {
+        throw new ApiError(404, "NO_SUCH_SUGGESTION", "That suggestion isn't on offer any more — the trends moved on. Refresh the trends and try again.");
+      }
+      result = suggestionToNiche(suggestion, "user");
+    } else {
+      result = addAddedNiche({
+        name: body.name,
+        short: body.description,
+        why: body.why,
+        audience: body.audience,
+        angles: body.angles,
+        hooks: body.hooks,
+        never: body.never,
+        source: "user",
+      });
+    }
+    if (!result.ok) throw new ApiError(400, "NICHE_NOT_ADDED", result.error);
+    res.status(201).json({ ok: true, niche: result.niche, niches: nicheCatalog(), added: nichesStatus().added, suggestions: nichesStatus().suggestions });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// DELETE /niches/:id — take an added niche back out (the researched nine stay).
+router.delete("/niches/:id", (req, res, next) => {
+  try {
+    const id = String(req.params.id ?? "");
+    if (NICHES.some((n) => n.id === id.toLowerCase())) {
+      throw new ApiError(400, "NICHE_IS_RESEARCHED", "That one is part of the researched set and always stays in the picker.");
+    }
+    const removed = removeAddedNiche(id);
+    if (!removed) throw new ApiError(404, "NO_SUCH_NICHE", "There is no added niche with that id.");
+    res.json({ ok: true, removed: { id: removed.id, name: removed.name }, added: nichesStatus().added });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /modes — the ways the agent can talk (brain/core/persona.ts) and which
+// one it is in, with the form of address it uses in the formal one.
+router.get("/modes", (_req, res) => {
+  res.json({ ...personaStatus(), alias: "personas" });
+});
+
+// PUT /modes — { persona: "professional", address?: "sir" }. The Command
+// Center's picker, Settings → Modes and the agent's own set_mode tool all
+// write here; the next reply is already in the new mode.
+const modeSchema = z.object({
+  persona: z.string().trim().max(20).optional(),
+  address: z.string().trim().max(24).nullable().optional(),
+});
+
+router.put("/modes", validate({ body: modeSchema }), (req, res, next) => {
+  try {
+    const body = req.body as z.infer<typeof modeSchema>;
+    if (body.persona !== undefined && !isPersonaId(body.persona)) {
+      throw new ApiError(400, "UNKNOWN_MODE", `There is no mode called “${body.persona}”. The modes are: ${PERSONA_IDS.join(", ")}.`);
+    }
+    if (body.persona === undefined && body.address === undefined) {
+      throw new ApiError(400, "NOTHING_TO_CHANGE", "Send a persona, an address, or both.");
+    }
+    savePersonaSettings({
+      ...(body.persona !== undefined ? { persona: body.persona } : {}),
+      // A form of address is only changed when it is sent: switching modes
+      // keeps the one that was set (an empty string clears it).
+      ...(body.address !== undefined ? { address: body.address } : {}),
+    });
+    res.json(personaStatus());
+  } catch (e) {
+    next(e);
+  }
 });
 
 // GET /trends — what the scout last found going viral on Shorts (lib/trends.ts).

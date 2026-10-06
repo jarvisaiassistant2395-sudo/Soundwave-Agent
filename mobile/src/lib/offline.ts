@@ -17,6 +17,7 @@ import {
 } from "../../../server/src/lib/brain/core/gemini";
 import { contentsFor, runTurn, sourcesLine, wasBlocked, type Generate, type HistoryMessage } from "../../../server/src/lib/brain/core/turn";
 import { agentInstruction, plainReply } from "../../../server/src/lib/brain/core/prompt";
+import { personaById } from "../../../server/src/lib/brain/core/persona";
 import { guideTool } from "../../../server/src/lib/brain/core/guide";
 import {
   DEFAULT_BRIEFING,
@@ -52,6 +53,10 @@ export interface PhoneKit {
   ideas: boolean;
   /** The agent's Soundwave voice on the PC. */
   voice?: string | null;
+  /** The mode the agent speaks in on the PC (brain/core/persona.ts). */
+  persona?: string | null;
+  /** How that mode addresses the person (“sir”, a nickname) — null when it doesn't. */
+  personaAddress?: string | null;
   rev: string;
 }
 
@@ -148,7 +153,17 @@ export async function offlineReply(o: {
       tools,
       ctx: { memory: store, ...(o.alarm ? { alarm: o.alarm } : {}) },
       instruction: ({ tools: names, webSearch }) =>
-        agentInstruction({ tools: names, webSearch, now: o.now ?? new Date(), surface: "phone-offline", memory: o.memory ? { ...o.memory, notes, briefing } : null }),
+        agentInstruction({
+          tools: names,
+          webSearch,
+          now: o.now ?? new Date(),
+          surface: "phone-offline",
+          // The mode the person chose on the PC travels with the kit, so the
+          // phone answers in the same voice while the PC is off.
+          persona: personaById(o.kit.persona ?? undefined).id,
+          address: o.kit.personaAddress ?? null,
+          memory: o.memory ? { ...o.memory, notes, briefing } : null,
+        }),
       generate: bind(o.kit),
       signal: o.signal,
     });
@@ -226,13 +241,20 @@ export async function offlineMorning(o: {
     .map((t) => `${t.topic}: ${t.via === "search" ? "Google Search" : t.via === "feeds" ? "GitHub, Hacker News, Google News" : `not researched${t.note ? ` (${t.note})` : ""}`}`)
     .join("\n");
   try {
-    const resp = await bind(o.kit)({ apiKey: o.kit.apiKey, model: o.kit.model, request: morningRequest(facts, o.kit.model), signal: o.signal, timeoutMs: 30_000 });
+    const mode = { persona: personaById(o.kit.persona ?? undefined).id, address: o.kit.personaAddress ?? null };
+    const resp = await bind(o.kit)({ apiKey: o.kit.apiKey, model: o.kit.model, request: morningRequest(facts, o.kit.model, mode), signal: o.signal, timeoutMs: 30_000 });
     const text = plainReply(visibleText(resp.candidates?.[0]?.content?.parts));
     if (text) return { text, model: o.kit.model, briefingDate, research, ...(weatherNote ? { weatherNote } : {}) };
   } catch {
     /* the template below */
   }
-  return { text: templateBriefing(facts), model: null, briefingDate, research, ...(weatherNote ? { weatherNote } : {}) };
+  return {
+    text: templateBriefing(facts, { persona: personaById(o.kit.persona ?? undefined).id, address: o.kit.personaAddress ?? null }),
+    model: null,
+    briefingDate,
+    research,
+    ...(weatherNote ? { weatherNote } : {}),
+  };
 }
 
 function base64(bytes: Uint8Array): string {

@@ -135,6 +135,10 @@ export const config = {
   // plain fetch with a bot check or need JavaScript. Empty = off, and Soundwave
   // reads hard pages exactly as before. Point SCRAPLING_URL at a stand-in in tests.
   scraplingUrl: str("SCRAPLING_URL", "").replace(/\/+$/, ""),
+  // Where a short's popup photos come from: Wikimedia Commons (free, no key,
+  // free licences only — see lib/photos.ts). Point COMMONS_API_URL at a
+  // stand-in in tests.
+  commonsApiUrl: str("COMMONS_API_URL", "https://commons.wikimedia.org/w/api.php"),
   // Reader fallback for pages that can't be read directly (JS-only, blocked).
   // Free, no key; point JINA_READER_URL at a stand-in in tests. This is the last
   // resort — it sends the page's address to a service on the internet, so the

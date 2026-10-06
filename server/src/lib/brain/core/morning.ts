@@ -7,6 +7,7 @@
 // Pure TypeScript (no Node APIs): mobile/ compiles it too.
 
 import { isGemini3, type GenerateRequest } from "./gemini.js";
+import { personaInstruction, type PersonaId } from "./persona.js";
 import type { TopicBrief } from "./research.js";
 
 export type { TopicBrief };
@@ -229,18 +230,49 @@ export function morningPrompt(f: MorningFacts): string {
   return lines.join("\n");
 }
 
-export function morningRequest(f: MorningFacts, model: string): GenerateRequest {
+/**
+ * The morning instruction in the agent's current mode. The briefing is the
+ * agent's longest piece of talk, so it carries the mode too — an executive
+ * assistant says “Good morning, sir”, the calm mode says “Morning.” and then
+ * the facts, without the cheer.
+ */
+export function morningInstruction(mode?: { persona?: PersonaId; address?: string | null }): string {
+  const lines = [MORNING_INSTRUCTION];
+  if (mode?.persona) {
+    lines.push("", "Your mode — how you talk (the briefing is in the same voice):", ...personaInstruction(mode.persona, mode.address));
+  }
+  return lines.join("\n");
+}
+
+export function morningRequest(f: MorningFacts, model: string, mode?: { persona?: PersonaId; address?: string | null }): GenerateRequest {
   return {
     contents: [{ role: "user", parts: [{ text: morningPrompt(f) }] }],
-    systemInstruction: { role: "user", parts: [{ text: MORNING_INSTRUCTION }] },
+    systemInstruction: { role: "user", parts: [{ text: morningInstruction(mode) }] },
     generationConfig: { maxOutputTokens: 4096, ...(isGemini3(model) ? { thinkingConfig: { thinkingLevel: "LOW" as const } } : {}) },
   };
 }
 
+/** “Good morning, sir.” / “Morning.” — the greeting in the mode's own voice. */
+export function briefingGreeting(day: string, opts: { persona?: PersonaId; address?: string | null } = {}): string {
+  const address = opts.address ? `, ${opts.address}` : "";
+  switch (opts.persona) {
+    case "professional":
+      return `Good morning${address}. It's ${day}.`;
+    case "calm":
+      return `Morning. It's ${day}.`;
+    case "coach":
+      return `Morning${address}! It's ${day}.`;
+    case "analyst":
+      return `Good morning${address}. Today is ${day}.`;
+    default:
+      return `Good morning${address}! It's ${day}.`;
+  }
+}
+
 /** The briefing without Gemini (no key, or Gemini failed). */
-export function templateBriefing(f: MorningFacts, opts: { noKey?: boolean } = {}): string {
+export function templateBriefing(f: MorningFacts, opts: { noKey?: boolean; persona?: PersonaId; address?: string | null } = {}): string {
   const day = f.now.split(",")[0] ?? f.now;
-  const out = [`Good morning! It's ${day}.`];
+  const out = [briefingGreeting(day, { persona: opts.persona, address: opts.address })];
   if (f.weather) out.push(weatherSentence(f.weather));
   if (f.shorts) {
     const s = f.shorts;

@@ -23,6 +23,7 @@ import { briefingPlan, lastMorningAt, memoryState, noteMorningRun } from "./memo
 import { getActiveShortJobs } from "../routes/agentShort.js";
 import { generateContent, GeminiError, visibleText } from "./brain/gemini.js";
 import { activeBrain, FALLBACK_MODEL, noteBrainError } from "./brain/settings.js";
+import { activePersona } from "./brain/persona.js";
 import { normalizeUrl, openApp, openWebsite, pcStatus } from "./brain/pc.js";
 import { plainReply } from "./brain/prompt.js";
 import { relativeTime } from "./brain/core/memory.js";
@@ -290,10 +291,11 @@ export async function prepareMorning(opts: { via: "pc" | "phone"; signal?: Abort
 /** Gemini words the briefing; the template without a key or when Gemini fails. */
 export async function writeBriefing(facts: MorningFacts, signal?: AbortSignal): Promise<{ text: string; model: string | null }> {
   const brain = activeBrain();
-  if (!brain) return { text: templateBriefing(facts, { noKey: true }), model: null };
+  const mode = activePersona();
+  if (!brain) return { text: templateBriefing(facts, { noKey: true, persona: mode.id, address: mode.address }), model: null };
   for (const model of [...new Set([brain.model, FALLBACK_MODEL])]) {
     try {
-      const resp = await generateContent({ apiKey: brain.apiKey, model, purpose: "morning", request: morningRequest(facts, model), signal, timeoutMs: 25_000 });
+      const resp = await generateContent({ apiKey: brain.apiKey, model, purpose: "morning", request: morningRequest(facts, model, { persona: mode.id, address: mode.address }), signal, timeoutMs: 25_000 });
       const text = plainReply(visibleText(resp.candidates?.[0]?.content?.parts));
       if (text) return { text, model };
       break;
@@ -304,7 +306,7 @@ export async function writeBriefing(facts: MorningFacts, signal?: AbortSignal): 
       break;
     }
   }
-  return { text: templateBriefing(facts), model: null };
+  return { text: templateBriefing(facts, { persona: mode.id, address: mode.address }), model: null };
 }
 
 /** What the briefing was built from, for the line under it. */

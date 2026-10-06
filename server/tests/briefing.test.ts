@@ -60,7 +60,10 @@ beforeEach(() => {
 const local = (req: request.Test) => req.set("Host", "127.0.0.1");
 const isSearch = (req: Seen) => Array.isArray(req.body?.tools) && req.body.tools.some((t: Record<string, unknown>) => "googleSearch" in t);
 const promptOf = (req: Seen) => (req.body?.contents?.[0]?.parts?.[0]?.text ?? "") as string;
-const isBriefingWriter = (req: Seen) => req.body?.systemInstruction?.parts?.[0]?.text === coreMorning.MORNING_INSTRUCTION;
+// The briefing request: the morning instruction, plus the agent's mode block
+// (brain/core/persona.ts) — the mode is part of how the briefing is worded.
+const isBriefingWriter = (req: Seen) =>
+  String(req.body?.systemInstruction?.parts?.[0]?.text ?? "").startsWith(coreMorning.MORNING_INSTRUCTION);
 
 /** Gemini answering searches about the topic in its prompt, and writing the briefing. */
 function routeGemini(opts: { briefing?: string; searchFails?: boolean } = {}) {

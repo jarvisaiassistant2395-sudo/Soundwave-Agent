@@ -23,6 +23,7 @@ import { appendToConversation, findJob, getConversation, mergeIntoConversation, 
 import { HISTORY_MESSAGES } from "../brain/chat.js";
 import { modelLabel } from "../brain/gemini.js";
 import { activeBrain, FALLBACK_MODEL, type ThinkingLevel } from "../brain/settings.js";
+import { activePersona } from "../brain/persona.js";
 import { OPEN_METEO_FORECAST, OPEN_METEO_GEOCODING } from "../brain/core/morning.js";
 import { MAX_NOTE_CHARS, type MemoryOp } from "../brain/core/memory.js";
 import { applyPhoneMemoryOps, memoryAvailable, memorySnapshot } from "../memory.js";
@@ -171,6 +172,10 @@ export interface BrainKit {
   ideas: boolean;
   /** The agent's Soundwave voice (the phone speaks with it when the PC is off). */
   voice: string | null;
+  /** The mode the agent speaks in on this PC, so the phone keeps the same voice. */
+  persona: string;
+  /** How that mode addresses the person (“sir”, a nickname) — null when it doesn't. */
+  personaAddress: string | null;
   rev: string;
 }
 
@@ -209,6 +214,8 @@ export function brainKit(host: string | null = null): KitResult {
     },
     ideas: settings.ideas,
     voice: getConversation().voice ?? null,
+    persona: activePersona().id,
+    personaAddress: activePersona().address,
   };
   return { enabled: true, ...body, rev: createHash("sha1").update(JSON.stringify(body)).digest("hex").slice(0, 16) };
 }

@@ -182,6 +182,10 @@ export interface ChatReply {
   emailDraftIds?: string[];
   emailSent?: Array<{ to: string; subject: string }>;
   emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
+  /** Niches the agent added to (or removed from) the Generate tab during this reply. */
+  nichesChanged?: string[];
+  /** The agent changed the mode it speaks in (its set_mode tool). */
+  modeChanged?: { persona: string; name?: string; address: string | null };
   videoUrl?: string;
   downloadUrl?: string;
   tag?: ChatMessage["tag"];

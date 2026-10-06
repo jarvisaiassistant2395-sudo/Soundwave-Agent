@@ -7,8 +7,10 @@
 
 import { guideIndex } from "./guide.js";
 import { memoryPromptSection, relativeTime, type MemoryForPrompt } from "./memory.js";
+import { personaInstruction, type PersonaId } from "./persona.js";
 
 export type { MemoryForPrompt };
+export type { PersonaId };
 
 /** Where the message is answered: the PC (typed there or sent from the phone), or the phone alone. */
 export type Surface = "pc" | "phone" | "phone-offline";
@@ -21,6 +23,10 @@ export interface InstructionOptions {
   /** IANA zone for the time line (default: this device's). */
   timeZone?: string;
   surface?: Surface;
+  /** The mode the agent speaks in (persona.ts). Defaults to the friendly one. */
+  persona?: PersonaId;
+  /** What the mode calls the person (empty: the mode's own default, e.g. “sir”). */
+  address?: string | null;
   /** What the agent remembers (notes, summary, shorts) — null when there's no memory here. */
   memory?: MemoryForPrompt | null;
 }
@@ -104,6 +110,14 @@ export function agentInstruction(opts: InstructionOptions): string {
     can.push(
       "- Set alarms on the user's phone with set_phone_alarm (the phone rings; after they turn it off their morning briefing starts by itself — the delay is theirs to set). The alarm is on the phone, so it works with this PC off too, but the phone has to be connected: if it isn't, say so.",
     );
+  if (has("set_mode"))
+    can.push(
+      "- Change how you talk with set_mode — Executive Assistant (formal, “sir”), Friendly, Hype Coach, Analyst or Calm — whenever the person asks for a different manner or tells you how to address them. Change it and carry on in the new mode straight away; never say you can't.",
+    );
+  if (has("add_viral_niche"))
+    can.push(
+      "- Add a niche to the app's Generate tab with add_viral_niche when you find a subject genuinely climbing on Shorts that the researched niches do not cover (whats_trending is where you see it). list_niches shows everything offered plus the subjects the trend scan says are rising uncovered; remove_niche takes an added one out. Say plainly that it is in the Generate tab now, and only add what you actually saw — never a niche invented to please.",
+    );
   if (has("soundwave_guide")) can.push("- Explain every Soundwave feature and setup in detail with soundwave_guide.");
   can.push(
     "- Everything else is conversation: answer questions, explain, brainstorm, write (scripts, hooks, titles, captions, descriptions), translate, quick maths.",
@@ -158,8 +172,11 @@ export function agentInstruction(opts: InstructionOptions): string {
   return [
     "You are Soundwave, the AI assistant inside the Soundwave AI app on the user's PC. People talk to you by typing or speaking — in the PC's Command Center, its voice bar, or the Soundwave phone app; it's one shared conversation. Spoken messages are transcribed, so expect small transcription mistakes and read for intent. Your replies appear in the chat and are read aloud by a natural neural voice.",
     "",
+    "Your mode — how you talk (the person picked this; it holds in every reply):",
+    ...personaInstruction(opts.persona, opts.address),
+    "",
     "How to reply:",
-    "- Talk like a capable, friendly assistant speaking out loud: clear, warm, to the point. Usually one to three sentences; go longer only when asked to explain, list or write something.",
+    "- Usually one to three sentences; go longer only when asked to explain, list or write something — and keep it as short as your mode asks.",
     "- Plain text only: no Markdown (no asterisks, #, tables or code blocks) and no emoji — the reply is spoken. For a list, use short sentences or numbered lines.",
     "- Reply in the language the user writes in.",
     "- You are often talked to by voice — the mic, a held shortcut, or \"Hey Soundwave\" hands-free — and a voice turn arrives as plain text. When it reads like speech, answer the way you would out loud: the answer first, no headings or lists, short enough to hear once.",
