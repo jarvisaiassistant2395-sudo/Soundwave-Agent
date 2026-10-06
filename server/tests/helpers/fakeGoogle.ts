@@ -36,6 +36,19 @@ export const sseText = (pieces: string[]): string =>
     `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [] }, finishReason: "STOP" }], usageMetadata: { totalTokenCount: 42 } })}\n\n`,
   ].join("");
 
+/** The Google account a sign-in ends as (see the field's own comment below). */
+export interface FakeGoogleAccount {
+  email: string;
+  name: string;
+  picture?: string;
+  emailVerified: boolean;
+  idToken: boolean;
+  expired?: boolean;
+  wrongAudience?: boolean;
+}
+
+const DEFAULT_ACCOUNT: FakeGoogleAccount = { email: "person@gmail.com", name: "Soundwave Person", picture: "https://x.test/me.png", emailVerified: true, idToken: true };
+
 export interface FakeGoogle {
   url: string;
   seen: Seen[];
@@ -68,7 +81,7 @@ export interface FakeGoogle {
    * ID token). `idToken: false` makes the token endpoint omit the ID token, so
    * the userinfo fallback is exercised instead.
    */
-  account: { email: string; name: string; picture?: string; emailVerified: boolean; idToken: boolean; expired?: boolean; wrongAudience?: boolean };
+  account: FakeGoogleAccount;
   /** Every video upload: which token started it, metadata, and the bytes sent. */
   uploads: Array<{ initAuth?: string; title?: string; description?: string; bytes: number }>;
   /** Files sent to Gemini's File API (the file-chat tab): what and how big. */
@@ -105,7 +118,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     youtube: { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true },
     accounts: [] as FakeGoogle["accounts"],
     badRefreshTokens: [] as string[],
-    account: { email: "person@gmail.com", name: "Soundwave Person", picture: "https://x.test/me.png", emailVerified: true, idToken: true },
+    account: { ...DEFAULT_ACCOUNT },
     uploads: [] as FakeGoogle["uploads"],
     geminiUploads: [] as FakeGoogle["geminiUploads"],
     geminiDeleted: [] as string[],
@@ -122,7 +135,7 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       fake.youtube = { title: "Orbit Facts", subscribers: "1234", views: "98765", videos: "42", ok: true };
       fake.accounts.length = 0;
       fake.badRefreshTokens.length = 0;
-      fake.account = { email: "person@gmail.com", name: "Soundwave Person", picture: "https://x.test/me.png", emailVerified: true, idToken: true };
+      fake.account = { ...DEFAULT_ACCOUNT };
       fake.uploads.length = 0;
       fake.geminiUploads.length = 0;
       fake.geminiDeleted.length = 0;

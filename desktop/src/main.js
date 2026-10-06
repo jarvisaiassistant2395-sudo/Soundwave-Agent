@@ -32,12 +32,14 @@ const {
   shell,
 } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const http = require("node:http");
 const { pathToFileURL } = require("node:url");
 const { applyServerEnv, getFreePort } = require("./server-env.cjs");
 const { createManagedKokoro } = require("./kokoro-manager.cjs");
 const { createKeyWatcher } = require("./keywatch.cjs");
 const { DEFAULT_WAKE_PHRASES, vkCodesFor, wakeHit } = require("./wake.cjs");
+const { currentEdition } = require("./edition.cjs");
 const {
   HOTKEY_CHOICES,
   applySettingsPatch,
@@ -67,8 +69,23 @@ for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execF
   if (typeof cp[name] === "function") cp[name] = wrapHide(cp[name]);
 }
 
-/** Must equal electron-builder's appId: Windows attributes notifications to it. */
-const APP_ID = "ai.soundwave.desktop";
+/**
+ * Which build this is (src/edition.cjs): the sold app or the owner's own.
+ * The appId must equal electron-builder's for this edition — Windows attributes
+ * notifications to it — and the user-data folder is set explicitly rather than
+ * derived from the product name, so the two editions can never share one folder
+ * (their settings, secrets and data must stay apart).
+ */
+const EDITION = currentEdition();
+const APP_ID = EDITION.appId;
+const APP_NAME = EDITION.displayName;
+const USER_DATA_DIR = path.join(app.getPath("appData"), EDITION.userDataFolder);
+try {
+  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+  app.setPath("userData", USER_DATA_DIR);
+} catch (err) {
+  console.warn(`[soundwave-desktop] could not use ${USER_DATA_DIR}: ${err.message}`);
+}
 /** Started by Windows at sign-in ("Start with Windows"): stay in the tray. */
 const START_HIDDEN = process.argv.includes("--hidden");
 const OVERLAY_SIZE = { width: 480, height: 150 };
@@ -233,7 +250,7 @@ function createMainWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: "#0a0e17",
-    title: "Soundwave AI",
+    title: APP_NAME,
     autoHideMenuBar: true,
     icon: ICON_PNG,
     webPreferences: {
@@ -248,6 +265,10 @@ function createMainWindow() {
     },
   });
   mainWindow.setMenuBarVisibility(false);
+  // The page's own <title> would rename the window ("… — Command Center"). The
+  // owner's build says which build it is and keeps saying it; the sold build
+  // keeps the page's own title, exactly as it always has.
+  if (EDITION.id !== "retail") mainWindow.on("page-title-updated", (e) => e.preventDefault());
   lockNavigation(mainWindow);
 
   // Closing the window keeps Soundwave in the tray (shortcut, renders and
@@ -260,7 +281,7 @@ function createMainWindow() {
       settings = { ...settings, trayHintShown: true };
       saveSettings(settingsFile, settings);
       notify({
-        title: "Soundwave AI is still running",
+        title: `${APP_NAME} is still running`,
         body: settings.hotkeyEnabled
           ? `Press ${hotkeyLabel(settings.hotkey)} to talk to it from any app. Right-click the tray icon to quit.`
           : "It keeps working in the tray. Right-click the tray icon to quit.",
@@ -310,7 +331,7 @@ function createOverlayWindow() {
     // Never steals focus from the app you're in (clicks still work).
     focusable: false,
     hasShadow: false,
-    title: "Soundwave AI — Voice",
+    title: `${APP_NAME} — Voice`,
     icon: ICON_PNG,
     webPreferences: {
       preload: PRELOAD,
@@ -400,7 +421,7 @@ function createWakeWindow() {
     resizable: false,
     minimizable: false,
     maximizable: false,
-    title: "Soundwave AI — wake word",
+    title: `${APP_NAME} — wake word`,
     icon: ICON_PNG,
     webPreferences: {
       preload: PRELOAD,
@@ -570,12 +591,12 @@ function setTrayTooltip(state) {
   if (!tray) return;
   tray.setToolTip(
     state === "listening"
-      ? "Soundwave AI — listening…"
+      ? `${APP_NAME} — listening…`
       : state === "working"
-        ? "Soundwave AI — thinking…"
+        ? `${APP_NAME} — thinking…`
         : settings.wakeEnabled
-          ? `Soundwave AI — say “${DEFAULT_WAKE_PHRASES[0]}”`
-          : "Soundwave AI",
+          ? `${APP_NAME} — say “${DEFAULT_WAKE_PHRASES[0]}”`
+          : APP_NAME,
   );
 }
 
@@ -584,7 +605,7 @@ function refreshTrayMenu() {
   const shortcut = settings.hotkeyEnabled && hotkeyState.registered ? `  (${hotkeyLabel(settings.hotkey)})` : "";
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Open Soundwave AI", click: () => showMainWindow() },
+      { label: `Open ${APP_NAME}`, click: () => showMainWindow() },
       { label: `Talk to Soundwave${shortcut}`, click: () => toggleVoiceBar() },
       { label: "Generate a short", click: () => showMainWindow("/agent?tab=generator") },
       { type: "separator" },
@@ -614,7 +635,7 @@ function refreshTrayMenu() {
       { label: "Connect your phone…", click: () => showMainWindow("/settings/phone") },
       { type: "separator" },
       {
-        label: "Quit Soundwave AI",
+        label: `Quit ${APP_NAME}`,
         click: () => {
           isQuitting = true;
           app.quit();
@@ -962,7 +983,7 @@ app.whenReady().then(() =>
   main().catch((err) => {
     console.error("[soundwave-desktop] fatal:", err);
     dialog.showErrorBox(
-      "Soundwave AI couldn't start",
+      `${APP_NAME} couldn't start`,
       `${err && err.message ? err.message : String(err)}\n\n` +
         "Try restarting the app. If it keeps happening, reinstalling the app usually fixes it.",
     );

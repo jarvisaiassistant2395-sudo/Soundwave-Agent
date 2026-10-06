@@ -6,6 +6,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { setConfig } from "./helpers/config.js";
 import { startFakeGoogle, sseText, type FakeGoogle } from "./helpers/fakeGoogle.js";
 
 // The tab is the desktop app's own window talking to its own PC — and this must
@@ -16,7 +17,7 @@ vi.hoisted(() => {
   process.env.DATA_DIR = process.env.DATA_DIR ?? "/tmp/soundwave-test-data";
 });
 
-const DATA_DIR = process.env.DATA_DIR;
+const DATA_DIR = process.env.DATA_DIR ?? "/tmp/soundwave-test-data";
 let app: ReturnType<typeof import("../src/app.js").createApp>;
 let fake: FakeGoogle;
 
@@ -58,7 +59,7 @@ beforeAll(async () => {
   fake = await startFakeGoogle();
   const { config } = await import("../src/config.js");
   const { useFakeGoogle } = await import("./helpers/fakeGoogle.js");
-  config.geminiApiKey = "test-key";
+  setConfig("geminiApiKey", "test-key"); // for the whole file
   useFakeGoogle(config, fake);
   const { createApp } = await import("../src/app.js");
   app = createApp();
@@ -106,15 +107,13 @@ describe("status", () => {
     expect(res.body.filesPerQuestion).toBeGreaterThan(0);
 
     // Without a key the tab still opens (files can be dropped in) but not as ready.
-    const { config } = await import("../src/config.js");
-    const key = config.geminiApiKey;
-    config.geminiApiKey = "";
+    const restore = setConfig("geminiApiKey", "");
     try {
       const bare = await local(request(app).get("/api/v1/gemini"));
       expect(bare.body.ready).toBe(false);
       expect(bare.body.hasKey).toBe(false);
     } finally {
-      config.geminiApiKey = key;
+      restore();
     }
   });
 
@@ -299,9 +298,7 @@ describe("asking about a file", () => {
   });
 
   it("says what is missing when no key is set", async () => {
-    const { config } = await import("../src/config.js");
-    const key = config.geminiApiKey;
-    config.geminiApiKey = "";
+    const restore = setConfig("geminiApiKey", "");
     try {
       const chat = await local(request(app).post("/api/v1/gemini/chats").send({}));
       const res = await local(request(app).post(`/api/v1/gemini/chats/${chat.body.chat.id}/ask`).send({ question: "Hello?" }));
@@ -309,7 +306,7 @@ describe("asking about a file", () => {
       expect(res.body.error.code).toBe("NO_KEY");
       expect(res.body.error.message).toMatch(/Settings → Brain/);
     } finally {
-      config.geminiApiKey = key;
+      restore();
     }
   });
 

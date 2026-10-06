@@ -261,6 +261,10 @@ jobs:
         working-directory: desktop
         run: node smoke.mjs
 
+      # ONLY the sold build. The owner's own edition ("Soundwave AI — Dev": no
+      # billing, everything unlocked) is built locally on purpose — it would be
+      # free to anyone who found it on a Release or an artifact. See
+      # docs/RELEASING.md → "Two builds".
       - name: Build installers (NSIS setup + portable)
         working-directory: desktop
         env:

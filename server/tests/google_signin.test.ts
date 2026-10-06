@@ -7,6 +7,7 @@ import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startFakeGoogle, type FakeGoogle } from "./helpers/fakeGoogle.js";
+import { setConfig } from "./helpers/config.js";
 
 vi.hoisted(() => {
   process.env.DESKTOP_APP = "1";
@@ -311,9 +312,7 @@ describe("development without a Google app", () => {
   });
 
   it("never opens a packaged build, even one with no Google app in it", async () => {
-    const { config } = await import("../src/config.js");
-    const wasProd = config.isProd;
-    config.isProd = true;
+    const restore = setConfig("isProd", true);
     try {
       await withoutGoogleApp(async () => {
         // No Google app at all, and still: a shipped build only opens with Google.
@@ -322,7 +321,7 @@ describe("development without a Google app", () => {
         expect(providers.body).toMatchObject({ providers: { google: false }, devSignIn: false });
       });
     } finally {
-      config.isProd = wasProd;
+      restore();
     }
   });
 });

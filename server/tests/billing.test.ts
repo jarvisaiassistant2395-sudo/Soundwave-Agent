@@ -7,6 +7,7 @@ import path from "node:path";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startFakeStripe, useFakeStripe, FAKE_PRICES, stripeShape, type FakeStripe } from "./helpers/fakeStripe.js";
+import { setConfig } from "./helpers/config.js";
 
 vi.hoisted(() => {
   process.env.DESKTOP_APP = "1";
@@ -71,17 +72,16 @@ describe("what the plans are", () => {
     const res = await local(request(app).get("/api/v1/billing/plans"));
     expect(res.status).toBe(200);
     expect(res.body.plans.map((p: { id: string }) => p.id)).toEqual(["FREE", "PRO", "ENTERPRISE"]);
-    expect(res.body.billing).toEqual({ configured: true, missingPrices: [] });
+    expect(res.body.billing).toEqual({ configured: true, personal: false, missingPrices: [] });
   });
 
   it("says so plainly when this deployment has no Stripe keys", async () => {
-    const key = config.stripeSecretKey;
-    config.stripeSecretKey = "";
+    const restore = setConfig("stripeSecretKey", "");
     try {
       const res = await local(request(app).get("/api/v1/billing/plans"));
       expect(res.body.billing.configured).toBe(false);
     } finally {
-      config.stripeSecretKey = key;
+      restore();
     }
   });
 });
@@ -158,8 +158,7 @@ describe("upgrading", () => {
 
   it("explains a plan this deployment has no price for", async () => {
     const { cookies } = await account();
-    const saved = config.stripePriceEnterpriseAnnual;
-    config.stripePriceEnterpriseAnnual = "";
+    const restore = setConfig("stripePriceEnterpriseAnnual", "");
     try {
       const res = await local(
         request(app).post("/api/v1/billing/create-checkout").set("Cookie", cookies).set("X-CSRF-Token", "test-csrf").send({ plan: "ENTERPRISE", billing: "annual" }),
@@ -168,7 +167,7 @@ describe("upgrading", () => {
       expect(res.body.error.code).toBe("PRICE_NOT_CONFIGURED");
       expect(res.body.error.message).toContain("STRIPE_PRICE_ENTERPRISE_ANNUAL");
     } finally {
-      config.stripePriceEnterpriseAnnual = saved;
+      restore();
     }
   });
 
@@ -191,8 +190,7 @@ describe("upgrading", () => {
 
   it("still lets a development build switch plans locally", async () => {
     const { user, cookies } = await account();
-    const key = config.stripeSecretKey;
-    config.stripeSecretKey = "";
+    const restore = setConfig("stripeSecretKey", "");
     try {
       const res = await local(request(app).post("/api/v1/billing/apply-plan").set("Cookie", cookies).set("X-CSRF-Token", "test-csrf").send({ plan: "PRO" }));
       expect(res.status).toBe(200);
@@ -200,7 +198,7 @@ describe("upgrading", () => {
       const stored = await store.getStore().then((s) => s.findUserById(user.id));
       expect(stored!.plan).toBe("PRO");
     } finally {
-      config.stripeSecretKey = key;
+      restore();
     }
   });
 });
@@ -424,6 +422,6 @@ describe("receipts", () => {
     fake.failNext = { status: 500, body: { error: { type: "api_error", message: "down" } } };
     const fallback = await local(request(app).get("/api/v1/billing/invoices").set("Cookie", cookies));
     expect(fallback.body.source).toBe("local");
-    expect(fallback.body.invoices.map((i: { id: string }) => i.stripeInvoiceId)).toEqual(["in_local"]);
+    expect(fallback.body.invoices.map((i: { id: string; stripeInvoiceId?: string }) => i.stripeInvoiceId)).toEqual(["in_local"]);
   });
 });

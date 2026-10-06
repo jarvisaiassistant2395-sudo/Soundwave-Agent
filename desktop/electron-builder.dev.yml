@@ -1,0 +1,35 @@
+# The owner's own build — "Soundwave AI — Dev": no billing in it, nothing gated.
+#
+# It extends the sellable configuration on purpose: same files, same
+# extraResources, same fuses, same targets. Only identity and output differ, so
+# the two builds cannot drift apart, and a fix to the sold build lands in the
+# owner's build by being here at all.
+#
+#   npm run dist:dev        NSIS setup + portable → release-dev/
+#   npm run dist:dir:dev    unpacked tree only     → release-dev/win-unpacked/
+#
+# The edition is baked into the packaged package.json (`soundwaveEdition`), which
+# is how the running app knows what it is — desktop/src/edition.cjs reads it and
+# hands SOUNDWAVE_EDITION to the bundled server. Different appId and productName
+# mean a different data folder, install folder and Start Menu entry, so the two
+# builds can be installed side by side without touching each other.
+#
+# Built locally, never published: this build is unlocked, and CI builds land on
+# a GitHub Release. See docs/RELEASING.md ("Your own build").
+extends: ./electron-builder.yml
+
+appId: ai.soundwave.desktop.dev
+productName: Soundwave AI - Dev
+
+extraMetadata:
+  soundwaveEdition: personal
+
+directories:
+  output: release-dev
+
+nsis:
+  artifactName: SoundwaveAIDev-Setup-${version}.exe
+  shortcutName: Soundwave AI — Dev
+
+portable:
+  artifactName: SoundwaveAIDev-Portable-${version}.exe

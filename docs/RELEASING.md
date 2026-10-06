@@ -323,6 +323,58 @@ npx electron-builder --win        # needs network: downloads Electron + NSIS too
 `node smoke.mjs` boots the assembled app exactly like the desktop shell does
 and asserts health, SPA serving, history fallback, and API behavior.
 
+## Two builds: the one you sell, and your own
+
+The same tree makes two editions, and the only difference is one value baked
+into the installer (`desktop/src/edition.cjs`):
+
+| | **Soundwave AI** (sold) | **Soundwave AI — Dev** (yours) |
+| --- | --- | --- |
+| Payments | Stripe Checkout + Billing Portal | none at all — no billing routes, no card, no invoice |
+| Plan | what the person paid for (Free / Pro / Enterprise) | everything unlocked (behaves as Enterprise) |
+| appId | `ai.soundwave.desktop` | `ai.soundwave.desktop.dev` |
+| Data folder | `%APPDATA%\Soundwave AI` | `%APPDATA%\Soundwave AI Dev` |
+| Installer | `SoundwaveAI-Setup-*.exe` | `SoundwaveAIDev-Setup-*.exe` |
+
+Because the appId, install folder, shortcuts and data folder all differ, the two
+install side by side on one PC and cannot see each other's data — including
+your real subscribers' data on yours, and your own projects on the build you
+sell.
+
+**Build your own (Windows, in the checkout you already build the sold app in):**
+
+```powershell
+cd server   ; npm ci ; npm run build
+cd ..\frontend ; npm ci ; npm run build
+cd ..\desktop ; npm ci ; node assemble.mjs ; node smoke.mjs
+npm run dist:dev        # NSIS setup + portable  →  desktop\release-dev\
+npm run dist:dir:dev    # unpacked tree only     →  desktop\release-dev\win-unpacked\
+```
+
+`dist:dev` extends `electron-builder.yml` (`electron-builder.dev.yml`), so both
+builds always ship the same files, binaries and fuses; only identity and output
+differ. The sale build, unchanged, is `npm run dist:win` (and CI).
+
+To exercise the personal behaviour without packaging:
+
+```powershell
+$env:SOUNDWAVE_EDITION="personal" ; node smoke.mjs
+```
+
+**This build is deliberately not built by CI.** It is unlocked, and CI installers
+end up on the GitHub Release — anyone could download the product for free. Keep
+it local (or in a private fork). If you ever want it from CI anyway, build it
+into an artifact on a *private* repository and think about who can see it first.
+
+The lock is one environment value, all the way down: the shell reads the edition
+and passes `SOUNDWAVE_EDITION` to the bundled API
+(`desktop/src/server-env.cjs`), where `server/src/lib/edition.ts` turns it into
+behaviour — billing routes refuse with `NO_BILLING`, and the plan in force is
+Enterprise whatever the stored record says (the record itself is never
+rewritten). The UI needs no separate build: Settings → Billing asks
+`GET /billing/status`, sees `personal: true`, and shows "your own build" instead
+of upgrade buttons.
+
 ## SmartScreen & code signing (read this before selling)
 
 What this repo already guarantees (no extra action needed):

@@ -9,6 +9,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const net = require("node:net");
 const crypto = require("node:crypto");
+const { currentEdition } = require("./edition.cjs");
 
 /** Ask the OS for a free loopback port. */
 function getFreePort() {
@@ -144,6 +145,7 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
   }
 
   fs.mkdirSync(userDataDir, { recursive: true });
+  const edition = currentEdition();
   const secrets = loadSecrets(path.join(userDataDir, "secrets.json"));
   const port = await getFreePort();
   const appUrl = `http://127.0.0.1:${port}`;
@@ -169,7 +171,14 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
     // The server runs on the person's own PC: Settings → Brain can save their
     // Gemini API key (data\brain.json) and the agent may open websites/apps.
     DESKTOP_APP: "1",
+    // Which build this is (src/edition.cjs → server lib/edition.ts): the
+    // personal build has no billing routes at all and runs everything
+    // unlocked, whatever the stored plan says.
+    SOUNDWAVE_EDITION: edition.id,
   };
+  // …and its own records should say the truth too. An explicit value from the
+  // environment (a developer, a test) still wins.
+  if (!edition.billing && !process.env.DEFAULT_SIGNUP_PLAN) env.DEFAULT_SIGNUP_PLAN = "ENTERPRISE";
 
   // Only point at bundled binaries that actually exist; otherwise let the
   // server's own resolver fall back to vendor/PATH with a clear boot warning.

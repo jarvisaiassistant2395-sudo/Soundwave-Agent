@@ -124,6 +124,11 @@ try {
 
   await import(pathToFileURL(path.join(appRoot, "server", "dist", "index.js")).href);
 
+  // Which build this is. The sold build sells plans and the owner's own build
+  // has no billing in it; whichever it is, it must say so plainly — and the
+  // paying routes must not exist in the personal one.
+  const edition = process.env.SOUNDWAVE_EDITION === "personal" ? "personal" : "retail";
+
   // Wait for health (max 30s).
   let healthy = false;
   for (let i = 0; i < 100 && !healthy; i++) {
@@ -149,6 +154,25 @@ try {
     api404.status === 404 && /json/.test(api404.headers["content-type"] || ""),
     "GET /api/v1/definitely-not-a-route → 404 JSON (not swallowed by SPA)",
   );
+
+  // Which build this is, as the API reports it. Retail sells plans and its
+  // billing routes want a signed-in account; the owner's build has no billing
+  // routes at all, so even an unauthenticated call is told there is nothing to
+  // pay for. Both are checked here, so packaging the wrong edition is caught by
+  // the smoke test rather than by the person using it.
+  const plans = JSON.parse((await get(`${appUrl}/api/v1/billing/plans`)).body);
+  assert(plans.billing.personal === (edition === "personal"), `billing says which build this is (${edition})`);
+  if (edition === "personal") {
+    assert(plans.billing.configured === false, "the owner's build has nothing to configure");
+    const invoices = await get(`${appUrl}/api/v1/billing/invoices`);
+    assert(
+      invoices.status === 404 && JSON.parse(invoices.body).error?.code === "NO_BILLING",
+      "the owner's build refuses the billing routes (NO_BILLING)",
+    );
+  } else {
+    const invoices = await get(`${appUrl}/api/v1/billing/invoices`);
+    assert(invoices.status === 401, "the sold build's billing routes ask for a signed-in account");
+  }
 
   const voices = await get(`${appUrl}/api/v1/voices`);
   assert(voices.status === 200, "GET /api/v1/voices → 200");

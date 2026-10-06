@@ -745,6 +745,12 @@ State-changing requests require the `X-CSRF-Token` header matching the
 | API access | — | — | ✓ |
 | Exports / hour | 2 | 20 | 100 |
 
+The Windows app is built in two editions from one tree (see
+`docs/RELEASING.md`): the sold **Soundwave AI**, and **Soundwave AI — Dev**, the
+owner's own build — no payments in it, everything unlocked, its own appId and
+data folder so both can be installed side by side. The difference is one value
+(`SOUNDWAVE_EDITION`), which the desktop shell passes to the API.
+
 ---
 
 ## Production deployment

@@ -232,6 +232,8 @@ type SubscriptionSummary = {
 type BillingStatus = {
   plan: Plan;
   configured: boolean;
+  /** The owner's own build: no payments anywhere (see the desktop editions). */
+  personal?: boolean;
   customer: boolean;
   subscription: SubscriptionSummary | null;
   problem?: string;
@@ -270,15 +272,20 @@ function BillingTab() {
   const limit = quota?.limit ?? planDef.characterLimit;
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
   const configured = status?.configured ?? true;
+  const personal = status?.personal ?? false;
   const sub = status?.subscription ?? null;
 
   const loadBilling = async () => {
     try {
-      const [s, i] = await Promise.all([
-        http.get<BillingStatus>("/billing/status"),
-        http.get<{ invoices: Invoice[] }>("/billing/invoices").catch(() => ({ invoices: [] as Invoice[] })),
-      ]);
+      const s = await http.get<BillingStatus>("/billing/status");
       setStatus(s);
+      if (s.personal) {
+        // Nothing was ever bought or billed in this build, so there is no
+        // history to ask for (and the route would refuse).
+        setInvoices([]);
+        return s;
+      }
+      const i = await http.get<{ invoices: Invoice[] }>("/billing/invoices").catch(() => ({ invoices: [] as Invoice[] }));
       setInvoices(i.invoices);
       return s;
     } catch (e) {
@@ -424,7 +431,11 @@ function BillingTab() {
           <div>
             <div className="flex items-center gap-2">
               <p className="text-lg font-bold text-white">{planDef.name}</p>
-              <Badge tone="gradient">{planDef.monthlyPrice === 0 ? "Free" : `${money(planDef.monthlyPrice * 100, "usd")}/mo`}</Badge>
+              {personal ? (
+                <Badge tone="gradient">Everything unlocked</Badge>
+              ) : (
+                <Badge tone="gradient">{planDef.monthlyPrice === 0 ? "Free" : `${money(planDef.monthlyPrice * 100, "usd")}/mo`}</Badge>
+              )}
               {sub?.cancelAtPeriodEnd && <Badge tone="gray">Ends {day(sub.currentPeriodEnd)}</Badge>}
             </div>
             <p className="mt-1 text-sm text-gray-400">
@@ -440,17 +451,18 @@ function BillingTab() {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {configured && nextPlan && (
+            {personal && <span className="text-xs text-gray-500">This build has no payments in it — nothing here to buy.</span>}
+            {!personal && configured && nextPlan && (
               <Button size="sm" onClick={() => void upgrade(nextPlan)} loading={busy === "checkout"} disabled={Boolean(waiting)}>
                 Upgrade to {PLANS[nextPlan].name}
               </Button>
             )}
-            {configured && plan !== "FREE" && (
+            {!personal && configured && plan !== "FREE" && (
               <Button size="sm" variant="outline" onClick={() => void manage()} loading={busy === "portal"} disabled={Boolean(waiting)}>
                 Manage subscription
               </Button>
             )}
-            {!configured && plan !== "ENTERPRISE" && (
+            {!personal && !configured && plan !== "ENTERPRISE" && (
               <Button size="sm" variant="outline" onClick={() => void applyPlan(plan === "FREE" ? "PRO" : "ENTERPRISE")} loading={busy === "dev"}>
                 Switch to {plan === "FREE" ? "Pro" : "Enterprise"} (local)
               </Button>
@@ -468,7 +480,16 @@ function BillingTab() {
         </div>
       </Card>
 
-      {configured && (
+      {personal && (
+        <Card title="Your own build" icon={<Sparkles className="h-4 w-4" />}>
+          <p className="text-sm text-gray-300">
+            This is the build with no payments in it, installed for your own use. Everything is open — {formatNumber(PLANS.ENTERPRISE.characterLimit)} characters a
+            month, {PLANS.ENTERPRISE.maxResolution} exports, no watermark, cloud projects and API keys — and no card, invoice or subscription exists anywhere in it.
+          </p>
+        </Card>
+      )}
+
+      {!personal && configured && (
         <Card title="Upgrade" icon={<Sparkles className="h-4 w-4" />}>
           <div className="flex items-center gap-2">
             {(["monthly", "annual"] as const).map((c) => (
@@ -522,7 +543,7 @@ function BillingTab() {
         </Card>
       )}
 
-      {waiting && (
+      {!personal && waiting && (
         <Card title="Finish in your browser" icon={<ExternalLink className="h-4 w-4" />}>
           <p className="text-sm text-gray-300">Stripe opened in your browser — pay there, then come back. This page notices on its own.</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -539,6 +560,7 @@ function BillingTab() {
         </Card>
       )}
 
+      {!personal && (
       <Card title="Payment method" icon={<CreditCard className="h-4 w-4" />}>
         {!configured ? (
           <p className="text-sm text-gray-400">
@@ -554,7 +576,9 @@ function BillingTab() {
         )}
         {status?.problem && <p className="mt-2 text-xs text-amber-300">Stripe couldn&apos;t be reached just now ({status.problem}) — showing what this computer already knows.</p>}
       </Card>
+      )}
 
+      {!personal && (
       <Card title="Billing history" icon={<CreditCard className="h-4 w-4" />}>
         {invoices === null ? (
           <p className="text-sm text-gray-500">Loading…</p>
@@ -582,8 +606,9 @@ function BillingTab() {
           </ul>
         )}
       </Card>
+      )}
 
-      {configured && plan !== "FREE" && (
+      {!personal && configured && plan !== "FREE" && (
         <Card title="Cancel subscription" icon={<Trash2 className="h-4 w-4" />}>
           <p className="text-sm text-gray-400">
             Cancel anytime in the billing page; your access continues until the end of the period you paid for. Nothing is deleted.

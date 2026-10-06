@@ -15,6 +15,7 @@ import {
 import { getStore } from "../lib/store.js";
 import type { StoredUser } from "../lib/store.js";
 import { PLANS, type Plan } from "../lib/plans.js";
+import { effectivePlan } from "../lib/edition.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -113,7 +114,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       clearAuthCookies(res);
       throw new ApiError(401, "UNAUTHORIZED", "Please sign in to continue.");
     }
-    req.user = user;
+    req.user = withEffectivePlan(user);
     next();
   } catch (e) {
     next(e);
@@ -123,19 +124,25 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 export const optionalAuth: RequestHandler = async (req, _res, next) => {
   try {
     const user = await resolveUser(req, _res);
-    if (user) req.user = user;
+    if (user) req.user = withEffectivePlan(user);
     next();
   } catch {
     next();
   }
 };
 
+/** The account as the rest of the request should see it (lib/edition.ts). */
+function withEffectivePlan(user: StoredUser): StoredUser {
+  const plan = effectivePlan(user.plan);
+  return plan === user.plan ? user : { ...user, plan };
+}
+
 export function requirePlan(min: Plan): RequestHandler {
   const order: Plan[] = ["FREE", "PRO", "ENTERPRISE"];
   return (req, _res, next) => {
     const user = req.user;
     if (!user) return next(new ApiError(401, "UNAUTHORIZED", "Please sign in."));
-    if (order.indexOf(user.plan) < order.indexOf(min)) {
+    if (order.indexOf(effectivePlan(user.plan)) < order.indexOf(min)) {
       return next(new ApiError(403, "PLAN_REQUIRED", `This feature requires the ${PLANS[min].name} plan.`));
     }
     next();

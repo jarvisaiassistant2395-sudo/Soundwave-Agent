@@ -14,6 +14,7 @@ vendor/whisper/
 # desktop packaging (assembled tree + installer output; binaries fetched at build time)
 desktop/app/
 desktop/release/
+desktop/release-dev/
 desktop/bin/*
 !desktop/bin/.gitkeep
 # voice-input test assets (CI downloads them) + end-to-end screenshots

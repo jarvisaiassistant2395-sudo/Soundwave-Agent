@@ -11,6 +11,7 @@ import { ApiError } from "../middleware/error.js";
 import { usageLimiter, uploadLimiter } from "../lib/security.js";
 import { getStore } from "../lib/store.js";
 import { PLANS, type Plan } from "../lib/plans.js";
+import { effectivePlan } from "../lib/edition.js";
 import { config } from "../config.js";
 import { getVoice } from "../lib/voices.js";
 import { synthesizeEdgeTTS } from "../lib/edgeTts.js";
@@ -36,7 +37,8 @@ export async function getQuotaFor(userId: string) {
   const store = await getStore();
   const user = await store.findUserById(userId);
   if (!user) throw new ApiError(401, "UNAUTHORIZED", "User not found.");
-  const limit = PLANS[user.plan].characterLimit;
+  const plan = effectivePlan(user.plan);
+  const limit = PLANS[plan].characterLimit;
   const resetDate = new Date(user.characterResetDate);
   const now = new Date();
   let used = user.charactersUsedThisMonth;
@@ -46,7 +48,7 @@ export async function getQuotaFor(userId: string) {
     used = 0;
     await store.updateUser(userId, { charactersUsedThisMonth: 0, characterResetDate: next.toISOString() });
   }
-  return { used, limit, resetDate: resetDate.toISOString(), plan: user.plan, allowed: used < limit };
+  return { used, limit, resetDate: resetDate.toISOString(), plan, allowed: used < limit };
 }
 
 router.get("/quota", requireAuth, async (req, res, next) => {
@@ -153,7 +155,7 @@ const PLAN_RANK: Record<Plan, number> = { FREE: 0, PRO: 1, ENTERPRISE: 2 };
 /** Plan gate for voice cloning (config: VOICECLONE_MIN_PLAN, default FREE). */
 function assertClonePlan(user: { plan: Plan }): void {
   const min = (config.voiceCloneMinPlan in PLAN_RANK ? config.voiceCloneMinPlan : "FREE") as Plan;
-  if (PLAN_RANK[user.plan] < PLAN_RANK[min]) {
+  if (PLAN_RANK[effectivePlan(user.plan)] < PLAN_RANK[min]) {
     throw new ApiError(403, "PLAN_REQUIRED", `Voice cloning requires the ${min} plan or higher. Upgrade to use cloned voices.`);
   }
 }

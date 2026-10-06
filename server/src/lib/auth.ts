@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import type { Response } from "express";
 import { config } from "../config.js";
+import { effectivePlan } from "./edition.js";
 import type { DataStore, StoredUser } from "./store.js";
 
 // Sign-in is Google's job (lib/googleSignIn.ts). What lives here is the session
@@ -132,7 +133,9 @@ export function publicUser(u: StoredUser) {
     id: u.id,
     email: u.email,
     name: u.name,
-    plan: u.plan,
+    // The plan in force, not necessarily the stored one (see lib/edition.ts):
+    // the owner's own build runs as Enterprise and the UI must agree.
+    plan: effectivePlan(u.plan),
     avatarUrl: u.avatarUrl,
   };
 }

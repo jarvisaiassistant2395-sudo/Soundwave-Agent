@@ -48,8 +48,20 @@ import {
   type StripeSubscription,
 } from "../lib/stripe.js";
 import { alreadyHandled, rememberHandled } from "../lib/billingEvents.js";
+import { billingEnabled, effectivePlan, personalEdition } from "../lib/edition.js";
 
 const router = Router();
+
+/**
+ * The owner's own build has no payment in it (lib/edition.ts). Everything that
+ * would take money or ask Stripe about it refuses here, in one place, so no
+ * half-working path can exist: /plans and /status answer (the UI needs them to
+ * know what this build is), the rest say plainly that there is nothing to pay.
+ */
+const requireBilling: RequestHandler = (_req, _res, next) => {
+  if (!billingEnabled) return next(new ApiError(404, "NO_BILLING", "This build has no billing — there is nothing to pay for."));
+  next();
+};
 
 /** A refusal from Stripe, said in the app's own error shape. */
 function stripeProblem(err: unknown): ApiError | null {
@@ -71,8 +83,13 @@ function planPayload() {
       apiAccess: p.apiAccess,
     })),
     // The UI shows "billing isn't set up on this deployment" instead of a
-    // button that leads nowhere.
-    billing: { configured: stripeConfigured(), missingPrices: missingPrices() },
+    // button that leads nowhere — and in the owner's own build it says there is
+    // nothing to pay at all.
+    billing: {
+      configured: billingEnabled && stripeConfigured(),
+      personal: personalEdition,
+      missingPrices: billingEnabled ? missingPrices() : [],
+    },
   };
 }
 
@@ -130,6 +147,10 @@ async function reconcileUser(user: StoredUser): Promise<{ plan: Plan; changed: b
 router.get("/status", requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
+    if (personalEdition) {
+      // Nothing to sell and nothing to check: this is the owner's own PC.
+      return res.json({ plan: effectivePlan(user.plan), configured: false, personal: true, customer: false, subscription: null });
+    }
     if (!stripeConfigured()) {
       return res.json({ plan: user.plan, configured: false, subscription: null, customer: Boolean(user.stripeCustomerId) });
     }
@@ -165,7 +186,7 @@ router.get("/status", requireAuth, async (req, res, next) => {
   }
 });
 
-router.post("/reconcile", requireAuth, async (req, res, next) => {
+router.post("/reconcile", requireBilling, requireAuth, async (req, res, next) => {
   try {
     if (!stripeConfigured()) throw new ApiError(503, "BILLING_NOT_CONFIGURED", "Payments are not set up on this deployment yet.");
     const { plan, changed, view } = await reconcileUser(req.user!);
@@ -198,7 +219,7 @@ function appOriginFor(req: Request): string {
   return config.appUrl.replace(/\/$/, "");
 }
 
-router.post("/create-checkout", requireAuth, validate({ body: checkoutSchema }), async (req, res, next) => {
+router.post("/create-checkout", requireBilling, requireAuth, validate({ body: checkoutSchema }), async (req, res, next) => {
   try {
     if (!stripeConfigured()) throw new ApiError(503, "BILLING_NOT_CONFIGURED", "Payments are not set up on this deployment yet — the plan can be switched locally instead.");
     const { plan, billing } = req.body as z.infer<typeof checkoutSchema>;
@@ -224,7 +245,7 @@ router.post("/create-checkout", requireAuth, validate({ body: checkoutSchema }),
   }
 });
 
-router.post("/create-portal", requireAuth, async (req, res, next) => {
+router.post("/create-portal", requireBilling, requireAuth, async (req, res, next) => {
   try {
     if (!stripeConfigured()) throw new ApiError(503, "BILLING_NOT_CONFIGURED", "Billing isn't set up on this deployment yet.");
     const user = req.user!;
@@ -239,7 +260,7 @@ router.post("/create-portal", requireAuth, async (req, res, next) => {
   }
 });
 
-router.get("/invoices", requireAuth, async (req, res, next) => {
+router.get("/invoices", requireBilling, requireAuth, async (req, res, next) => {
   try {
     const user = req.user!;
     // Live receipts from Stripe when it's set up; otherwise whatever the local
@@ -290,7 +311,7 @@ router.get("/invoices", requireAuth, async (req, res, next) => {
  * only exists where billing isn't set up: a deployment with Stripe keys must
  * never let a plan be granted for free.
  */
-router.post("/apply-plan", requireAuth, validate({ body: checkoutSchema }), async (req, res, next) => {
+router.post("/apply-plan", requireBilling, requireAuth, validate({ body: checkoutSchema }), async (req, res, next) => {
   try {
     if (stripeConfigured()) {
       throw new ApiError(409, "BILLING_CONFIGURED", "This deployment takes payments through Stripe — upgrade from the Billing tab instead.");
@@ -449,6 +470,6 @@ export const billingWebhook: RequestHandler = async (req, res) => {
   }
 };
 
-router.post("/webhook", billingWebhook);
+router.post("/webhook", requireBilling, billingWebhook);
 
 export default router;

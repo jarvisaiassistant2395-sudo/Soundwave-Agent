@@ -69,7 +69,7 @@ describe("blocks", () => {
   });
 
   it("reads quotes and horizontal rules", () => {
-    const quote = parseMarkdown("> Worth remembering.\n> Second line.")[0];
+    const quote = parseMarkdown("> Worth remembering.\n> Second line.")[0]!;
     expect(quote.type).toBe("quote");
     expect((quote as { blocks: Array<{ type: string }> }).blocks[0]).toMatchObject({ type: "paragraph" });
     expect(parseMarkdown("above\n\n---\n\nbelow").map((b) => b.type)).toEqual(["paragraph", "hr", "paragraph"]);
@@ -164,7 +164,7 @@ describe("tolerance while streaming", () => {
     expect(blocks[0]).toMatchObject({ type: "table" });
     // The empty cell is padded in the structure (so the renderer keeps the
     // columns straight); copied text is trimmed, as copied text should be.
-    expect((blocks[0] as { rows: Inline[][] }).rows[0]).toHaveLength(2);
+    expect((blocks[0] as unknown as { rows: Inline[][] }).rows[0]).toHaveLength(2);
     expect(markdownToPlainText(blocks)).toBe("a\tb\n1");
   });
 

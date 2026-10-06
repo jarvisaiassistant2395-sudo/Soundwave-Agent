@@ -105,7 +105,7 @@ describe("the built-in plan (no model in the loop)", () => {
     expect(plan.beats[0]!.sfx).toBe("impact");
     const cta = plan.beats.at(-1)!;
     expect(cta.kind).toBe("cta");
-    expect(cta.at + cta.hold).toBeLessThanOrEqual(DURATION + 0.01);
+    expect(cta.at + (cta.hold ?? 0)).toBeLessThanOrEqual(DURATION + 0.01);
     expect(cta.sfx).toBe("ding");
   });
 

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import fs, { existsSync } from "node:fs";
 import path from "node:path";
+import { edition, personalEdition } from "./lib/edition.js";
 
 const env = process.env;
 
@@ -16,6 +17,10 @@ function int(key: string, fallback: number): number {
 export const config = {
   env: env.NODE_ENV ?? "development",
   isProd: (env.NODE_ENV ?? "development") === "production",
+  // Which build this is (lib/edition.ts): "retail" sells plans, "personal" is
+  // the owner's own build — billing off, nothing gated.
+  edition,
+  personalEdition,
   port: int("PORT", 4000),
   // Interface to bind. Desktop/packaged builds set 127.0.0.1 so the local API
   // is never reachable from the LAN.
@@ -185,8 +190,9 @@ export function validateConfig(): void {
   }
 
   // Non-FREE default plans are for local testing only — yell very loudly if
-  // this ever reaches a production boot.
-  if (config.isProd && config.defaultSignupPlan !== "FREE") {
+  // this ever reaches a production boot. The owner's own build is the one
+  // exception: it has no billing, so nothing is being given away.
+  if (config.isProd && !personalEdition && config.defaultSignupPlan !== "FREE") {
     console.error(
       "[soundwave] ⚠⚠⚠  DEFAULT_SIGNUP_PLAN=" + config.defaultSignupPlan +
       " — new accounts get a paid plan for free. This should NEVER be set in production; remove it before publishing.",

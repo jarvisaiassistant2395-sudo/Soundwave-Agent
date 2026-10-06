@@ -12,9 +12,11 @@
   "scripts": {
     "assemble": "node assemble.mjs",
     "smoke": "node smoke.mjs",
-    "test": "node --test test/desktop-settings.test.cjs test/check-dlls.test.mjs test/youtube-client.test.cjs test/protect.test.mjs test/wake.test.cjs test/kokoro-manager.test.cjs",
+    "test": "node --test test/desktop-settings.test.cjs test/check-dlls.test.mjs test/youtube-client.test.cjs test/protect.test.mjs test/wake.test.cjs test/kokoro-manager.test.cjs test/edition.test.cjs",
     "dist:win": "electron-builder --win",
-    "dist:dir": "electron-builder --win dir"
+    "dist:dev": "electron-builder --config electron-builder.dev.yml --win",
+    "dist:dir": "electron-builder --win dir",
+    "dist:dir:dev": "electron-builder --config electron-builder.dev.yml --win dir"
   },
   "devDependencies": {
     "electron": "44.4.5",
