@@ -223,15 +223,53 @@ jobs:
 
       - name: Test the desktop shell's helpers (settings, voice bar placement, DLL gate)
         working-directory: desktop
-        run: npm test
+        shell: pwsh
+        run: |
+          # The TAP goes to a file as well as the log: the log lives on a host
+          # the reader may not be able to open, and the file is what the step
+          # below turns into annotations.
+          $ErrorActionPreference = "Continue"
+          npm test 2>&1 | Tee-Object -FilePath desktop-tests.tap
+          exit $LASTEXITCODE
 
-      # If that step fails, say WHICH test failed. node --test prints TAP, not
-      # GitHub annotations, so a red step otherwise only reports "exit code 1".
+      # If that step fails, say WHICH test failed and why. node --test prints
+      # TAP, not GitHub annotations, and a red step otherwise only reports
+      # "exit code 1". The nested "not ok" line is the name of the test that
+      # actually failed (the unindented one is only the file it lives in), and
+      # the "error:" block under it is the reason.
       - name: Name the failing desktop test (if any)
         if: failure()
         working-directory: desktop
-        shell: bash
-        run: npm test 2>&1 | grep -E "^not ok" | sed 's/^/::error::/' || true
+        shell: pwsh
+        run: |
+          if (-not (Test-Path desktop-tests.tap)) {
+            Write-Host "::error title=Desktop tests::the tests failed before writing a log"
+            exit 0
+          }
+          $lines = @(Get-Content desktop-tests.tap)
+          $out = New-Object System.Collections.Generic.List[string]
+          $inError = $false
+          foreach ($line in $lines) {
+            if ($line -match '^\s*not ok\s+\d+\s+-\s+(.+?)\s*$') {
+              $out.Add("FAILED: $($Matches[1])")
+              $inError = $false
+              continue
+            }
+            if ($line -match '^\s*error:\s*(.*)$') {
+              $inError = $true
+              if ($Matches[1]) { $out.Add("  $($Matches[1])") }
+              continue
+            }
+            if ($inError) {
+              # The body of a TAP YAML block: more indented than the key itself.
+              if ($line -match '^\s{8,}\S' -and $out.Count -lt 12) { $out.Add("  $($line.Trim())") } else { $inError = $false }
+            }
+          }
+          if ($out.Count -eq 0) {
+            Write-Host "::error title=Desktop tests::npm test failed without a TAP 'not ok' line"
+            exit 0
+          }
+          $out | Select-Object -First 16 | ForEach-Object { Write-Host "::error title=Failed desktop test::$_" }
 
       # Optional, one-time setup for the shop: create ONE Google OAuth client
       # (type "Desktop app") for Soundwave itself and save it as the repository

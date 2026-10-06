@@ -165,6 +165,19 @@ afterEach(() => {
 });
 
 describe("email scheduled for a later moment", () => {
+  // send_email and send_reply are the only paths here that read the clock
+  // themselves (the scheduler takes the moment it is called with). Pin Date to
+  // the morning these tests are written around, so "at 5 pm" means today's 5 pm
+  // at whatever hour of the day the suite happens to run — before 5 pm it is
+  // "at 17:00", after it is "tomorrow at 17:00", and the test then fails for
+  // being right. Only Date is faked: the scheduler's own timers stay real.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: MORNING });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("is written when asked and does NOT go out then", async () => {
     await connectGmail();
     const context = toolContext();
