@@ -223,7 +223,9 @@ describe("Chat answered by Gemini", () => {
     expect(body.generationConfig).toEqual({ maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: "LOW" } });
     expect(body.tools).toHaveLength(1);
     const names = body.tools[0].functionDeclarations.map((d: { name: string }) => d.name);
-    expect(names).toEqual(expect.arrayContaining(["make_youtube_short", "get_short_progress", "list_my_videos", "show_video", "get_pc_status", "open_website"]));
+    expect(names).toEqual(
+      expect.arrayContaining(["make_youtube_short", "get_short_progress", "set_caption_style", "list_my_videos", "show_video", "get_pc_status", "open_website"]),
+    );
     // open_app needs the Windows Start menu.
     expect(names.includes("open_app")).toBe(process.platform === "win32");
     // Gemini 3.8: no sampling parameters, no search unless turned on.
@@ -444,6 +446,7 @@ describe("Chat answered by Gemini", () => {
         "list_scheduled_posts",
         "cancel_scheduled_post",
         "my_short_performance",
+        "set_caption_style",
         "list_my_videos",
         "show_video",
         "soundwave_guide",

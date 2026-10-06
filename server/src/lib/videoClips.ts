@@ -39,7 +39,9 @@ import { emitJob } from "../routes/export.js";
 import { isReadableMediaFile } from "./mediaFile.js";
 import { fetchMetadata, fetchViewSignals, parseYouTubeUrl } from "./ytdlp.js";
 import { importYouTubeLink } from "./youtubeImport.js";
-import { probeMedia, resolveFfmpegPath, runFfmpegExport, type ExportSettings, type SubtitleStyleInput } from "./ffmpeg.js";
+import { probeMedia, resolveFfmpegPath, runFfmpegExport, type ExportSettings } from "./ffmpeg.js";
+// How a clip's captions look: the person's own style, or the house default.
+import { captionStyleFor } from "./brand.js";
 import { STT_SAMPLE_RATE, SttError, encodeWav, resolveWhisper, transcribe, whisperBudgetMs } from "./stt.js";
 import {
   heatWindows,
@@ -106,29 +108,6 @@ import { activeBrain, FALLBACK_MODEL } from "./brain/settings.js";
 import { GeminiError, generateContent, isGemini3, visibleText } from "./brain/gemini.js";
 import { getActiveShortJobs } from "../routes/agentShort.js";
 
-/** The caption look for clipped shorts: white, bold, stroked, middle of the frame. */
-const CLIP_SUBTITLE_STYLE: SubtitleStyleInput = {
-  // No fontFamily on purpose: buildAss draws captions in the font Soundwave
-  // ships (lib/captionFont.ts) — asking for "DejaVu Sans" by name meant a font
-  // this machine may not have (it does not, on Windows).
-  fontWeight: 800,
-  fontSize: 56,
-  color: "#FFFFFF",
-  bgColor: "#000000",
-  bgOpacity: 0,
-  bgPadding: 14,
-  bgRadius: 10,
-  vAlign: "middle",
-  hAlign: "center",
-  strokeEnabled: true,
-  strokeColor: "#000000",
-  strokeWidth: 4,
-  shadowEnabled: true,
-  shadowColor: "#000000",
-  shadowBlur: 4,
-  shadowX: 2,
-  shadowY: 2,
-};
 
 /** Never read more than this much of a video's sound, however long it runs. */
 const MAX_PROFILE_HOURS = 4;
@@ -1035,7 +1014,7 @@ async function runClips(run: QueuedClips): Promise<void> {
           videoPath: videoOnly,
           audioPath: audioOnly,
           subtitles: cues,
-          subtitleStyle: CLIP_SUBTITLE_STYLE,
+          subtitleStyle: captionStyleFor(),
           settings,
           outputPath: outPath,
           onProgress: (pct) => void job.report(Math.min(96, Math.max(64, Math.round(64 + pct * 0.32))), `Rendering the clip… ${Math.round(pct)}%`),

@@ -13,6 +13,7 @@ import { chatTime, newMessageId, type ChatMessage } from "../chatMessages.js";
 import { connectedPhone, pairedPhones } from "../companion/service.js";
 import { ALARMS_MIN_APP_VERSION, alarmLabel, alarmTarget, briefingAfterSeconds, PHONE_ALARM_DECLARATION, supportsAlarms } from "./core/alarm.js";
 import { getActiveShortJobs, startShortJob } from "../../routes/agentShort.js";
+import { CAPTION_STYLES, DEFAULT_BRAND, captionStyleFor, loadBrand, saveBrand } from "../brand.js";
 import { DEFAULT_CLIPS, MAX_CLIPS } from "./core/clips.js";
 import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, HOOK_PATTERNS, NICHES, nicheCatalog } from "./core/viral.js";
 import { PERSONA_IDS, isPersonaId, personaAddress, personaById } from "./core/persona.js";
@@ -355,6 +356,55 @@ export const AGENT_TOOLS: AgentTool[] = [
         summary: performanceSummary(),
         clips: posted.slice(0, 10),
         note: posted.length ? "Numbers come back every few hours while the app runs." : "Nothing has been posted from here yet.",
+      };
+    },
+  },
+
+  {
+    declaration: {
+      name: "set_caption_style",
+      description:
+        "Change how this person's clip captions look — the style, and their own colours. Call it when someone asks for different captions (\"make them bigger\", \"use my brand colours\", \"put them in a box\"). It applies to every clip rendered from then on; clips already made are not re-drawn. With no arguments, call it anyway to report what their look is now.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          style: { type: "STRING", description: 'The style: "house" (default), "bold", "boxed", "karaoke" or "minimal". Optional.' },
+          textColor: { type: "STRING", description: 'The words\' colour as a hex code, e.g. "#FFFFFF". Optional.' },
+          accentColor: { type: "STRING", description: 'The accent colour, used for the outline by the karaoke style, e.g. "#22D3EE". Optional.' },
+          brandName: { type: "STRING", description: "What to call this look, e.g. the channel's name. Optional." },
+        },
+        required: [],
+      },
+    },
+    sideEffect: true,
+    async run(args) {
+      const before = loadBrand();
+      const wanted = str(args.style, 20).toLowerCase();
+      if (wanted && !CAPTION_STYLES.some((s) => s.id === wanted)) {
+        return { ok: false, reason: `"${wanted}" isn't one of the styles. Pick from: ${CAPTION_STYLES.map((s) => s.id).join(", ")}.` };
+      }
+      const brand = saveBrand({
+        ...(wanted ? { captionStyle: wanted as (typeof CAPTION_STYLES)[number]["id"] } : {}),
+        ...(args.textColor ? { captionColor: str(args.textColor, 9) } : {}),
+        ...(args.accentColor ? { accentColor: str(args.accentColor, 9) } : {}),
+        ...(args.brandName ? { name: str(args.brandName, 80) } : {}),
+      });
+      const style = captionStyleFor(brand);
+      const changed = wanted || args.textColor || args.accentColor || args.brandName;
+      return {
+        ok: true,
+        changed: Boolean(changed),
+        style: brand.captionStyle,
+        label: CAPTION_STYLES.find((s) => s.id === brand.captionStyle)?.label ?? "Soundwave",
+        textColor: brand.captionColor,
+        accentColor: brand.accentColor,
+        // The person hears "bigger" or "boxed" — hand the model the same words.
+        looksLike: CAPTION_STYLES.find((s) => s.id === brand.captionStyle)?.description ?? "",
+        engine: { fontSize: style.fontSize, bold: style.fontWeight, boxed: (style.bgOpacity ?? 0) > 0, outlined: Boolean(style.strokeEnabled) },
+        previous: changed ? { style: before.captionStyle, textColor: before.captionColor, accentColor: before.accentColor } : null,
+        note: changed
+          ? "Every clip made from now on uses this. Clips already rendered keep the look they were made with."
+          : "This is the look clips are being made with at the moment.",
       };
     },
   },

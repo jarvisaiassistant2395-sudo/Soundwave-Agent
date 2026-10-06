@@ -50,6 +50,7 @@ import {
 } from "../lib/voiceInput";
 import { getDesktop, hotkeyLabel, openInBrowser, type DesktopSettings, type DesktopState } from "../lib/desktop";
 import { notifyUser } from "../lib/notify";
+import { BrandTab } from "./settings/BrandTab";
 import { PhoneTab } from "./settings/PhoneTab";
 import { BrainTab } from "./settings/BrainTab";
 import { MorningTab } from "./settings/MorningTab";
@@ -58,6 +59,7 @@ const TABS = [
   { id: "profile", label: "Profile", icon: <User className="h-4 w-4" /> },
   { id: "brain", label: "Brain", icon: <Brain className="h-4 w-4" /> },
   { id: "billing", label: "Billing", icon: <CreditCard className="h-4 w-4" /> },
+  { id: "brand", label: "Brand", icon: <Palette className="h-4 w-4" /> },
   { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="h-4 w-4" /> },
   { id: "voice", label: "Voice & Desktop", icon: <Mic className="h-4 w-4" /> },
   { id: "phone", label: "Phone", icon: <Smartphone className="h-4 w-4" /> },
@@ -72,7 +74,9 @@ export function Settings() {
     ? "brain"
     : location.pathname.includes("/billing")
     ? "billing"
-    : location.pathname.includes("/preferences")
+    : location.pathname.includes("/brand")
+      ? "brand"
+      : location.pathname.includes("/preferences")
       ? "preferences"
       : location.pathname.includes("/voice")
         ? "voice"
@@ -113,6 +117,7 @@ export function Settings() {
         {active === "profile" && <ProfileTab />}
         {active === "brain" && <BrainTab />}
         {active === "billing" && <BillingTab />}
+        {active === "brand" && <BrandTab />}
         {active === "preferences" && <PreferencesTab />}
         {active === "voice" && <VoiceDesktopTab />}
         {active === "phone" && <PhoneTab />}
