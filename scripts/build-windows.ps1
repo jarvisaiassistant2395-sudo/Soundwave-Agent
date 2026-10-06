@@ -134,19 +134,13 @@ $edition = if ($Dev) { "Soundwave AI - Dev (unlocked, no billing)" } else { "Sou
 Note "version $version - $edition"
 Note "PowerShell $($PSVersionTable.PSVersion)"
 
-# -- Backend -----------------------------------------------------------------
-Invoke-Stage "Install backend dependencies" $serverDir { npm ci --no-audit --no-fund }
-Invoke-Stage "Typecheck backend" $serverDir { npm run typecheck }
-if (-not $SkipTests) { Invoke-Stage "Test backend" $serverDir { npm test } }
-Invoke-Stage "Build backend (tsc -> dist)" $serverDir { npm run build }
-
-# -- Frontend ----------------------------------------------------------------
-Invoke-Stage "Install frontend dependencies" $frontendDir { npm ci --no-audit --no-fund }
-Invoke-Stage "Build frontend (tsc -> vite build)" $frontendDir { npm run build }
-
-# -- Runtime binaries the installer carries ----------------------------------
-# Exactly what the workflow stages, to the same folders, from the same
-# sources - a locally built installer has to be the same product as a CI one.
+# -- The ffmpeg the tests will render with -----------------------------------
+# Deliberately before the backend tests. CI runs on a runner that already has a
+# current ffmpeg on PATH; a home PC may have an old one (conda ships 4.2/4.3,
+# which has no "gradients" source, so the render fixtures fail) or none at all.
+# Staging it here means the tests run against the binary the installer ships -
+# the stronger claim - and where a build lacks a feature, the suites skip that
+# test instead of failing it.
 if (-not $SkipBinaries) {
   New-Item -ItemType Directory -Force $binDir | Out-Null
 
@@ -167,6 +161,39 @@ if (-not $SkipBinaries) {
     Assert-File $ffmpegExe 1000000 "ffmpeg.exe"
     Good "staged $((Get-Item $ffmpegExe).Length) bytes"
   }
+
+}
+$stagedFfmpeg = Join-Path $binDir "ffmpeg.exe"
+if (Test-Path $stagedFfmpeg) {
+  $env:FFMPEG_PATH = $stagedFfmpeg
+  Note "the tests below render with $stagedFfmpeg (FFMPEG_PATH)"
+} else {
+  Warn "nothing staged in desktop\bin - the tests will use the 'ffmpeg' on PATH"
+  if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+    if (-not (& ffmpeg -hide_banner -filters 2>$null | Select-String -SimpleMatch "gradients")) {
+      Warn "that ffmpeg has no 'gradients' filter (older than 4.4): the render tests will fail"
+      Warn "fix the PATH for this window, or drop -SkipBinaries so the build stages its own"
+    }
+  } else {
+    Warn "there is no 'ffmpeg' on PATH either - the render tests will fail"
+  }
+}
+
+# -- Backend -----------------------------------------------------------------
+Invoke-Stage "Install backend dependencies" $serverDir { npm ci --no-audit --no-fund }
+Invoke-Stage "Typecheck backend" $serverDir { npm run typecheck }
+if (-not $SkipTests) { Invoke-Stage "Test backend" $serverDir { npm test } }
+Invoke-Stage "Build backend (tsc -> dist)" $serverDir { npm run build }
+
+# -- Frontend ----------------------------------------------------------------
+Invoke-Stage "Install frontend dependencies" $frontendDir { npm ci --no-audit --no-fund }
+Invoke-Stage "Build frontend (tsc -> vite build)" $frontendDir { npm run build }
+
+# -- Runtime binaries the installer carries ----------------------------------
+# Exactly what the workflow stages, to the same folders, from the same
+# sources - a locally built installer has to be the same product as a CI one.
+if (-not $SkipBinaries) {
+  New-Item -ItemType Directory -Force $binDir | Out-Null
 
   Say "yt-dlp.exe (nightly first - YouTube fixes land there first)"
   $ytdlpExe = Join-Path $binDir "yt-dlp.exe"
