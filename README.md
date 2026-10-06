@@ -590,6 +590,15 @@ Without `DATABASE_URL` (Postgres) the API transparently uses a JSON-file store
 > static build has no `drawtext` filter, so the export watermark is rendered
 > through the `libass` filter (same path as subtitle burn-in).
 >
+> **On Windows, check which ffmpeg you actually have.** `vendor/ffmpeg/ffmpeg`
+> in this repository is a *Linux* build, so on Windows the app skips it and uses
+> whatever `ffmpeg.exe` it finds next — `winget`/`chocolatey`/`scoop`, a copy in
+> `Downloads`, or nothing. An old one is a quiet source of failures: some test
+> fixtures and filters need a current build (`winget install Gyan.FFmpeg` gets
+> the essentials build, 7.x). Set `FFMPEG_PATH` to pin it exactly, and run
+> `ffmpeg -version` in the same shell you build from if something ffmpeg-shaped
+> fails — every render failure now names the binary and its version it used.
+>
 > **YouTube import** (the agent's Orbital NCG backgrounds) uses
 > [yt-dlp](https://github.com/yt-dlp/yt-dlp). A prebuilt zipapp lives in
 > `vendor/yt-dlp/yt-dlp` and is auto-detected — it only needs `python3`. To
