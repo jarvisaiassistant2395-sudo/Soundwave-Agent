@@ -21,6 +21,7 @@ import agentRoutes from "./routes/agent.js";
 import jarvisRoutes from "./routes/jarvis.js";
 import jarvisShortRoutes from "./routes/jarvisShort.js";
 import creatorRoutes from "./routes/creator.js";
+import geminiRoutes from "./routes/gemini.js";
 import ghostRoutes from "./routes/ghost.js";
 import youtubeRoutes from "./routes/youtube.js";
 import emailRoutes from "./routes/email.js";
@@ -108,6 +109,8 @@ export function createApp() {
   app.use("/api/v1/companion", companionRoutes);
   // The agent's brain (Gemini): status + Settings → Brain.
   app.use("/api/v1/brain", brainRoutes);
+  // The file-chat tab: drop in a file, talk to Gemini (chats, notebooks, files).
+  app.use("/api/v1/gemini", geminiRoutes);
   app.use("/api/v1/memory", memoryRoutes);
   app.use("/api/v1/morning", morningRoutes);
 

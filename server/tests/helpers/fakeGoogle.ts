@@ -11,8 +11,10 @@ export interface Seen {
   headers: http.IncomingHttpHeaders;
   body: any;
   raw: string;
+  /** The request as bytes (a binary body — an uploaded image — loses bytes in `raw`). */
+  rawBytes: number;
 }
-export type Reply = { status?: number; body: unknown; headers?: Record<string, string> };
+export type Reply = { status?: number; body?: unknown; headers?: Record<string, string>; /** Written as-is (a stream, not JSON). */ raw?: string };
 
 export const text = (t: string) => (): Reply => ({
   body: { candidates: [{ content: { role: "model", parts: [{ text: t, thoughtSignature: "dGV4dA==" }] }, finishReason: "STOP" }] },
@@ -20,6 +22,19 @@ export const text = (t: string) => (): Reply => ({
 export const call = (name: string, args: Record<string, unknown>, id: string) => (): Reply => ({
   body: { candidates: [{ content: { role: "model", parts: [{ functionCall: { id, name, args }, thoughtSignature: "Y2FsbA==" }] }, finishReason: "STOP" }] },
 });
+
+/**
+ * One answer, as the chunks a streamed Gemini response arrives in. `pieces` are
+ * the text fragments; the last event carries finishReason/usage like Google's.
+ */
+export const sseText = (pieces: string[]): string =>
+  [
+    ...pieces.map(
+      (text) =>
+        `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text }] } }] })}\n\n`,
+    ),
+    `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [] }, finishReason: "STOP" }], usageMetadata: { totalTokenCount: 42 } })}\n\n`,
+  ].join("");
 
 export interface FakeGoogle {
   url: string;
@@ -50,6 +65,17 @@ export interface FakeGoogle {
   badRefreshTokens: string[];
   /** Every video upload: which token started it, metadata, and the bytes sent. */
   uploads: Array<{ initAuth?: string; title?: string; description?: string; bytes: number }>;
+  /** Files sent to Gemini's File API (the file-chat tab): what and how big. */
+  geminiUploads: Array<{ displayName?: string; mimeType?: string; bytes: number }>;
+  /** Gemini file names the server asked Google to drop. */
+  geminiDeleted: string[];
+  /** When set, the Files API refuses uploads with this — for the fallback paths. */
+  uploadFailure: { status: number; body: unknown } | null;
+  /**
+   * Answers for :streamGenerateContent, in order — SSE events as a raw body.
+   * When empty, the queued `gemini` reply is used (its text sent as one chunk).
+   */
+  streams: string[];
   generateCalls(): Seen[];
   reset(): void;
   close(): Promise<void>;
@@ -68,6 +94,10 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
     accounts: [] as FakeGoogle["accounts"],
     badRefreshTokens: [] as string[],
     uploads: [] as FakeGoogle["uploads"],
+    geminiUploads: [] as FakeGoogle["geminiUploads"],
+    geminiDeleted: [] as string[],
+    uploadFailure: null as FakeGoogle["uploadFailure"],
+    streams: [] as string[],
     generateCalls: () => fake.seen.filter((s) => s.path.includes(":generateContent")),
     reset() {
       fake.seen.length = 0;
@@ -79,6 +109,10 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       fake.accounts.length = 0;
       fake.badRefreshTokens.length = 0;
       fake.uploads.length = 0;
+      fake.geminiUploads.length = 0;
+      fake.geminiDeleted.length = 0;
+      fake.uploadFailure = null;
+      fake.streams.length = 0;
     },
   };
 
@@ -91,6 +125,41 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
 
   const answer = (seen: Seen): Reply => {
     const p = seen.path;
+    if (seen.method === "POST" && /:streamGenerateContent$/.test(p)) {
+      const streamed = fake.streams.shift();
+      if (streamed !== undefined) return { headers: { "content-type": "text/event-stream" }, raw: streamed };
+      const next = fake.gemini.shift();
+      if (next) {
+        const reply = next(seen);
+        // A refusal is a plain JSON error even on the streaming endpoint.
+        if (reply.status && reply.status >= 400) return reply;
+        const text = (reply.body as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        return { headers: { "content-type": "text/event-stream" }, raw: sseText([text]) };
+      }
+      return { status: 500, body: { error: { code: 500, message: "test: nothing queued", status: "INTERNAL" } } };
+    }
+    if (seen.method === "POST" && p === "/upload/v1beta/files") {
+      if (fake.uploadFailure) return fake.uploadFailure;
+      // A multipart body: the first part is the JSON metadata, the second the
+      // file. Both are read the way the real Files API reads them.
+      const mimeType =
+        [...seen.raw.matchAll(/Content-Type:\s*([^\r\n]+)/g)]
+          .map((m) => m[1]!.trim())
+          .find((m) => !/json|multipart/i.test(m)) ?? "";
+      const displayName =
+        String((seen.body as { file?: { displayName?: string } } | null)?.file?.displayName ?? "") ||
+        /"displayName":"([^"]*)"/.exec(seen.raw)?.[1] ||
+        `upload-${fake.geminiUploads.length + 1}`;
+      fake.geminiUploads.push({ displayName, mimeType, bytes: seen.rawBytes });
+      return { body: { name: `files/fake-${fake.geminiUploads.length}`, uri: `https://files.test/fake-${fake.geminiUploads.length}`, mimeType: mimeType || "application/octet-stream", sizeBytes: String(seen.rawBytes), state: "ACTIVE" } };
+    }
+    if (seen.method === "GET" && /^\/v1beta\/files\/[^/]+$/.test(p)) {
+      return { body: { name: p.replace("/v1beta/", ""), uri: `https://files.test/${p.split("/").pop()}`, mimeType: "application/octet-stream", state: "ACTIVE" } };
+    }
+    if (seen.method === "DELETE" && /^\/v1beta\/files\/[^/]+$/.test(p)) {
+      fake.geminiDeleted.push(p.replace("/v1beta/", ""));
+      return { body: {} };
+    }
     if (seen.method === "POST" && /^\/v1beta\/models\/[^/]+:generateContent$/.test(p)) {
       const next = fake.gemini.shift();
       if (next) return next(seen);
@@ -208,8 +277,13 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
   };
 
   const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
     let raw = "";
-    req.on("data", (c) => (raw += c));
+    req.on("data", (c) => {
+      const buf = Buffer.isBuffer(c) ? c : Buffer.from(String(c));
+      chunks.push(buf);
+      raw += buf.toString("utf8");
+    });
     req.on("end", () => {
       const u = new URL(req.url ?? "/", "http://fake");
       let body: unknown = null;
@@ -222,9 +296,14 @@ export async function startFakeGoogle(): Promise<FakeGoogle> {
       } catch {
         body = null;
       }
-      const seen: Seen = { method: req.method ?? "", path: u.pathname, query: u.searchParams, headers: req.headers, body, raw };
+      const seen: Seen = { method: req.method ?? "", path: u.pathname, query: u.searchParams, headers: req.headers, body, raw, rawBytes: Buffer.concat(chunks).length };
       fake.seen.push(seen);
       const out = answer(seen);
+      if (out.raw !== undefined) {
+        res.writeHead(out.status ?? 200, { "content-type": "text/event-stream", ...(out.headers ?? {}) });
+        res.end(out.raw);
+        return;
+      }
       res.writeHead(out.status ?? 200, { "content-type": "application/json", ...(out.headers ?? {}) });
       res.end(JSON.stringify(out.body));
     });

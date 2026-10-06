@@ -313,6 +313,156 @@ export async function generateContent(args: GenerateArgs): Promise<GenerateRespo
   return (await callGemini("POST", `/v1beta/models/${model}:generateContent`, args, args.request)) as GenerateResponse;
 }
 
+// ── Streaming ──────────────────────────────────────────────────────────────
+// `generateContent` answers in one piece; `streamGenerateContent` sends the same
+// answer as server-sent events, a few words at a time. The file-chat tab uses
+// it so an answer starts appearing immediately instead of after ten seconds of
+// nothing — the difference between the app feeling alive and feeling stuck.
+//
+// The stream is assembled back into the ordinary GenerateResponse shape (text
+// parts merged, the last chunk's finishReason/usage kept), so a caller can
+// stream for the person and still store exactly what a non-streamed call would
+// have produced.
+
+export interface StreamArgs extends GenerateArgs {
+  /** Called for each new piece of text, with the whole answer so far. */
+  onText?: (delta: string, full: string) => void;
+  /** Called when Google sends reasoning text (Gemini 3 "thinking"). */
+  onThought?: (text: string) => void;
+  /** Abort the stream early (the person pressed Stop). */
+  shouldStop?: () => boolean;
+}
+
+/** One SSE `data:` line → the response object it carried (null when unreadable). */
+export function parseSseLine(line: string): GenerateResponse | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) return null;
+  const payload = trimmed.slice(5).trim();
+  if (!payload || payload === "[DONE]") return null;
+  try {
+    return JSON.parse(payload) as GenerateResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function streamGenerateContent(args: StreamArgs): Promise<GenerateResponse> {
+  const { onText, onThought, shouldStop, ...request } = args;
+  const model = encodeURIComponent(bareModelId(request.model));
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, request.timeoutMs ?? 180_000);
+  const onAbort = () => controller.abort();
+  if (request.signal) {
+    if (request.signal.aborted) controller.abort();
+    else request.signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  const parts: GeminiPart[] = [];
+  let text = "";
+  let finishReason: string | undefined;
+  let finishMessage: string | undefined;
+  let groundingMetadata: GroundingMetadata | undefined;
+  let usageMetadata: Record<string, unknown> | undefined;
+  let modelVersion: string | undefined;
+  let responseId: string | undefined;
+
+  const absorb = (chunk: GenerateResponse) => {
+    const candidate = chunk.candidates?.[0];
+    for (const part of candidate?.content?.parts ?? []) {
+      if (typeof part.text === "string" && part.text) {
+        const last = parts[parts.length - 1];
+        // In a stream the text arrives across several parts; they are one answer.
+        if (last && typeof last.text === "string" && !last.functionCall) last.text += part.text;
+        else parts.push({ ...part });
+        text += part.text;
+        onText?.(part.text, text);
+        continue;
+      }
+      // Anything that is not text (a function call, a signature, inline data)
+      // is kept as its own part, exactly as it arrived.
+      parts.push(part);
+    }
+    if (typeof candidate?.content?.parts?.[0]?.thought === "string") onThought?.(candidate.content.parts[0].thought as string);
+    if (candidate?.finishReason) finishReason = candidate.finishReason;
+    if (candidate?.finishMessage) finishMessage = candidate.finishMessage;
+    if (candidate?.groundingMetadata) groundingMetadata = candidate.groundingMetadata;
+    if (chunk.usageMetadata) usageMetadata = chunk.usageMetadata;
+    if (chunk.modelVersion) modelVersion = chunk.modelVersion;
+    if (chunk.responseId) responseId = chunk.responseId;
+  };
+
+  try {
+    let res: Response;
+    try {
+      res = await fetch(`${request.apiBase.replace(/\/+$/, "")}/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+        method: "POST",
+        headers: { "x-goog-api-key": request.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify(request.request),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (timedOut) throw new GeminiError("timeout", "Gemini didn't answer in time.");
+      if (request.signal?.aborted) throw new GeminiError("aborted", "Cancelled.");
+      const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+      throw new GeminiError("network", cause?.code || cause?.message || (err as Error).message || "network error");
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      let parsed: unknown = null;
+      try {
+        parsed = body ? JSON.parse(body) : null;
+      } catch {
+        parsed = null;
+      }
+      throw errorFromResponse(res.status, parsed ?? { error: { message: body.slice(0, 300) || `HTTP ${res.status}` } });
+    }
+    if (!res.body) throw new GeminiError("unknown", "Gemini sent a stream that couldn't be read.");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      if (shouldStop?.()) {
+        await reader.cancel().catch(() => undefined);
+        break;
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Events are separated by a blank line; a chunk boundary can split one.
+      let index = buffer.indexOf("\n");
+      while (index >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        const chunk = parseSseLine(line);
+        if (chunk) absorb(chunk);
+        index = buffer.indexOf("\n");
+      }
+    }
+    const tail = parseSseLine(buffer);
+    if (tail) absorb(tail);
+
+    if (!parts.length && !finishReason) {
+      if (timedOut) throw new GeminiError("timeout", "Gemini didn't answer in time.");
+      if (request.signal?.aborted) throw new GeminiError("aborted", "Cancelled.");
+    }
+    return {
+      candidates: [{ content: { role: "model", parts }, ...(finishReason ? { finishReason } : {}), ...(finishMessage ? { finishMessage } : {}), ...(groundingMetadata ? { groundingMetadata } : {}) }],
+      ...(usageMetadata ? { usageMetadata } : {}),
+      ...(modelVersion ? { modelVersion } : {}),
+      ...(responseId ? { responseId } : {}),
+    };
+  } finally {
+    clearTimeout(timer);
+    request.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 export interface GeminiModelInfo {
   id: string;
   label: string;

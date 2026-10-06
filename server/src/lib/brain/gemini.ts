@@ -101,3 +101,125 @@ export async function generateContent(args: GenerateArgs): Promise<core.Generate
 export function listChatModels(opts: WithoutBase<core.CallOptions>): Promise<core.GeminiModelInfo[]> {
   return core.listChatModels({ ...opts, apiBase: opts.apiBase ?? config.geminiApiBase });
 }
+
+/**
+ * The same request as generateContent, answered as it is written. Budget and
+ * counting work exactly the same; caching does not (a streamed chat answer is
+ * about this conversation, not a reusable artifact).
+ */
+export function streamContent(args: GenerateArgs & { onText?: (delta: string, full: string) => void; shouldStop?: () => boolean }): Promise<core.GenerateResponse> {
+  const { purpose = "chat", bypassBudget = false, cache: _cacheable = false, ...rest } = args;
+  const request = { ...rest, apiBase: rest.apiBase ?? config.geminiApiBase };
+  if (!bypassBudget) {
+    const budget = budgetExhausted(purpose);
+    if (budget.exhausted) {
+      recordGeminiBlocked(purpose);
+      throw new core.GeminiError(
+        "quota",
+        `Today's Gemini limit for this PC is reached (${purpose}: ${budget.used} of ${budget.limit}). Soundwave is using its free local path instead; the count resets tomorrow.`,
+        { daily: true },
+      );
+    }
+  }
+  if (!bypassBudget) recordGeminiCall(purpose);
+  return core.streamGenerateContent(request);
+}
+
+// ── Files ───────────────────────────────────────────────────────────────────
+// The Files API is how Gemini is handed a photo, a recording, a video or a
+// scanned PDF: the bytes are uploaded once, Google keeps them for 48 hours, and
+// the request that follows refers to them by URI. Small files (under 20 MB, the
+// multipart limit) go up in one request; anything larger would need a resumable
+// upload, and the caller checks the size before asking — see lib/gptFiles.ts.
+
+export interface UploadedGeminiFile {
+  /** `files/abc123` — the name to poll and to refer to later. */
+  name: string;
+  /** The `fileData.fileUri` to put in a request. */
+  uri: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** PROCESSING until Google has finished with it; ACTIVE is ready. */
+  state: string;
+  /** When Google drops it (ISO), if it said. */
+  expiresAt?: string;
+}
+
+interface FilesApiFile {
+  name?: string;
+  uri?: string;
+  mimeType?: string;
+  sizeBytes?: string;
+  state?: string;
+  expirationTime?: string;
+  error?: { message?: string };
+}
+
+const fileFrom = (file: FilesApiFile, fallbackMime: string): UploadedGeminiFile => ({
+  name: String(file.name ?? ""),
+  uri: String(file.uri ?? ""),
+  mimeType: String(file.mimeType ?? fallbackMime),
+  sizeBytes: Number(file.sizeBytes ?? 0),
+  state: String(file.state ?? "ACTIVE"),
+  ...(file.expirationTime ? { expiresAt: file.expirationTime } : {}),
+});
+
+/** One multipart body: the JSON metadata part, then the bytes. */
+export function multipartFileBody(data: Buffer, mimeType: string, displayName: string): { body: Buffer; contentType: string } {
+  const boundary = `soundwave-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ file: { displayName } })}\r\n` +
+      `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    "utf8",
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
+  return { body: Buffer.concat([head, data, tail]), contentType: `multipart/related; boundary=${boundary}` };
+}
+
+/** Upload one file and wait (briefly) for Google to make it ACTIVE. */
+export async function uploadFile(args: {
+  data: Buffer;
+  mimeType: string;
+  displayName: string;
+  apiBase?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}): Promise<UploadedGeminiFile> {
+  const apiBase = (args.apiBase ?? config.geminiApiBase).replace(/\/+$/, "");
+  const apiKey = args.apiKey ?? config.geminiApiKey;
+  if (!apiKey) throw new core.GeminiError("invalid_key", "No Gemini API key is set (Settings → Brain).");
+  const { body, contentType } = multipartFileBody(args.data, args.mimeType, args.displayName);
+  const res = await fetch(`${apiBase}/upload/v1beta/files`, {
+    method: "POST",
+    headers: { "x-goog-api-key": apiKey, "Content-Type": contentType, "Content-Length": String(body.length) },
+    body: new Uint8Array(body),
+    signal: AbortSignal.timeout(args.timeoutMs ?? 120_000),
+  });
+  const text = await res.text().catch(() => "");
+  let parsed: unknown = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+  if (!res.ok) throw core.errorFromResponse(res.status, parsed ?? { error: { message: text.slice(0, 300) || `HTTP ${res.status}` } });
+  const uploaded = fileFrom(parsed as FilesApiFile, args.mimeType);
+  if (uploaded.state !== "PROCESSING") return uploaded;
+  // Video and audio are processed for a few seconds; poll a handful of times.
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const poll = await fetch(`${apiBase}/v1beta/${uploaded.name}`, { headers: { "x-goog-api-key": apiKey }, signal: AbortSignal.timeout(30_000) });
+    if (!poll.ok) break;
+    const current = fileFrom((await poll.json().catch(() => ({}))) as FilesApiFile, args.mimeType);
+    if (current.state !== "PROCESSING") return current;
+  }
+  return uploaded;
+}
+
+/** Drop an uploaded file on Google's side (the person deleted it here). */
+export async function deleteFile(name: string, opts: { apiBase?: string; apiKey?: string } = {}): Promise<void> {
+  const apiBase = (opts.apiBase ?? config.geminiApiBase).replace(/\/+$/, "");
+  const apiKey = opts.apiKey ?? config.geminiApiKey;
+  if (!apiKey || !name) return;
+  await fetch(`${apiBase}/v1beta/${name.replace(/^\/+/, "")}`, { method: "DELETE", headers: { "x-goog-api-key": apiKey } }).catch(() => undefined);
+}
