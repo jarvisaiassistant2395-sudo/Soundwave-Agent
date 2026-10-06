@@ -347,6 +347,21 @@ get; where that build lacks a feature, the suites skip a test instead of failing
 it. CI does not need this because GitHub's Windows runner arrives with a current
 ffmpeg on `PATH`.
 
+### Diagnosing a failed stage
+
+The suites print the reason; when one fails, run just that file, with the same
+ffmpeg the build used, and read the message:
+
+```powershell
+$env:FFMPEG_PATH = "$PWD\desktop\bin\ffmpeg.exe"
+cd server
+npx vitest run tests/creator.test.ts     # or whichever file failed
+```
+
+A render failure carries ffmpeg's own last words (the auto-edit path reports them
+in the response body as `error`), which is usually enough to name the argument
+or filter at fault. Nothing here needs the whole build re-run to reproduce.
+
 Downloads stream to disk and print a live line — percent, megabytes, speed — with
 a heartbeat every couple of seconds, so a slow mirror reads as slow instead of
 hung. If gyan.dev is unreachable, the script warns and tries the BtbN GPL build

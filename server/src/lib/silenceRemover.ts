@@ -401,9 +401,16 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
     fullScript = fullScript.slice(0, -1);
   }
 
-  // Write filter script to temporary file to avoid OS command-line buffer limits
+  // The graph goes on the command line when it fits, which is every realistic
+  // jump-cut: a cut is about sixty characters, and Windows allows 32k there.
+  // Only a very long recording with hundreds of cuts needs the temporary script
+  // file, which is what it exists for. (This is also the only
+  // `-filter_complex_script` in the codebase, and it is the one construct on
+  // this path with no coverage on Windows — so the common case no longer
+  // depends on it.)
   const scriptFile = path.join(os.tmpdir(), `soundwave_edit_${crypto.randomUUID()}.txt`);
-  fs.writeFileSync(scriptFile, fullScript, "utf-8");
+  const useScriptFile = fullScript.length > 7000;
+  if (useScriptFile) fs.writeFileSync(scriptFile, fullScript, "utf-8");
 
   const totalEditDuration = intervals.reduce((acc, i) => acc + i.duration, 0);
 
@@ -419,7 +426,8 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
   }
 
   if (fullScript.length > 0) {
-    args.push("-filter_complex_script", scriptFile);
+    if (useScriptFile) args.push("-filter_complex_script", scriptFile);
+    else args.push("-filter_complex", fullScript);
     args.push("-map", `[${finalVideoTag}]`);
     if (hasAudio) {
       args.push("-map", activeAudioTag ? `[${activeAudioTag}]` : "0:a");
@@ -475,7 +483,7 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
     });
   } finally {
     try {
-      if (fs.existsSync(scriptFile)) fs.unlinkSync(scriptFile);
+      if (useScriptFile && fs.existsSync(scriptFile)) fs.unlinkSync(scriptFile);
     } catch {
       // ignore tmp cleanup error
     }

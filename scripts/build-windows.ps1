@@ -243,6 +243,12 @@ $stagedFfmpeg = Join-Path $binDir "ffmpeg.exe"
 if (Test-Path $stagedFfmpeg) {
   $env:FFMPEG_PATH = $stagedFfmpeg
   Note "the tests below render with $stagedFfmpeg (FFMPEG_PATH)"
+  # GPLv3 wants the licence text and the written offer of source beside the
+  # binary, and the audit that runs during the backend tests refuses a staged
+  # ffmpeg without them - so they are written here, with the staging, not
+  # later with the other binaries. (assemble.mjs calls this again on every
+  # packaging run, so however ffmpeg got into bin/ the paper travels with it.)
+  Invoke-Stage "Write the ffmpeg licences" $repoRoot { node scripts/write-binary-licenses.mjs }
 } else {
   Warn "nothing staged in desktop\bin - the tests will use the 'ffmpeg' on PATH"
   if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
@@ -287,10 +293,6 @@ if (-not $SkipBinaries) {
     Assert-File $ytdlpExe 1000000 "yt-dlp.exe"
     Good "staged $((Get-Item $ytdlpExe).Length) bytes"
   }
-
-  # The licence text for the GPL ffmpeg, written beside it - the audit below
-  # (and the packaged app) must never see the binary without its paper.
-  Invoke-Stage "Write the binary licences" $repoRoot { node scripts/write-binary-licenses.mjs }
 
   Say "Caption font (Inter, OFL-1.1 - travels with the app)"
   $fontDest = Join-Path $binDir "fonts"

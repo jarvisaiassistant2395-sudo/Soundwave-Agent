@@ -190,11 +190,17 @@ router.post(
       } else {
         await runProcessing();
         const updated = await store.getJobById(job.id);
+        const failed = updated?.status === "FAILED";
+        // A failed sync render used to answer with a status and a download URL
+        // anyway: the caller got a URL that 404s and no reason why. The reason
+        // is the useful half.
         res.json({
           jobId: job.id,
           status: updated?.status || "COMPLETED",
-          progress: 100,
-          downloadUrl: `/api/v1/creator/jobs/${job.id}/download`,
+          progress: failed ? updated?.progress ?? 5 : 100,
+          ...(failed
+            ? { error: updated?.errorMessage || "Auto-editing failed" }
+            : { downloadUrl: `/api/v1/creator/jobs/${job.id}/download` }),
         });
       }
     } catch (e) {

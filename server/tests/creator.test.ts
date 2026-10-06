@@ -86,7 +86,10 @@ describe.skipIf(!hasFfmpeg)("Creator Studio API", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.jobId).toBeDefined();
-    expect(res.body.status).toBe("COMPLETED");
+    // The second argument is what vitest prints when this fails: without it a
+    // broken render reports "expected FAILED to be COMPLETED" and nothing else,
+    // which says nothing about ffmpeg's actual complaint.
+    expect(res.body.status, res.body.error ?? "(the server reported no reason)").toBe("COMPLETED");
     expect(res.body.downloadUrl).toBeDefined();
 
     // Verify download

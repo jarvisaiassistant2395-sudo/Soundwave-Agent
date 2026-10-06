@@ -30,7 +30,16 @@ kept here because it is easy to un-do by accident.
   staged server on purpose, which is exactly what a heuristic scanner flags.
   If customers hit it, the answer is the signing certificate below, not a
   weaker protection step.
-- [ ] ✅ Local build needs Node 20+, the script refuses anything older.
+- [ ] ⛔ **Creator Studio auto-edit fails on Windows.** Found by the first local
+  build: `POST /creator/auto-edit` returns a job that ends `FAILED`, with
+  ffmpeg's own words in the job's `errorMessage`. Silence analysis and the
+  storyboard render both pass on the same machine, so it is specific to this
+  path — the only `-filter_complex_script` in the codebase, and the only render
+  with no Windows coverage. Undiagnosed: the response did not carry the reason
+  until the fix below, which is why the first three runs could only say
+  "FAILED". Re-run `npx vitest run tests/creator.test.ts` with `FFMPEG_PATH` set
+  and read the message.
+- [x] ✅ Local build needs Node 20+, the script refuses anything older.
 
 ## 2. Signing and updates
 
