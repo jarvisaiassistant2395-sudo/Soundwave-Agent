@@ -79,3 +79,30 @@ test("notification payloads are trimmed and validated", () => {
   assert.equal(n.body.length, 300);
   assert.equal(n.route, null);
 });
+
+test("the reporting switches ship off and only real booleans move them", () => {
+  assert.equal(DEFAULT_SETTINGS.crashReports, false, "reporting is opt-in");
+  assert.equal(DEFAULT_SETTINGS.startPing, false, "the ping is opt-in too");
+
+  assert.equal(normalizeSettings({ crashReports: "yes" }).crashReports, false);
+  assert.equal(normalizeSettings({ startPing: 1 }).startPing, false);
+  assert.deepEqual(applySettingsPatch(DEFAULT_SETTINGS, { crashReports: true, startPing: true }), {
+    ...DEFAULT_SETTINGS,
+    crashReports: true,
+    startPing: true,
+  });
+});
+
+test("the reporting switches survive a save/load round trip", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-settings-"));
+  try {
+    const file = path.join(dir, "desktop-settings.json");
+    assert.equal(loadSettings(file).crashReports, false, "no file yet: off");
+    assert.equal(saveSettings(file, { ...DEFAULT_SETTINGS, crashReports: true, startPing: true }), true);
+    const loaded = loadSettings(file);
+    assert.equal(loaded.crashReports, true);
+    assert.equal(loaded.startPing, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -41,14 +41,8 @@ fs.rmSync(stage, { recursive: true, force: true });
 fs.mkdirSync(path.join(stage, "server"), { recursive: true });
 
 console.log("[assemble] server sources …");
-fs.copyFileSync(
-  path.join(repoRoot, "server", "package.json"),
-  path.join(stage, "server", "package.json"),
-);
-fs.copyFileSync(
-  path.join(repoRoot, "server", "package-lock.json"),
-  path.join(stage, "server", "package-lock.json"),
-);
+fs.copyFileSync(path.join(repoRoot, "server", "package.json"), path.join(stage, "server", "package.json"));
+fs.copyFileSync(path.join(repoRoot, "server", "package-lock.json"), path.join(stage, "server", "package-lock.json"));
 fs.cpSync(path.join(repoRoot, "server", "dist"), path.join(stage, "server", "dist"), { recursive: true });
 // NOTE: never copy server/.env — packaged mode is configured purely via env.
 
@@ -71,6 +65,18 @@ if (fs.existsSync(youtubeClient)) {
   fs.copyFileSync(youtubeClient, path.join(stage, "config", "youtube-client.json"));
 } else {
   console.log("[assemble] no config/youtube-client.json — Connect YouTube will ask for the person's own Google client");
+}
+
+// A build can point opt-in crash reports at the vendor's own endpoint. Off by
+// default in Settings either way; without this file there is nowhere to send,
+// and the switches say so. See docs/RELEASING.md → "Opt-in crash reports".
+const reporting = path.join(desktopDir, "config", "reporting.json");
+if (fs.existsSync(reporting)) {
+  console.log("[assemble] opt-in reporting endpoint (config/reporting.json) …");
+  fs.mkdirSync(path.join(stage, "config"), { recursive: true });
+  fs.copyFileSync(reporting, path.join(stage, "config", "reporting.json"));
+} else {
+  console.log("[assemble] no config/reporting.json — crash reports stay local (no endpoint to send to)");
 }
 
 console.log("[assemble] frontend dist …");

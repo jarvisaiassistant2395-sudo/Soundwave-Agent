@@ -308,6 +308,22 @@ jobs:
             ConvertTo-Json | Set-Content -Encoding utf8 desktop/config/youtube-client.json
           Write-Host "Baked Soundwave's own Google client: Connect YouTube is one press in this build."
 
+      # Optional: where opt-in crash reports go. Both switches in Settings ship
+      # off; this only gives them a destination. Without it the switches say
+      # there is nowhere to send. See docs/RELEASING.md -> "Opt-in crash reports".
+      - name: Bake the crash-report endpoint (only when the secret is set)
+        shell: pwsh
+        env:
+          REPORT_URL: ${{ secrets.SOUNDWAVE_REPORT_URL }}
+        run: |
+          if (-not $env:REPORT_URL) {
+            Write-Host "No SOUNDWAVE_REPORT_URL set - the crash-report switches stay unavailable in this build."
+            exit 0
+          }
+          New-Item -ItemType Directory -Force desktop/config | Out-Null
+          @{ url = $env:REPORT_URL } | ConvertTo-Json | Set-Content -Encoding utf8 desktop/config/reporting.json
+          Write-Host "Baked the opt-in reporting endpoint."
+
       # The build refuses to ship a component it may not ship (copyleft inside our
       # code, a non-commercial model or asset, a bundled program without its
       # licence text), and refreshes THIRD-PARTY-NOTICES.txt from the real trees

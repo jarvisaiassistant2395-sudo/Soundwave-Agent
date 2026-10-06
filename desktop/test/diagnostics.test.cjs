@@ -199,3 +199,46 @@ test("an exception in the shell is logged, explained and fatal", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a crash reaches the reporter hook, and a broken hook cannot break the exit", () => {
+  const d = freshModule();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "soundwave-diag-hook-"));
+  try {
+    d.install(dir);
+    const exits = [];
+    const boxes = [];
+    const app = {
+      getPath: () => dir,
+      on: () => {},
+      exit: (code) => exits.push(code),
+    };
+    const electron = {
+      crashReporter: { start: () => {} },
+      dialog: { showErrorBox: (title, body) => boxes.push({ title, body }) },
+    };
+    const seen = [];
+    const before = process.listeners("uncaughtException");
+    d.installCrashHandlers({
+      app,
+      electron,
+      version: "1.7.0",
+      onCrash: (error, context) => {
+        seen.push({ message: error.message, kind: context.kind });
+        throw new Error("the reporter itself blew up");
+      },
+    });
+
+    const handler = process.listeners("uncaughtException").find((fn) => !before.includes(fn));
+    assert.ok(handler);
+    // The hook throws on purpose: the shell must still log, still explain, and
+    // still exit rather than leaving a half-dead process running.
+    assert.doesNotThrow(() => handler(new Error("kaboom with a bad reporter")));
+
+    assert.deepEqual(seen, [{ message: "kaboom with a bad reporter", kind: "uncaughtException" }]);
+    assert.deepEqual(exits, [1]);
+    assert.equal(boxes.length, 1);
+    assert.match(d.tail(20), /kaboom with a bad reporter/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

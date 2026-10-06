@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
   // Settings → Help: where the logs are, and a ready-to-paste diagnostics block.
   openLogs: () => ipcRenderer.invoke("soundwave:open-logs"),
   copyDiagnostics: () => ipcRenderer.invoke("soundwave:copy-diagnostics"),
+  // Settings → Help: post the same block to the vendor's endpoint, when the
+  // build has one. Returns { sent, reason } so the page can be honest.
+  sendDiagnostics: () => ipcRenderer.invoke("soundwave:send-diagnostics"),
   // "Hey Soundwave": the hidden wake page reports what whisper heard on this PC
   // and the shell decides whether the phrase was in it. The voice bar is told
   // when the phrase was heard with words after it.

@@ -936,6 +936,50 @@ Gradle, so bump it for every upload — Play refuses a `versionCode` it has
 already seen. `mobile/android/app/build.gradle` derives `versionCode` from the
 version name; check it before a release rather than after a rejection.
 
+## Opt-in crash reports
+
+You learn nothing about an installed copy unless the person tells you. This is
+aimed at that, and it is deliberately small: no SDK, no install id, no analytics
+vendor — a few dozen lines in `desktop/src/reporter.cjs` that POST JSON to your
+own endpoint.
+
+**Nothing is sent by default.** Both switches (`crashReports`, `startPing`) ship
+off, live in Settings → Voice & Desktop, and the wording there says exactly what
+each one sends. A report is the version, the OS, the error and the last few
+hundred log lines, scrubbed: API keys and tokens via the same patterns as the
+diagnostics block, and the person's own account name out of every path
+(`C:\Users\Strahinja\…` becomes `C:\Users\<user>\…`). Their files, drafts and
+recordings are never in a log to begin with.
+
+**Turn it on for a build** by baking the endpoint, the same way the one-click
+Google client works:
+
+```powershell
+# .github/workflows/release-desktop.yml does this when a secret is set:
+New-Item -ItemType Directory -Force desktop/config | Out-Null
+@{ url = "https://reports.example.com/soundwave" } | ConvertTo-Json |
+  Set-Content -Encoding utf8 desktop/config/reporting.json
+```
+
+Set the repository secret `SOUNDWAVE_REPORT_URL` and the release workflow bakes
+it; `desktop/assemble.mjs` copies it into the package (`app/config/reporting.json`,
+gitignored). A person can point their own copy somewhere with
+`%APPDATA%\Soundwave AI\reporting.json`, and `SOUNDWAVE_REPORT_URL` in the
+environment beats both — which is also how you test it locally. **Without any of
+those there is nowhere to send, and the switches say so instead of pretending.**
+
+**Receiving end:** anything that accepts `POST application/json`. Your endpoint
+sees `kind: "crash" | "start" | "diagnostics"`, and for support reports the whole
+diagnostics text. Back it with a log drain, a tiny function, or a self-hosted
+GlitchTip-style collector — the contract is one POST, so it is yours to keep.
+Reports a server rejects with a 4xx are dropped, not retried forever; a report
+that could not be delivered is written to `%APPDATA%\Soundwave AI\reports\`
+first (this is why a crash that kills the app before its request finishes still
+arrives on the next launch) and deleted once it lands. Turning crash reports off
+deletes whatever is still queued, and the button in Settings → Help → **Send
+diagnostics** posts one by hand without needing either switch — the press is the
+consent.
+
 ## Versioning
 
 Bump `desktop/package.json` → `version` (this drives artifact names), tag

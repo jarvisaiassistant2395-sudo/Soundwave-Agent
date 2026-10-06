@@ -86,7 +86,20 @@ function log(level, msg, ...rest) {
  * passed in rather than required here so this module can be unit-tested on a
  * machine without Electron.
  */
-function installCrashHandlers({ app, electron, version }) {
+function installCrashHandlers({ app, electron, version, onCrash = null }) {
+  /**
+   * Hand a crash to `onCrash` before the shell goes down. The reporter
+   * (desktop/src/reporter.cjs) writes it to disk synchronously, so this call
+   * is safe to make on the way out; it must never throw and never delay the
+   * exit, which is what the try/catch is for.
+   */
+  const tellOnCrash = (error, context) => {
+    try {
+      onCrash?.(error, context);
+    } catch {
+      /* a reporter that fails must not turn a crash into a different crash */
+    }
+  };
   const crashRoot = path.join(app.getPath("userData"), "crashes");
   try {
     // Local minidumps, never uploaded anywhere: Soundwave is the person's own
@@ -99,6 +112,7 @@ function installCrashHandlers({ app, electron, version }) {
 
   process.on("uncaughtException", (error) => {
     log("error", "[desktop] uncaught exception in the shell", error);
+    tellOnCrash(error, { kind: "uncaughtException", version });
     // The shell is in an unknown state after this; the window may be gone and
     // the bundled server (imported in-process) with it. Say so instead of
     // leaving an empty frame on screen — then leave.
@@ -125,6 +139,14 @@ function installCrashHandlers({ app, electron, version }) {
       reason: details?.reason,
       exitCode: details?.exitCode,
       url: safeUrl(webContents?.getURL?.()),
+    });
+    // A white screen is the most common field failure and the hardest to hear
+    // about, so it counts as a crash for reporting purposes.
+    tellOnCrash(new Error(`the window process died (${details?.reason ?? "unknown"})`), {
+      kind: "render-process-gone",
+      reason: details?.reason,
+      exitCode: details?.exitCode,
+      version,
     });
     try {
       if (aliveWindow(webContents) && details?.reason !== "clean-exit") webContents.reload();
@@ -206,8 +228,12 @@ function diagnostics({ app, version, edition, extra = {} } = {}) {
   return lines.join("\n");
 }
 
-/** Belt and braces: never let a key loose in text a person pastes in public. */
-function redact(value) {
+/**
+ * The secret patterns, with no length cap. `redact` is this plus a slice;
+ * the crash reporter (desktop/src/reporter.cjs) needs the tail of a longer log
+ * scrubbed rather than truncated.
+ */
+function redactText(value) {
   let text = typeof value === "string" ? value : JSON.stringify(value);
   if (typeof text !== "string") return String(value);
   text = text.replace(/AIza[0-9A-Za-z_-]{10,}/g, "AIza…(redacted)");
@@ -218,7 +244,12 @@ function redact(value) {
   text = text.replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g, "…(redacted JWT)");
   text = text.replace(/\bBearer\s+[A-Za-z0-9._-]{10,}/gi, "Bearer …(redacted)");
   text = text.replace(/\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{20,}/g, "…(redacted token)");
-  return text.slice(0, 4000);
+  return text;
+}
+
+/** Belt and braces: never let a key loose in text a person pastes in public. */
+function redact(value) {
+  return redactText(value).slice(0, 4000);
 }
 
 /** Crash dumps the person can hand over; the folder is created on first call. */
@@ -226,4 +257,4 @@ function crashDir(app) {
   return path.join(app.getPath("userData"), "crashes");
 }
 
-module.exports = { install, installCrashHandlers, log, tail, dirPath, filePath, diagnostics, redact, crashDir };
+module.exports = { install, installCrashHandlers, log, tail, dirPath, filePath, diagnostics, redact, redactText, crashDir };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Clapperboard,
   Mic,
@@ -405,6 +405,22 @@ function Troubleshooting() {
   const desktop = getDesktop();
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<"sent" | "failed" | null>(null);
+  const [canSend, setCanSend] = useState(false);
+
+  // Whether this build has anywhere to send to. The shell knows; the page asks
+  // once. With no endpoint the button would be a lie, so it is not shown.
+  useEffect(() => {
+    if (!desktop) return;
+    let alive = true;
+    void desktop.getState().then((state) => {
+      if (alive) setCanSend(Boolean(state?.reporting?.configured));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [desktop]);
 
   if (!desktop) {
     return (
@@ -450,10 +466,37 @@ function Troubleshooting() {
           {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
           {copied ? "Copied — paste it in your message" : busy ? "Collecting…" : "Copy diagnostics"}
         </button>
+        {canSend && (
+          <button
+            type="button"
+            disabled={sending}
+            onClick={async () => {
+              setSending(true);
+              setSent(null);
+              try {
+                const result = await desktop.sendDiagnostics();
+                setSent(result?.sent ? "sent" : "failed");
+              } finally {
+                setSending(false);
+              }
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:border-cyan-400/50 hover:text-white disabled:opacity-50"
+          >
+            {sent === "sent" ? <Check className="h-4 w-4 text-emerald-400" /> : <Upload className="h-4 w-4" />}
+            {sent === "sent"
+              ? "Sent — thank you"
+              : sent === "failed"
+                ? "Couldn't send — use Copy"
+                : sending
+                  ? "Sending…"
+                  : "Send diagnostics"}
+          </button>
+        )}
       </div>
       <p className="text-xs text-gray-500">
         Diagnostics are versions, settings, the API's own status and the last few hundred log lines, with anything that looks like a key or
-        a token removed. Your files, your emails and your videos are never included.
+        a token removed. Your files, your emails and your videos are never included. Setting the app to send crash reports and an anonymous
+        start ping by itself is a switch in Settings → Voice &amp; Desktop, and it ships off.
       </p>
     </div>
   );

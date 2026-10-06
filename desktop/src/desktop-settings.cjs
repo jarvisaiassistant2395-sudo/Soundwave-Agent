@@ -25,11 +25,40 @@ const DEFAULT_SETTINGS = Object.freeze({
   notifications: true,
   /** The "still running in the tray" notification was shown once. */
   trayHintShown: false,
+  /**
+   * Opt-in (off by default, both of them): when the shell dies, send the error
+   * and the log tail to the vendor's endpoint; and one anonymous line per
+   * launch so a version that rolled out is visible. A report is versions, the
+   * error and the log — never keys, files or the person's name
+   * (desktop/src/reporter.cjs).
+   */
+  crashReports: false,
+  startPing: false,
 });
 
 /** Keys the app's Settings page may change. */
-const USER_KEYS = ["hotkey", "hotkeyEnabled", "pushToTalk", "wakeEnabled", "closeToTray", "openAtLogin", "notifications"];
-const BOOLEAN_KEYS = ["hotkeyEnabled", "pushToTalk", "wakeEnabled", "closeToTray", "openAtLogin", "notifications", "trayHintShown"];
+const USER_KEYS = [
+  "hotkey",
+  "hotkeyEnabled",
+  "pushToTalk",
+  "wakeEnabled",
+  "closeToTray",
+  "openAtLogin",
+  "notifications",
+  "crashReports",
+  "startPing",
+];
+const BOOLEAN_KEYS = [
+  "hotkeyEnabled",
+  "pushToTalk",
+  "wakeEnabled",
+  "closeToTray",
+  "openAtLogin",
+  "notifications",
+  "trayHintShown",
+  "crashReports",
+  "startPing",
+];
 
 function normalizeSettings(raw) {
   const settings = { ...DEFAULT_SETTINGS };

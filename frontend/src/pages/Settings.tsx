@@ -1197,6 +1197,40 @@ function VoiceDesktopTab() {
                 disabled={savingDesk}
               />
             </SettingRow>
+            <SettingRow
+              title="Send crash reports"
+              hint={
+                !desk.reporting?.configured
+                  ? "This build has no reporting address, so there is nowhere to send — the switch stays off."
+                  : desk.crashReports
+                    ? "On — if the app crashes, the error and the last few hundred log lines go to the developer. Never your files, keys or name."
+                    : "Off — nothing is sent. Turning this on sends a report only when the app crashes."
+              }
+            >
+              <Toggle
+                checked={desk.crashReports}
+                onChange={(v) => void updateDesk({ crashReports: v })}
+                label="Send crash reports"
+                disabled={savingDesk || !desk.reporting?.configured}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Anonymous start ping"
+              hint={
+                !desk.reporting?.configured
+                  ? "This build has no reporting address, so there is nowhere to send."
+                  : desk.startPing
+                    ? "On — one line per launch: the version and the OS. No name, no id, nothing about what you do."
+                    : "Off — nothing is sent when the app starts."
+              }
+            >
+              <Toggle
+                checked={desk.startPing}
+                onChange={(v) => void updateDesk({ startPing: v })}
+                label="Anonymous start ping"
+                disabled={savingDesk || !desk.reporting?.configured}
+              />
+            </SettingRow>
             <SettingRow title="Notifications" hint="When a short is ready or fails.">
               <div className="flex items-center gap-3">
                 <Button

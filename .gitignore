@@ -60,6 +60,7 @@ __pycache__/
 # Soundwave's own Google OAuth client for one-click "Connect YouTube"
 # (CI writes it from a repository secret into the staged build only)
 desktop/config/youtube-client.json
+desktop/config/reporting.json
 
 # voice-clone sidecar runtime artifacts
 voiceclone/profiles/

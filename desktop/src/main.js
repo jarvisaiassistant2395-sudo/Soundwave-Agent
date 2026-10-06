@@ -36,12 +36,14 @@ const fs = require("node:fs");
 const http = require("node:http");
 const { pathToFileURL } = require("node:url");
 const { applyServerEnv, getFreePort } = require("./server-env.cjs");
+const { loadReportingConfig } = require("./reporter.cjs");
 const { createManagedKokoro } = require("./kokoro-manager.cjs");
 const { createKeyWatcher } = require("./keywatch.cjs");
 const { DEFAULT_WAKE_PHRASES, vkCodesFor, wakeHit } = require("./wake.cjs");
 const { currentEdition } = require("./edition.cjs");
 const { createAutoUpdater } = require("./update.cjs");
 const diagnostics = require("./diagnostics.cjs");
+const reporter = require("./reporter.cjs");
 const {
   HOTKEY_CHOICES,
   applySettingsPatch,
@@ -254,6 +256,7 @@ function publicState() {
       ...(keyWatcher ? keyWatcher.info() : { supported: false, ready: false, down: false, problem: "off", keys: [] }),
     },
     version: app.getVersion(),
+    reporting: reporter.state(),
     update: updater ? { ...updater.state } : null,
     hotkeyLabel: hotkeyLabel(settings.hotkey),
     hotkeyRegistered: hotkeyState.registered,
@@ -269,6 +272,16 @@ function updateSettings(patch) {
   if (settings.pushToTalk !== before.pushToTalk || settings.hotkey !== before.hotkey || settings.hotkeyEnabled !== before.hotkeyEnabled)
     applyPushToTalk();
   if (settings.wakeEnabled !== before.wakeEnabled) applyWakeSetting();
+  if (settings.crashReports !== before.crashReports || settings.startPing !== before.startPing) {
+    // Turning crash reports off discards anything queued but not yet sent.
+    reporter.configure({
+      crashReports: settings.crashReports,
+      startPing: settings.startPing,
+      version: app.getVersion(),
+      edition: EDITION.id,
+      queueDir: path.join(app.getPath("userData"), "reports"),
+    });
+  }
   if (settings.openAtLogin !== before.openAtLogin && supportsLoginItems()) {
     try {
       app.setLoginItemSettings({ openAtLogin: settings.openAtLogin, ...loginItemOptions() });
@@ -279,6 +292,34 @@ function updateSettings(patch) {
   saveSettings(settingsFile, settings);
   refreshTrayMenu();
   return publicState();
+}
+
+/**
+ * The diagnostics block: versions, the shell's own state, and what the API says
+ * about itself (which store is live, whether it had to recover, whether FFmpeg
+ * is there). Settings → Help both copies it and — with an endpoint configured —
+ * sends it. Secrets are stripped by diagnostics.redact before either happens.
+ */
+async function collectDiagnostics() {
+  const extra = {
+    edition: EDITION.id,
+    settings: {
+      hotkey: settings.hotkey,
+      closeToTray: settings.closeToTray,
+      notifications: settings.notifications,
+      crashReports: settings.crashReports,
+      startPing: settings.startPing,
+    },
+    update: updater ? updater.state : null,
+    wake: wakeInfo ? { state: wakeInfo.state, detail: wakeInfo.detail } : null,
+  };
+  // Asking the running server beats guessing from here.
+  try {
+    extra.api = await fetchJson(`${serverUrl}/api/ready`);
+  } catch (err) {
+    extra.api = `unreachable: ${err.message}`;
+  }
+  return diagnostics.diagnostics({ app, version: app.getVersion(), edition: EDITION.id, extra });
 }
 
 // ── Main window ──────────────────────────────────────────────────────────────
@@ -820,27 +861,17 @@ function registerIpc() {
   });
   ipcMain.handle("soundwave:copy-diagnostics", async (event) => {
     if (!trusted(event)) return null;
-    const extra = {
-      edition: EDITION.id,
-      settings: {
-        hotkey: settings.hotkey,
-        closeToTray: settings.closeToTray,
-        notifications: settings.notifications,
-        wakeWord: settings.wakeWord,
-        voiceInput: settings.voiceInput,
-      },
-      update: updater ? updater.state : null,
-      wake: wakeInfo ? { state: wakeInfo.state, detail: wakeInfo.detail } : null,
-    };
-    // What the API thinks of itself: which store is live, whether it had to
-    // recover, whether FFmpeg is there. Asking the running server beats
-    // guessing from here.
-    try {
-      extra.api = await fetchJson(`${serverUrl}/api/ready`);
-    } catch (err) {
-      extra.api = `unreachable: ${err.message}`;
-    }
-    return diagnostics.diagnostics({ app, version: app.getVersion(), edition: EDITION.id, extra });
+    return collectDiagnostics();
+  });
+  // Settings → Help → "Send diagnostics": the same block, posted to the
+  // vendor's endpoint instead of the clipboard. The press is the consent, so
+  // this works with the reporting switches off.
+  ipcMain.handle("soundwave:send-diagnostics", async (event) => {
+    if (!trusted(event)) return { sent: false, reason: "untrusted" };
+    if (!reporter.state().configured) return { sent: false, reason: "no-endpoint" };
+    const block = await collectDiagnostics();
+    const sent = await reporter.reportDiagnostics(block, { edition: EDITION.id });
+    return { sent, reason: sent ? null : "failed" };
   });
   ipcMain.on("soundwave:voice-listener", (event) => {
     if (!trusted(event) || !alive(overlayWindow) || event.sender !== overlayWindow.webContents) return;
@@ -931,11 +962,42 @@ async function main() {
   // startup is exactly the case where "there is nowhere to look" hurts most.
   // The server writes into the same folder (SOUNDWAVE_LOG_DIR in server-env).
   diagnostics.install(path.join(userDataDir, "logs"));
-  diagnostics.installCrashHandlers({ app, electron: require("electron"), version: app.getVersion() });
+  diagnostics.installCrashHandlers({
+    app,
+    electron: require("electron"),
+    version: app.getVersion(),
+    // Opt-in reports (Settings → Voice & Desktop). The reporter checks the
+    // consent itself, writes the report to disk first and sends after — the
+    // exit below usually beats the request, and the next launch delivers it.
+    onCrash: (error, context) => void reporter.reportCrash(error, context),
+  });
   process.on("exit", (code) => diagnostics.log("info", "[desktop] shell exiting", { code }));
 
   settingsFile = path.join(userDataDir, "desktop-settings.json");
   settings = loadSettings(settingsFile);
+
+  // Opt-in reports: the endpoint is the vendor's (baked at build time, or the
+  // person's own reporting.json / SOUNDWAVE_REPORT_URL), and both switches ship
+  // off. With no endpoint, the Settings switches say there is nowhere to send.
+  const reporting = loadReportingConfig(appRoot, userDataDir);
+  reporter.configure({
+    url: reporting.url,
+    crashReports: settings.crashReports,
+    startPing: settings.startPing,
+    version: app.getVersion(),
+    edition: EDITION.id,
+    queueDir: path.join(userDataDir, "reports"),
+  });
+  diagnostics.log("info", "[desktop] reporting", {
+    endpoint: reporting.url ? "configured" : "none",
+    source: reporting.source,
+    crashReports: settings.crashReports,
+    startPing: settings.startPing,
+  });
+  // Anything the last run could not deliver goes now, and the anonymous start
+  // line (when it is on) is one request.
+  void reporter.flushPending();
+  void reporter.reportStart();
   if (supportsLoginItems()) {
     try {
       settings = { ...settings, openAtLogin: app.getLoginItemSettings(loginItemOptions()).openAtLogin };

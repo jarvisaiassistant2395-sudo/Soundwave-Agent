@@ -17,6 +17,24 @@ export interface DesktopSettings {
   openAtLogin: boolean;
   /** Windows notifications when a short is ready / fails. */
   notifications: boolean;
+  /**
+   * Opt-in, off by default: when the shell crashes, send the error and the log
+   * tail to the vendor's endpoint. Never keys, files or the person's name.
+   */
+  crashReports: boolean;
+  /** Opt-in, off by default: one anonymous line per launch (version, OS — no id). */
+  startPing: boolean;
+}
+
+/** What the opt-in reporter is doing (desktop/src/reporter.cjs). */
+export interface DesktopReportingState {
+  /** False when this build (or this machine) has no endpoint to send to. */
+  configured: boolean;
+  crashReports: boolean;
+  startPing: boolean;
+  /** Reports written down but not yet delivered; sent on the next launch. */
+  queued: number;
+  sent: { crash: number; start: number; diagnostics: number; failed: number; queued: number };
 }
 
 /** What the hidden wake listener is doing (Settings shows this). */
@@ -65,6 +83,8 @@ export interface DesktopUpdateState {
 
 export interface DesktopState extends DesktopSettings {
   wake: WakeListenerStatus;
+  /** What the opt-in reporter is doing — and whether this build can send at all. */
+  reporting: DesktopReportingState;
   /** Null in a browser, or on a shell too old to know about updates. */
   update: DesktopUpdateState | null;
   /** The key watcher's state (the setting itself is `pushToTalk`). */
@@ -110,6 +130,8 @@ export interface SoundwaveDesktop {
   openLogs(): Promise<boolean>;
   /** Settings → Help: a diagnostics block (versions, state, log tail) for support. */
   copyDiagnostics(): Promise<string | null>;
+  /** Settings → Help: post that same block to the developer's endpoint, if this build has one. */
+  sendDiagnostics(): Promise<{ sent: boolean; reason: string | null } | null>;
   notify(notification: DesktopNotification): void;
   showApp(route?: string): void;
   hideOverlay(): void;
