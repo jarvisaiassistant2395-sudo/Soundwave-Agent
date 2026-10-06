@@ -311,13 +311,52 @@ be reloaded", Aug 2026), so the desktop app handles yt-dlp specially:
 - The server log shows both: `[yt-dlp] self-update: …` and
   `[yt-dlp] JavaScript runtime: this app running as Node v… (Electron …)`.
 
-## Local build (any OS with network access)
+## Local build (no GitHub Actions required)
+
+CI is the normal path, but a build must never be *blocked* on it (Actions
+minutes, billing, a queue, a network policy). On Windows, one command does
+everything the workflow's Windows runner does, in the same order, with the same
+gates:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-windows.ps1
+```
+
+That is: backend `npm ci` → typecheck → tests → build; frontend `npm ci` →
+build; the runtime binaries staged into `desktop/bin` (ffmpeg, yt-dlp, the
+caption font, whisper.cpp v1.9.2 + the English model, the Microsoft C++ runtime
+next to it); the licence audit; the desktop helper tests; `assemble.mjs`;
+`smoke.mjs`; `electron-builder --win`; and `verify-runtime.mjs`. The installers
+land in `desktop/release/`. Useful switches:
+
+| Switch | What it does |
+| --- | --- |
+| `-Dev` | Builds **Soundwave AI - Dev** (the unlocked build) instead of the sold one |
+| `-SkipTests` | Skips the three test suites (typechecks and builds only) |
+| `-SkipBinaries` | Reuses what is already in `desktop/bin` — the fast rebuild |
+| `-PublishTag v1.6.7` | Uploads the finished installers to that GitHub Release (needs `gh`) |
+
+The first run downloads ~500 MB and takes a while; later runs reuse
+`desktop/bin`. It needs Windows: the payload is Windows binaries, the speech
+engine's DLL check reads `%WINDIR%\System32`, and electron-builder's NSIS
+target is only reliable on Windows itself.
+
+**Never commit an installer.** Git refuses any file over 100 MB and these are
+~220 MB each, so a Release (or the update feed) is the only home for them — for
+a locally built one, the `-PublishTag` switch above does it without touching
+Actions. The auto-update feed is a separate, public repo: see *Updates and
+downloads*.
+
+Without the binary staging — the older advice of `assemble.mjs` +
+`electron-builder` on its own — the installer builds and installs happily and
+then cannot cut video or transcribe speech, because `desktop/bin` is empty. If
+you only want to exercise the assembled app (no installer), this still works on
+any OS with network access:
 
 ```bash
 cd server   && npm ci && npm run build
 cd ../frontend && npm ci && npm run build
 cd ../desktop && npm ci && node assemble.mjs && node smoke.mjs
-npx electron-builder --win        # needs network: downloads Electron + NSIS tools
 ```
 
 `node smoke.mjs` boots the assembled app exactly like the desktop shell does
