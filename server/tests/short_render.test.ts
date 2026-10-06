@@ -48,7 +48,16 @@ function paramsWith(media?: MediaInput): ExportParams {
     audioPath: "voice.wav",
     subtitles: cues,
     subtitleStyle: style,
-    settings: { resolution: { width: 1080, height: 1920 }, format: "mp4", quality: "high", fps: 60, watermark: false, audioVolume: 1, fadeOut: 0.3, duration: 4 },
+    settings: {
+      resolution: { width: 1080, height: 1920 },
+      format: "mp4",
+      quality: "high",
+      fps: 60,
+      watermark: false,
+      audioVolume: 1,
+      fadeOut: 0.3,
+      duration: 4,
+    },
     outputPath: "out.mp4",
     ...(media ? { media } : {}),
   };
@@ -57,7 +66,7 @@ function paramsWith(media?: MediaInput): ExportParams {
 const ctx = { assPath: "/tmp/job.ass", fontDir: "/repo/assets/fonts" };
 const flag = (args: string[], name: string) => {
   const i = args.indexOf(name);
-  return i < 0 ? null : args[i + 1] ?? null;
+  return i < 0 ? null : (args[i + 1] ?? null);
 };
 
 describe("the plain render (no storyboard)", () => {
@@ -128,7 +137,9 @@ describe("the storyboard render", () => {
   });
 
   it("mixes the voice with the effects and a bed that gets out of its way", () => {
-    expect(graph).toContain("[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.000,asplit=2[voice][voicekey]");
+    expect(graph).toContain(
+      "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.000,asplit=2[voice][voicekey]",
+    );
     expect(graph).toContain("[3:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.80,adelay=0:all=1[sfx0]");
     expect(graph).toContain("[4:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.55,adelay=1500:all=1[sfx1]");
     expect(graph).toContain("[5:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=0.070[musicraw]");
@@ -138,10 +149,7 @@ describe("the storyboard render", () => {
   });
 
   it("leaves the bed alone when it is the only sound, and skips the duck when asked", () => {
-    const noDuck = buildFfmpegArgs(
-      paramsWith({ music: { path: "pulse.wav", gain: 0.05, duck: false }, motion: { kind: "drift" } }),
-      ctx,
-    );
+    const noDuck = buildFfmpegArgs(paramsWith({ music: { path: "pulse.wav", gain: 0.05, duck: false }, motion: { kind: "drift" } }), ctx);
     const g = flag(noDuck, "-filter_complex")!;
     expect(g).toContain("[music]amix=inputs=2:normalize=0");
     expect(g).not.toContain("sidechaincompress");
@@ -161,7 +169,9 @@ describe("the storyboard render", () => {
       ctx,
     );
     const g = flag(cardsOnly, "-filter_complex")!;
-    expect(g).toContain("[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.000,afade=t=out:st=3.70:d=0.30[aout]");
+    expect(g).toContain(
+      "[1:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.000,afade=t=out:st=3.70:d=0.30[aout]",
+    );
     expect(g).not.toContain("amix");
   });
 
@@ -236,11 +246,63 @@ describe.skipIf(!ffmpeg)("rendering one for real", () => {
 
     // A background, a fake voiceover and a real photo, all built here.
     const bg = path.join(dir, "bg.mp4");
-    expect(run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=4", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", bg])).toBe(true);
+    expect(
+      run([
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=640x360:rate=30:duration=4",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-pix_fmt",
+        "yuv420p",
+        bg,
+      ]),
+    ).toBe(true);
     const voice = path.join(dir, "voice.wav");
-    expect(run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=200:duration=4:sample_rate=48000", "-c:a", "pcm_s16le", voice])).toBe(true);
+    expect(
+      run([
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=200:duration=4:sample_rate=48000",
+        "-c:a",
+        "pcm_s16le",
+        voice,
+      ]),
+    ).toBe(true);
+    // A real image file — the render path does not care what is in it.
+    // `gradients` is the nicer-looking fixture but it is a newer lavfi source
+    // (FFmpeg 5.0+), and a developer machine or CI image with FFmpeg 4.x turns
+    // that into a red build for a reason that has nothing to do with the code.
     const photo = path.join(dir, "photo.png");
-    expect(run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "gradients=size=1280x720:duration=1:n=3", "-frames:v", "1", photo])).toBe(true);
+    const photoFromGradients = run([
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "gradients=size=1280x720:duration=1:n=3",
+      "-frames:v",
+      "1",
+      photo,
+    ]);
+    const photoFromColour =
+      photoFromGradients ||
+      run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x1F2937:size=1280x720", "-frames:v", "1", photo]);
+    expect(photoFromColour, "this ffmpeg could not produce a test photo (neither gradients nor the color source worked)").toBe(true);
 
     const impact = await ensureSfx("impact", dir);
     const whoosh = await ensureSfx("whoosh", dir);
@@ -254,7 +316,16 @@ describe.skipIf(!ffmpeg)("rendering one for real", () => {
       audioPath: voice,
       subtitles: cues,
       subtitleStyle: style,
-      settings: { resolution: { width: 270, height: 480 }, format: "mp4", quality: "low", fps: 30, watermark: false, audioVolume: 1, fadeOut: 0.3, duration: 4 },
+      settings: {
+        resolution: { width: 270, height: 480 },
+        format: "mp4",
+        quality: "low",
+        fps: 30,
+        watermark: false,
+        audioVolume: 1,
+        fadeOut: 0.3,
+        duration: 4,
+      },
       outputPath: out,
       onProgress: (p) => progress.push(p),
       media: {
@@ -289,16 +360,53 @@ describe.skipIf(!ffmpeg)("rendering one for real", () => {
     const ffmpegPath = ffmpeg!;
     const run = (args: string[]) => spawnSync(ffmpegPath, args, { stdio: "ignore" }).status === 0;
     const bg = path.join(dir, "bg2.mp4");
-    run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=3", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", bg]);
+    run([
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=320x180:rate=30:duration=3",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-pix_fmt",
+      "yuv420p",
+      bg,
+    ]);
     const voice = path.join(dir, "voice2.wav");
-    run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=200:duration=3:sample_rate=48000", "-c:a", "pcm_s16le", voice]);
+    run([
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=200:duration=3:sample_rate=48000",
+      "-c:a",
+      "pcm_s16le",
+      voice,
+    ]);
     const out = path.join(dir, "plain.mp4");
     await runFfmpegExport({
       videoPath: bg,
       audioPath: voice,
       subtitles: cues,
       subtitleStyle: style,
-      settings: { resolution: { width: 270, height: 480 }, format: "mp4", quality: "low", fps: 30, watermark: false, audioVolume: 1, fadeOut: 0.3, duration: 3 },
+      settings: {
+        resolution: { width: 270, height: 480 },
+        format: "mp4",
+        quality: "low",
+        fps: 30,
+        watermark: false,
+        audioVolume: 1,
+        fadeOut: 0.3,
+        duration: 3,
+      },
       outputPath: out,
     });
     const probed = await probeMedia(out);

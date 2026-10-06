@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveFfmpegPath } from "../config.js";
@@ -345,6 +345,32 @@ export interface ProbeResult {
   height: number;
   hasVideo: boolean;
   hasAudio: boolean;
+}
+
+/**
+ * Which ffmpeg this process will actually run, and what it says it is —
+ * `C:\ProgramData\chocolatey\bin\ffmpeg.exe (ffmpeg version 4.2.1)`.
+ *
+ * Added after a Windows build failed on two ffmpeg-dependent tests with nothing
+ * but "expected FAILED to be COMPLETED" to go on. The cause was an old system
+ * FFmpeg: the repository tracks `vendor/ffmpeg/ffmpeg`, which is a *Linux*
+ * binary, so on Windows `resolveFfmpegPath()` falls through to whatever is
+ * installed (chocolatey, scoop, winget, Downloads…) and that can be years
+ * behind the build the desktop app ships.
+ *
+ * Failure messages now carry this, so a red test or a failed render names the
+ * binary instead of leaving the next person to guess. Only called on a failure
+ * path: it spawns a process.
+ */
+export function ffmpegIdentity(): string {
+  const bin = resolveFfmpegPath();
+  try {
+    const out = spawnSync(bin, ["-hide_banner", "-version"], { encoding: "utf8", timeout: 5000 });
+    const first = `${out.stdout ?? ""}${out.stderr ?? ""}`.split("\n")[0]?.trim();
+    return first ? `${bin} (${first})` : bin;
+  } catch {
+    return bin;
+  }
 }
 
 export function probeMedia(filePath: string): Promise<ProbeResult> {
@@ -697,7 +723,7 @@ export function runFfmpegExport(params: ExportParams): Promise<void> {
         onProgress?.(100);
         resolve();
       } else {
-        reject(new Error(stderr.slice(-800) || `FFmpeg exited with code ${code}`));
+        reject(new Error(`${stderr.slice(-800) || `FFmpeg exited with code ${code}`}\n(ffmpeg: ${ffmpegIdentity()})`));
       }
     });
   });

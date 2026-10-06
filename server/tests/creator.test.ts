@@ -29,13 +29,34 @@ beforeAll(async () => {
   const ffmpeg = resolveFfmpegPath();
   spawnSync(ffmpeg, [
     "-y",
-    "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30:duration=4",
-    "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5",
-    "-f", "lavfi", "-i", "anullsrc=r=44100:duration=1.5",
-    "-f", "lavfi", "-i", "sine=frequency=880:duration=1.0",
-    "-filter_complex", "[1:a][2:a][3:a]concat=n=3:v=0:a=1[outa]",
-    "-map", "0:v", "-map", "[outa]",
-    "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc=size=320x180:rate=30:duration=4",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=1.5",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=r=44100:duration=1.5",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=880:duration=1.0",
+    "-filter_complex",
+    "[1:a][2:a][3:a]concat=n=3:v=0:a=1[outa]",
+    "-map",
+    "0:v",
+    "-map",
+    "[outa]",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-c:a",
+    "aac",
     testVideoPath,
   ]);
 });
@@ -50,14 +71,12 @@ describe.skipIf(!hasFfmpeg)("Creator Studio API", () => {
   let detectedSpeechIntervals: Array<{ start: number; end: number; duration: number }> = [];
 
   it("detects dead-air pauses and returns silence analysis", async () => {
-    const res = await request(app)
-      .post("/api/v1/creator/analyze-silence")
-      .send({
-        fileKey: testKey,
-        noiseThresholdDb: -30,
-        minSilenceDuration: 0.4,
-        paddingSec: 0.1,
-      });
+    const res = await request(app).post("/api/v1/creator/analyze-silence").send({
+      fileKey: testKey,
+      noiseThresholdDb: -30,
+      minSilenceDuration: 0.4,
+      paddingSec: 0.1,
+    });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -86,7 +105,12 @@ describe.skipIf(!hasFfmpeg)("Creator Studio API", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.jobId).toBeDefined();
-    expect(res.body.status).toBe("COMPLETED");
+    // The reason, when there is one. This assertion used to say only
+    // "expected 'FAILED' to be 'COMPLETED'", which is what a red build reports
+    // for *any* ffmpeg problem: a missing filter, an old binary, a bad path.
+    // The route now returns the stored reason (which names the ffmpeg it used),
+    // so the failure explains itself.
+    expect(res.body.status, `the auto-edit job failed: ${res.body.error ?? "no reason recorded"}`).toBe("COMPLETED");
     expect(res.body.downloadUrl).toBeDefined();
 
     // Verify download

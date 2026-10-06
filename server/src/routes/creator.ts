@@ -154,10 +154,10 @@ router.post("/auto-edit", optionalAuth, validate({ body: autoEditSchema }), asyn
         const errMessage = e?.message || "Auto-editing process failed";
         await store.updateJob(job.id, {
           status: "FAILED",
-          errorMessage: errMessage.slice(0, 400),
+          errorMessage: errMessage.slice(0, 800),
           completedAt: new Date().toISOString(),
         });
-        emitCreatorJob(job.id, { status: "FAILED", error: errMessage.slice(0, 400) });
+        emitCreatorJob(job.id, { status: "FAILED", error: errMessage.slice(0, 800) });
       }
     };
 
@@ -177,6 +177,10 @@ router.post("/auto-edit", optionalAuth, validate({ body: autoEditSchema }), asyn
         status: updated?.status || "COMPLETED",
         progress: 100,
         downloadUrl: `/api/v1/creator/jobs/${job.id}/download`,
+        // When the render failed, the reason it already stored is the only
+        // useful thing in this response — without it the caller (and the test,
+        // and the person reading a bug report) sees "FAILED" and nothing else.
+        ...(updated?.status === "FAILED" && updated.errorMessage ? { error: updated.errorMessage } : {}),
       });
     }
   } catch (e) {

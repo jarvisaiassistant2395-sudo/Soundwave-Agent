@@ -10,7 +10,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { resolveFfmpegPath } from "../config.js";
-import { probeMedia } from "./ffmpeg.js";
+import { ffmpegIdentity, probeMedia } from "./ffmpeg.js";
 
 export interface SilenceDetectOptions {
   noiseThresholdDb?: number; // e.g. -30 dB (lower = stricter silence, higher = cuts softer pauses)
@@ -447,7 +447,7 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
           onProgress?.(100);
           resolve();
         } else {
-          reject(new Error(`FFmpeg auto-editing failed (code ${code}): ${stderr.slice(-400)}`));
+          reject(new Error(`FFmpeg auto-editing failed (code ${code}) using ${ffmpegIdentity()}: ${stderr.slice(-400)}`));
         }
       });
     });
