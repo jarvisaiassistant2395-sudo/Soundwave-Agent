@@ -415,6 +415,69 @@ mislabeling that flag ("own key" → "kit from the PC") and now prints the PC's
 brain state (key set / NO KEY, and whether it comes from the environment) — the
 one line that would have explained this failure a run earlier.
 
+1.6.8 (phone 1.3.7) is the build where the agent sends email — and sends it when
+you said. Scheduled sends are what people asked for in those words ("send this to
+that guy at 5 pm"), so the agent writes the message when it is asked and sends it
+at five with no second confirmation: `server/src/lib/emailSchedule.ts` keeps the
+draft with the time it is due, a one-minute ticker fires it through the same
+`sendMessage`/`sendReply` path every other send uses — the send switch, the daily
+cap and the duplicate rule are applied when the message actually goes out, not
+when it was written — and a send more than six hours late is reported as *missed*
+instead of arriving at midnight. An interrupted send is never repeated blindly:
+the entry is marked `sending` before the network call and, if it is still marked
+that ten minutes later, reported once with a pointer to Gmail's Sent folder.
+Settings → Email lists what is waiting ("Waiting to go out", cancel button and
+all) and what happened to the rest; the agent cancels one by id, exact subject, or
+words you say in chat. It ships with the rest of the Google pass: `send_email`,
+`send_reply`, `draft_email`, `find_contact`, `list_calendar`, `search_drive`,
+`gmail_status` and the two schedule tools are real tools over the scopes the
+consent screen granted (`gmail.readonly`, `gmail.compose`, `contacts.readonly`,
+`calendar.readonly`, `drive.readonly`), and a tool whose scope nobody granted
+answers `SCOPE_NOT_GRANTED` naming it instead of failing at the socket. Mail
+content is treated as untrusted — a message in your inbox cannot make the agent
+send anything — and addresses are never invented. Tests:
+`server/tests/email.test.ts`, `email_schedule.test.ts` (12, including "nothing
+sends early", the fire-time cap, and a slow Gmail overlapping the next tick) and
+`workspace.test.ts`.
+
+Clip hunting stopped being a coin toss. `server/src/lib/brain/core/clips.ts`
+reads the audio before it chooses anything: a 100 ms RMS profile, the noise floor
+as its 10th percentile, speech runs bridged across gaps up to 0.32 s with the
+very short ones dropped, then a score over speech coverage, loudness, dynamics
+and hook words. A clip is 12–59 s, candidates are at least 12 s apart, each
+moment is snapped to the surrounding speech so a cut does not start mid-syllable,
+and only the moments that survive are transcribed — eight at most — so the
+sharper picks cost fewer Gemini calls than the old blind `-ss` slices did.
+
+The trend scout reads popular Shorts for free (YouTube.js first, yt-dlp when
+YouTube's own reader refuses; Gemini only if you press refresh and both fail) and
+now stays out of the way of your voice: it waits until the app has been open two
+minutes instead of twenty-five seconds, and it steps aside while the speech
+engine has work — `sttBusy()` in `server/src/lib/stt.ts`, checked in the scan's
+worker loop. That fix comes straight from a run of the packaged-app end-to-end
+job, where a scan's yt-dlp timeouts on a two-core machine pushed a voice command
+past the engine's 90-second limit.
+
+The interface is black: a true-black page, near-black panels and a neutral grey
+scale instead of navy, on the phone as well (`mobile/src/index.css`), and the
+fonts the interface is drawn in now travel inside the install
+(`frontend/src/fonts.css`, `assets/fonts/` → the install's `bin/fonts/`, notices
+in `THIRD-PARTY-NOTICES.txt`) instead of being fetched from a font CDN at runtime
+— an installer for an offline PC should look right on its first launch. The
+profile banner in the bottom-left corner is real: the name and avatar open the
+Profile page (name, avatar, plan, today's ideas) and the chevron opens Profile /
+Plan & Billing / Settings / Sign out; in the collapsed rail the avatar itself is
+the link. Voice setup looks after itself — `desktop/src/kokoro-manager.cjs`
+starts the managed install 1.2 s after the window opens, on every launch — and
+setup now ends by importing the whole service (`voiceclone/preflight.py`), so a
+package the engine needs and the installer forgot (loguru was one) fails during
+setup with a named step instead of after the first sentence you ask it to say.
+Retries back off from 20 s to five minutes to half an hour, and Settings can
+cancel or retry by hand.
+
+1.6.7 and phone 1.3.6 were the theme-only builds from the UI pass; this build
+carries that theme plus everything above.
+
 1.6.6 stops spending Gemini quota on trends. The trend scout used to ask
 Gemini + Google Search every three days; now `server/src/lib/shortsTrends.ts`
 reads this week's popular Shorts straight from YouTube's search through
