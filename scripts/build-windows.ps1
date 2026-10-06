@@ -60,7 +60,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+# TLS 1.2 for the downloads below. Windows PowerShell 5.1 runs on .NET
+# Framework, which has no SecurityProtocolType.Tls13 - naming it stops the
+# script before its first stage - and .NET negotiates up to whatever the OS
+# and the server support anyway. Wrapped because this line runs before any
+# stage can report a failure.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {
+  Write-Host "    (could not pin TLS 1.2; using the system default)" -ForegroundColor DarkGray
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $serverDir = Join-Path $repoRoot "server"
@@ -125,6 +132,7 @@ Note "repository $repoRoot"
 $version = (Get-Content (Join-Path $desktopDir "package.json") -Raw | ConvertFrom-Json).version
 $edition = if ($Dev) { "Soundwave AI - Dev (unlocked, no billing)" } else { "Soundwave AI (the sold build)" }
 Note "version $version - $edition"
+Note "PowerShell $($PSVersionTable.PSVersion)"
 
 # -- Backend -----------------------------------------------------------------
 Invoke-Stage "Install backend dependencies" $serverDir { npm ci --no-audit --no-fund }
@@ -184,7 +192,7 @@ if (-not $SkipBinaries) {
   Say "Caption font (Inter, OFL-1.1 - travels with the app)"
   $fontDest = Join-Path $binDir "fonts"
   New-Item -ItemType Directory -Force $fontDest | Out-Null
-  Copy-Item (Join-Path $repoRoot "assets\fonts\*") $fontDest -Force
+  Get-ChildItem (Join-Path $repoRoot "assets\fonts") -File | Copy-Item -Destination $fontDest -Force
   $fontCount = (Get-ChildItem $fontDest).Count
   if ($fontCount -lt 1) { throw "assets\fonts is empty - the captions would render in a fallback font" }
   Good "$fontCount file(s)"
@@ -258,8 +266,12 @@ if ($YouTubeClientId -and $YouTubeClientSecret) {
   Say "Bake Soundwave's Google client (one-press Connect YouTube)"
   $configDir = Join-Path $desktopDir "config"
   New-Item -ItemType Directory -Force $configDir | Out-Null
-  @{ client_id = $YouTubeClientId; client_secret = $YouTubeClientSecret } |
-    ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $configDir "youtube-client.json")
+  # Written through .NET, not Set-Content: PowerShell 5.1's "-Encoding utf8" puts
+  # a BOM on the file, JSON.parse refuses a BOM, and the reader would fall through
+  # to "no baked client" while the file sat there looking correct.
+  $jsonPath = Join-Path $configDir "youtube-client.json"
+  $json = @{ client_id = $YouTubeClientId; client_secret = $YouTubeClientSecret } | ConvertTo-Json
+  [System.IO.File]::WriteAllText($jsonPath, $json, (New-Object System.Text.UTF8Encoding($false)))
   Good "desktop\config\youtube-client.json"
 } elseif (-not $Dev) {
   Note "(no Google client baked: Connect YouTube asks for a client id + secret in Settings)"
