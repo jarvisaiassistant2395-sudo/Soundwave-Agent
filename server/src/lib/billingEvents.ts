@@ -10,6 +10,7 @@
 // brain/, chat-files/), and — like them — it notices the file going away.
 
 import fs from "node:fs";
+import { writeJsonFile } from "./jsonFile.js";
 import path from "node:path";
 import { config } from "../config.js";
 
@@ -43,8 +44,7 @@ function load(): string[] {
 function persist(ids: string[]): void {
   const target = file();
   try {
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, JSON.stringify(ids, null, 2), "utf-8");
+    writeJsonFile(target, ids);
     cached = ids;
     cachedMtime = fs.statSync(target).mtimeMs;
   } catch {

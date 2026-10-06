@@ -311,7 +311,7 @@ stand on their own, and renders each as a vertical Short: the video cropped to
 `lib/videoClips.ts` + `brain/core/clips.ts` (pure rules: windows, scoring,
 picking, caption timing).
 
-**Chat & Files** (desktop 1.6.6): a tab of its own for documents rather than for
+**Chat & Files** (desktop 1.7.0): a tab of its own for documents rather than for
 talking to the agent — drop in any file (or paste a screenshot) and ask about it.
 What happens to the file is decided per file and always said on the chip under
 the question:

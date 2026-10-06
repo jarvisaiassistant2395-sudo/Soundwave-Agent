@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
+import { writeJsonFile } from "./jsonFile.js";
 import type { SubtitleStyleInput } from "./ffmpeg.js";
 
 export type CaptionStyleId = "house" | "bold" | "boxed" | "karaoke" | "minimal";
@@ -144,14 +145,18 @@ export function saveBrand(patch: Partial<BrandKit>): BrandKit {
   const current = loadBrand();
   const next: BrandKit = {
     name: patch.name === undefined ? current.name : String(patch.name).slice(0, 80),
-    captionStyle: patch.captionStyle === undefined ? current.captionStyle : isCaptionStyle(patch.captionStyle) ? patch.captionStyle : current.captionStyle,
+    captionStyle:
+      patch.captionStyle === undefined
+        ? current.captionStyle
+        : isCaptionStyle(patch.captionStyle)
+          ? patch.captionStyle
+          : current.captionStyle,
     captionColor: patch.captionColor === undefined ? current.captionColor : safeColor(patch.captionColor, current.captionColor),
     accentColor: patch.accentColor === undefined ? current.accentColor : safeColor(patch.accentColor, current.accentColor),
     updatedAt: new Date().toISOString(),
   };
   try {
-    fs.mkdirSync(config.dataDir, { recursive: true });
-    fs.writeFileSync(fileFor(), JSON.stringify(next, null, 2));
+    writeJsonFile(fileFor(), next);
   } catch (err) {
     console.warn("[brand] couldn't save the look:", (err as Error).message);
   }

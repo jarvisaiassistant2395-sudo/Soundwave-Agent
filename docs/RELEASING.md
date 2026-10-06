@@ -862,9 +862,79 @@ never happen — `desktop/test/update.test.cjs` is the guard.
 flip it to `true` — then a downloaded update must be signed by the same
 certificate, which is what stops a tampered feed from installing anything.
 
+**What protects an update before the certificate exists.** Two things, and
+neither of them is a signature:
+
+* the **sha512 in `latest.yml`**, which electron-updater checks before it
+  installs anything. A download that was corrupted in transit (or served by
+  something that is not our feed) fails that check and is thrown away.
+* **HTTPS to GitHub Releases**, which is what stops anyone in the middle
+  changing both the installer and the hash in the same response.
+
+What that does *not* cover is someone who can publish to the feed repository:
+they could ship a build that we did not make. That is why the token for it is a
+fine-grained one with write access to that repo's releases and nothing else —
+and why flipping `verifyUpdateCodeSignature` is the first thing to do the day a
+certificate exists, not a nice-to-have afterwards.
+
+**Update failures are visible now.** Settings → Voice & Desktop shows the
+updater's own message ("Couldn't update: …") rather than a generic line, and
+the same text is in the log file. Offline is the common case and says so.
+
+**SmartScreen, before a certificate.** Windows shows *"Windows protected your
+PC"* for an unsigned installer that has not built up reputation — this is
+normal for a new unsigned product, not a bug, and it is what a certificate
+fixes. Until then: tell buyers what they will see and that **More info → Run
+anyway** is the path, and expect a few support messages about it. Do not tell
+them to turn SmartScreen off, and never call it "a virus warning" — it is an
+unknown-publisher warning.
+
+**macOS, if it is ever built.** Notarization is not optional there: an
+unnotarized `.dmg` is refused by Gatekeeper outright, not with a warning that
+can be clicked past. It needs a paid Apple Developer account and
+`notarize: true` plus the Apple credentials in CI.
+
 **Before you sell a build, check it updates:** install the previous version on a
 spare PC, launch it, and watch `%APPDATA%\Soundwave AI\logs` (or Settings →
 Voice & Desktop) for the new version arriving.
+
+## The phone app (Play Store)
+
+`android-companion.yml` builds three things from `mobile/`: a **signed APK**
+(attached to the rolling `companion-build` pre-release, so testers can install
+it), a **debug APK** (for the emulator end-to-end on every run) and, since this
+review, an **AAB** — the format the Play Store actually accepts.
+
+**Getting on Play, once.** Sideloading was the whole distribution story before
+this; an internal track is the smallest step off it, and every step after
+(internal → closed → open → production) is a button in the Console, not a
+change here.
+
+1. Play Console → **Setup → API access**. Create a service account (or link an
+   existing Google Cloud one) and grant it **Release to internal testing** under
+   *Users & permissions*. Do not grant it anything else — that account is what
+   the CI job will authenticate as.
+2. Download its **JSON key** and save it as a repository secret:
+   `gh secret set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON < key.json`
+3. **Fill in the data-safety form** (App content → Data safety). This is the part
+   that gets apps removed rather than merely rejected, and this app has two
+   answers that need care:
+   * **Audio** — the companion records from the microphone for push-to-talk and
+     the wake word. It is transcribed on your own PC (whisper.cpp) or by the
+     user's own Gemini key; it is not collected by us.
+   * **Local network** — the app talks to the PC on the LAN over an encrypted
+     pairing (AES-256-GCM inside the tunnel, `mobile/src/lib/protocol.ts`). The
+     pairing key never leaves the two devices and is excluded from Android's
+     backup.
+   Also declare the microphone permission's purpose in the Console listing.
+4. Push to `main` (or run the workflow) — the AAB goes to the **internal track**,
+   status `completed`. Without the secret the step prints a notice and skips;
+   the APK is still built and published.
+
+**Tracks and versions.** The version comes from `mobile/package.json` via
+Gradle, so bump it for every upload — Play refuses a `versionCode` it has
+already seen. `mobile/android/app/build.gradle` derives `versionCode` from the
+version name; check it before a release rather than after a rejection.
 
 ## Versioning
 

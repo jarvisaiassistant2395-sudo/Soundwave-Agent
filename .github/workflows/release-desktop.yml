@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: |
             server/package-lock.json
@@ -126,11 +126,23 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      # Both executables are checked against their publisher's own SHA-256
+      # before they are kept (scripts/checksum.ps1, shared with the local
+      # download scripts). These two files are executed on a customer's PC, and
+      # until this step existed nothing looked at them beyond "bigger than a
+      # megabyte" — exactly the shape of build a tampered mirror turns into
+      # malware. whisper.cpp, below, was already verified this way.
       - name: Fetch runtime binaries (ffmpeg + yt-dlp)
         shell: pwsh
         run: |
+          . scripts/checksum.ps1
+          $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force desktop/bin | Out-Null
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
+          # gyan.dev has no checksum API we can promise; -Optional warns if the
+          # digest list isn't there, and still fails hard on a mismatch.
+          Assert-FileSha256 -Path ffmpeg.zip -Uri "$ffmpegUrl.sha256" -FileName "ffmpeg-release-essentials.zip" -Optional
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-extract -Force
           $ff = Get-ChildItem -Recurse -Filter ffmpeg.exe ffmpeg-extract | Select-Object -First 1
           if (-not $ff) { throw "ffmpeg.exe not found in essentials zip" }
@@ -138,21 +150,23 @@ jobs:
           # yt-dlp from the nightly channel — YouTube fixes land there first and
           # yt-dlp recommends it for regular users; stable is the fallback. The
           # app keeps its user-data copy updated after install as well.
+          # Each source carries its own release's SHA2-256SUMS, required here.
           $ytdlpSources = @(
-            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe",
-            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+            @{ exe = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe"; sums = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/SHA2-256SUMS" },
+            @{ exe = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"; sums = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS" }
           )
           $gotYtDlp = $false
           foreach ($src in $ytdlpSources) {
             try {
-              Invoke-WebRequest -Uri $src -OutFile desktop/bin/yt-dlp.exe
+              Invoke-WebRequest -Uri $src.exe -OutFile desktop/bin/yt-dlp.exe
+              Assert-FileSha256 -Path desktop/bin/yt-dlp.exe -Uri $src.sums -FileName "yt-dlp.exe"
               $gotYtDlp = $true
               break
             } catch {
-              Write-Warning "yt-dlp download failed from ${src}: $_"
+              Write-Warning "yt-dlp download failed from $($src.exe): $_"
             }
           }
-          if (-not $gotYtDlp) { throw "could not download yt-dlp.exe" }
+          if (-not $gotYtDlp) { throw "could not download and verify yt-dlp.exe" }
           Write-Host "yt-dlp $(& desktop/bin/yt-dlp.exe --version)"
           # ffmpeg is GPLv3: its licence text and a written offer of source must
           # ship with it. Written here, immediately, so the licence audit step

@@ -44,11 +44,7 @@ export function asBufferSource(bytes: Uint8Array): BufferSource {
 
 /** "abcd-efgh-jkmn" → "ABCDEFGHJKMN" (Crockford base32: I/L → 1, O → 0), or null. */
 export function normalizePairingCode(input: string): string | null {
-  const code = input
-    .toUpperCase()
-    .replace(/[\s-]/g, "")
-    .replace(/[IL]/g, "1")
-    .replace(/O/g, "0");
+  const code = input.toUpperCase().replace(/[\s-]/g, "").replace(/[IL]/g, "1").replace(/O/g, "0");
   if (code.length !== PAIRING_CODE_LENGTH) return null;
   for (const ch of code) if (!CODE_ALPHABET.includes(ch)) return null;
   return code;
@@ -110,6 +106,45 @@ export function isValidHost(host: string): boolean {
 export function baseUrlFor(host: string, port: number): string {
   if (/^https?:\/\//i.test(host)) return host.replace(/\/+$/, "");
   return `http://${host}:${port}`;
+}
+
+/**
+ * Is this address one the phone may speak to in the clear?
+ *
+ * The Android manifest has to allow cleartext app-wide
+ * (`usesCleartextTraffic="true"`): the PC answers on http://<its LAN
+ * address>:47800, and Android's network security config can name hosts but has
+ * no way to say "the private ranges" — so the platform cannot narrow this for
+ * us. What CAN be narrowed is what the app itself does, and that is this
+ * function: the only cleartext the app ever sends goes to the person's own
+ * machine or their own network. Anything else (a public address in a pairing
+ * link, a scanned QR code, a value typed by hand) is refused before a request
+ * is made, rather than quietly sending an encrypted-inside payload over a
+ * plaintext connection to a stranger.
+ */
+export function isPrivateAddress(baseUrl: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:") return true;
+  if (url.protocol !== "http:") return false;
+
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  // IPv6 loopback and link-local (fe80::) / unique-local (fc00::/7).
+  if (host === "::1" || host.startsWith("fe80:") || /^f[cd][0-9a-f]{2}:/.test(host)) return true;
+
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!v4) return false; // a public DNS name over http — refused
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  if (a === 127 || a === 10 || a === 0) return true; // loopback, private, "this network"
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true; // link-local
+  return false;
 }
 
 /** "192.168.1.23:47800" / "192.168.1.23" (typed by hand) → { host, port }. */

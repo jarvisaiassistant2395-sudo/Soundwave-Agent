@@ -106,6 +106,10 @@ export interface SoundwaveDesktop {
   checkForUpdate(): Promise<DesktopUpdateState | null>;
   /** Restart into the downloaded version. False when there is nothing waiting. */
   installUpdate(): Promise<boolean>;
+  /** Settings → Help: open the folder holding this install's log files. */
+  openLogs(): Promise<boolean>;
+  /** Settings → Help: a diagnostics block (versions, state, log tail) for support. */
+  copyDiagnostics(): Promise<string | null>;
   notify(notification: DesktopNotification): void;
   showApp(route?: string): void;
   hideOverlay(): void;

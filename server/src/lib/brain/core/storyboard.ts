@@ -94,6 +94,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const clean = (raw: unknown, max: number): string =>
   typeof raw === "string"
     ? raw
+        // Stripping control characters is the point of this line.
+        // eslint-disable-next-line no-control-regex -- sanitising text on purpose
         .replace(/[\u0000-\u001f\u007f]/g, " ")
         .replace(/\s+/g, " ")
         .trim()
@@ -169,15 +171,135 @@ export function snapToSentence(at: number, anchors: SentenceAnchor[], window = S
 
 // ── The deterministic plan (no Gemini needed) ───────────────────────────────
 const STOPWORDS = new Set([
-  "the", "a", "an", "and", "or", "but", "if", "then", "than", "that", "this", "these", "those", "it", "its", "is",
-  "are", "was", "were", "be", "been", "being", "am", "as", "at", "by", "for", "from", "in", "into", "of", "on",
-  "onto", "to", "with", "without", "you", "your", "yours", "they", "them", "their", "theirs", "he", "she", "his",
-  "her", "hers", "we", "us", "our", "i", "me", "my", "mine", "not", "no", "so", "do", "does", "did", "done",
-  "can", "could", "will", "would", "just", "about", "because", "when", "where", "while", "what", "which", "who",
-  "how", "why", "there", "here", "every", "each", "most", "more", "much", "many", "some", "any", "all", "one",
-  "two", "still", "even", "only", "also", "very", "really", "actually", "get", "got", "gets", "make", "makes",
-  "made", "have", "has", "had", "keep", "keeps", "kept", "go", "goes", "went", "come", "comes", "came", "see",
-  "sees", "saw", "say", "says", "said", "tell", "tells", "told", "know", "knows", "knew", "think", "thinks",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "if",
+  "then",
+  "than",
+  "that",
+  "this",
+  "these",
+  "those",
+  "it",
+  "its",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "am",
+  "as",
+  "at",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "of",
+  "on",
+  "onto",
+  "to",
+  "with",
+  "without",
+  "you",
+  "your",
+  "yours",
+  "they",
+  "them",
+  "their",
+  "theirs",
+  "he",
+  "she",
+  "his",
+  "her",
+  "hers",
+  "we",
+  "us",
+  "our",
+  "i",
+  "me",
+  "my",
+  "mine",
+  "not",
+  "no",
+  "so",
+  "do",
+  "does",
+  "did",
+  "done",
+  "can",
+  "could",
+  "will",
+  "would",
+  "just",
+  "about",
+  "because",
+  "when",
+  "where",
+  "while",
+  "what",
+  "which",
+  "who",
+  "how",
+  "why",
+  "there",
+  "here",
+  "every",
+  "each",
+  "most",
+  "more",
+  "much",
+  "many",
+  "some",
+  "any",
+  "all",
+  "one",
+  "two",
+  "still",
+  "even",
+  "only",
+  "also",
+  "very",
+  "really",
+  "actually",
+  "get",
+  "got",
+  "gets",
+  "make",
+  "makes",
+  "made",
+  "have",
+  "has",
+  "had",
+  "keep",
+  "keeps",
+  "kept",
+  "go",
+  "goes",
+  "went",
+  "come",
+  "comes",
+  "came",
+  "see",
+  "sees",
+  "saw",
+  "say",
+  "says",
+  "said",
+  "tell",
+  "tells",
+  "told",
+  "know",
+  "knows",
+  "knew",
+  "think",
+  "thinks",
 ]);
 
 /**
@@ -203,14 +325,19 @@ export function salientWords(sentence: string, max = 3): string {
 
 /** The number in a sentence, with the words around it — a card worth popping. */
 export function statPhrase(sentence: string): string | null {
-  const m = /(\$?\d[\d.,]*\s?(?:%|percent|million|billion|thousand|k|x)?(?:\s(?:times|years|people|degrees|seconds|hours|days))?)/i.exec(sentence);
+  const m = /(\$?\d[\d.,]*\s?(?:%|percent|million|billion|thousand|k|x)?(?:\s(?:times|years|people|degrees|seconds|hours|days))?)/i.exec(
+    sentence,
+  );
   if (!m) return null;
   const hit = m[1]!.trim();
   // "1" alone is not interesting; a card needs something a viewer can hold.
   if (hit.replace(/\D/g, "").length < 2 && !/[%$]/.test(hit)) return null;
   const words = sentence.split(/\s+/);
   const idx = words.findIndex((w) => w.includes(hit.split(" ")[0]!));
-  const around = words.slice(Math.max(0, idx - 3), idx + 4).join(" ").replace(/[.,!?]+$/, "");
+  const around = words
+    .slice(Math.max(0, idx - 3), idx + 4)
+    .join(" ")
+    .replace(/[.,!?]+$/, "");
   return clean(around, 64) || hit;
 }
 
@@ -309,7 +436,11 @@ function normalizeBeat(raw: StoryboardBeat, opts: NormalizeOptions): StoryboardB
   // either hide it or land on it.
   const floor = kind === "hook" ? 0 : HOOK_HOLD;
   const at = clamp(Number.isFinite(snapped) ? snapped : floor, floor, Math.max(floor, maxAt));
-  const hold = clamp(typeof raw.hold === "number" && raw.hold > 0 ? raw.hold : kind === "hook" ? HOOK_HOLD : kind === "cta" ? CTA_HOLD : PHOTO_HOLD, MIN_HOLD, Math.max(MIN_HOLD, opts.duration));
+  const hold = clamp(
+    typeof raw.hold === "number" && raw.hold > 0 ? raw.hold : kind === "hook" ? HOOK_HOLD : kind === "cta" ? CTA_HOLD : PHOTO_HOLD,
+    MIN_HOLD,
+    Math.max(MIN_HOLD, opts.duration),
+  );
   return {
     kind,
     at: Math.round(at * 100) / 100,
@@ -346,7 +477,13 @@ export function normalizeStoryboard(sb: Storyboard, opts: NormalizeOptions): Sto
   beats = [hook, ...beats.filter((b) => b.kind !== "hook")];
 
   // One follow card, at the end.
-  const cta: StoryboardBeat = { kind: "cta", at: Math.max(HOOK_HOLD, opts.duration - CTA_HOLD), hold: CTA_HOLD, text: opts.ctaText ?? beats.find((b) => b.kind === "cta")?.text ?? "Follow for more", sfx: "ding" };
+  const cta: StoryboardBeat = {
+    kind: "cta",
+    at: Math.max(HOOK_HOLD, opts.duration - CTA_HOLD),
+    hold: CTA_HOLD,
+    text: opts.ctaText ?? beats.find((b) => b.kind === "cta")?.text ?? "Follow for more",
+    sfx: "ding",
+  };
   beats = [...beats.filter((b) => b.kind !== "cta"), cta];
 
   // Photos: keep the ones spread widest, so dropping never bunches the rest up.
@@ -481,17 +618,17 @@ export function storyboardBrief(input: {
     ...(photos
       ? [
           "- Open with a `hook` card: the promise of the short in at most 6 words, uppercase-friendly, no hashtags. It covers the first two seconds, with an impact.",
-          "- A `photo` beat wherever the narration names something you can show. Its `imageQuery` is 2–3 concrete, literal English words a stock-photo search answers (\"brain scan\", \"molten lava\", \"cardboard box\") — never an abstract phrase, never the topic repeated. `imageCaption` is at most 8 words, in the narrator's voice.",
+          '- A `photo` beat wherever the narration names something you can show. Its `imageQuery` is 2–3 concrete, literal English words a stock-photo search answers ("brain scan", "molten lava", "cardboard box") — never an abstract phrase, never the topic repeated. `imageCaption` is at most 8 words, in the narrator\'s voice.',
           "- A `stat` beat instead of a photo when a sentence carries a number that is the point of the sentence (text: the number and what it counts, at most 8 words).",
         ]
       : ["- No photos are available for this render: use `hook`, `stat` and `cta` cards only."]),
     "- Put a beat on a sentence start from the list above, never between them, and give each beat 2–3 seconds — a photo that changes every second is a strobe.",
     `- At most ${MAX_BEATS} beats in total, at most ${MAX_PHOTOS} of them photos. Fewer, better beats win.`,
-    "- Close with a `cta` card: at most 4 words, a reason to follow (\"Part 2 tomorrow\", \"Follow for more\").",
+    '- Close with a `cta` card: at most 4 words, a reason to follow ("Part 2 tomorrow", "Follow for more").',
     "- Sounds: at most one per beat, from this menu, and only where they land:",
     sounds,
     '- `music`: "pulse" for energy, "none" for a calm or sad subject.',
-    '- `flash`: true on at most two beats — the hard cut is a spice, not the dish.',
+    "- `flash`: true on at most two beats — the hard cut is a spice, not the dish.",
     "",
     "Answer with JSON only, exactly this shape:",
     photos
@@ -548,9 +685,7 @@ export function parseStoryboard(raw: unknown, opts: NormalizeOptions & { music?:
   if (!beats.length) return null;
   // A plan whose every beat was unusable is not a plan: the caller falls back
   // to the built-in one instead of rendering an empty timeline with a hook on it.
-  const usable = beats
-    .map((b) => normalizeBeat(b, opts))
-    .filter((b): b is StoryboardBeat => Boolean(b));
+  const usable = beats.map((b) => normalizeBeat(b, opts)).filter((b): b is StoryboardBeat => Boolean(b));
   if (!usable.length) return null;
   const music = body.music === "none" ? "none" : "pulse";
   return normalizeStoryboard({ beats: usable, music, source: "gemini" }, opts);

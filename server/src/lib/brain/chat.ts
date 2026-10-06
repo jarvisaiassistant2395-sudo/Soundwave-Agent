@@ -66,10 +66,16 @@ function fallbackText(effects: ToolEffects, finish: string, persona: PersonaId, 
   const say = (key: Parameters<typeof personaLine>[1], vars: { topic?: string; log?: string } = {}) =>
     personaLine(persona, key, { address, ...vars });
   if (effects.short?.alreadyRunning) {
-    return say("alreadyRunning", { topic: effects.short.topic }) || `I'm still rendering the short about “${effects.short.topic}”. I'll post it here as soon as it's done.`;
+    return (
+      say("alreadyRunning", { topic: effects.short.topic }) ||
+      `I'm still rendering the short about “${effects.short.topic}”. I'll post it here as soon as it's done.`
+    );
   }
   if (effects.short) {
-    return say("onIt", { topic: effects.short.topic }) || `On it — I'm making a short about “${effects.short.topic}”. It'll show up here when it's rendered.`;
+    return (
+      say("onIt", { topic: effects.short.topic }) ||
+      `On it — I'm making a short about “${effects.short.topic}”. It'll show up here when it's rendered.`
+    );
   }
   if (effects.video) return `Here's your short about “${effects.video.topic}”.`;
   if (effects.log.length) return say("done", { log: effects.log.join("; ") }) || `Done: ${effects.log.join("; ")}.`;
@@ -82,7 +88,7 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
     userId: input.userId || "local-user",
     voice: input.voice || DEFAULT_AGENT_VOICE,
     resolution: input.resolution || "1080p",
-    seconds: input.seconds && input.seconds > 0 ? Math.round(input.seconds) : DEFAULT_SCRIPT_SECONDS, // eslint-disable-line @typescript-eslint/no-use-before-define
+    seconds: input.seconds && input.seconds > 0 ? Math.round(input.seconds) : DEFAULT_SCRIPT_SECONDS,
     desktop: config.desktopApp,
     platform: process.platform,
     via: input.via,
@@ -106,7 +112,15 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
       tools,
       ctx,
       instruction: ({ tools: names, webSearch }) =>
-        agentInstruction({ tools: names, webSearch, now: deps.now(), surface: input.via === "phone" ? "phone" : "pc", persona, address, memory }),
+        agentInstruction({
+          tools: names,
+          webSearch,
+          now: deps.now(),
+          surface: input.via === "phone" ? "phone" : "pc",
+          persona,
+          address,
+          memory,
+        }),
       generate: deps.generate,
       signal: input.signal,
       onSearchRefused: () => markSearchUnavailable(),
@@ -146,7 +160,12 @@ export async function brainChat(input: BrainChatInput, brain: ActiveBrain, deps:
     });
   }
   if (video) {
-    Object.assign(reply, { action: "soundwave_shorts", videoUrl: video.url, downloadUrl: video.url, ...(short ? {} : { topic: video.topic }) });
+    Object.assign(reply, {
+      action: "soundwave_shorts",
+      videoUrl: video.url,
+      downloadUrl: video.url,
+      ...(short ? {} : { topic: video.topic }),
+    });
   }
   if (log.length) reply.actionOutput = log.join("\n");
   if (emailDraftIds?.length) reply.emailDraftIds = emailDraftIds.slice(0, 6);

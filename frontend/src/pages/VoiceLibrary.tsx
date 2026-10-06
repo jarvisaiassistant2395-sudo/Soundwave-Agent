@@ -87,12 +87,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
     <div className="min-h-screen bg-canvas text-gray-100">
       {standalone && <Navbar />}
 
-      <main
-        className={cn(
-          "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
-          standalone ? "pb-24 pt-28" : "pb-16 pt-2",
-        )}
-      >
+      <main className={cn("mx-auto max-w-7xl px-4 sm:px-6 lg:px-8", standalone ? "pb-24 pt-28" : "pb-16 pt-2")}>
         {/* ── HEADER ──────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-800/80 pb-6">
           <div>
@@ -123,9 +118,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
           />
           <VoiceClonePanel />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-gray-800 pb-4">
-            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">
-              {filtered.length} voices
-            </span>
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 font-mono">{filtered.length} voices</span>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
@@ -141,7 +134,9 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     onClick={() => setGender(g)}
                     title={g === "all" ? "Every voice" : `${g} voices`}
                     className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
-                      gender === g ? "border-cyan-500 bg-cyan-500/20 text-cyan-300" : "border-gray-800 bg-[#0A0A0C] text-gray-400 hover:text-white"
+                      gender === g
+                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-300"
+                        : "border-gray-800 bg-[#0A0A0C] text-gray-400 hover:text-white"
                     }`}
                   >
                     {g === "all" ? "All" : g === "Male" ? "M" : "F"}
@@ -153,7 +148,9 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     onClick={() => setAccent(a)}
                     title={a === "all" ? "Every accent" : `${a} accent`}
                     className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer ${
-                      accent === a ? "border-blue-500 bg-blue-500/20 text-blue-300" : "border-gray-800 bg-[#0A0A0C] text-gray-400 hover:text-white"
+                      accent === a
+                        ? "border-blue-500 bg-blue-500/20 text-blue-300"
+                        : "border-gray-800 bg-[#0A0A0C] text-gray-400 hover:text-white"
                     }`}
                   >
                     {a === "all" ? "All" : a === "American" ? "US" : "UK"}
@@ -202,7 +199,7 @@ export function VoiceLibrary({ standalone = true }: { standalone?: boolean }) {
                     <button
                       onClick={() => {
                         saveAgentVoice(v.id);
-                        navigate("/dashboard");
+                        void navigate("/dashboard");
                       }}
                       className="rounded-lg border border-emerald-700/50 bg-emerald-950/30 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-900/40 cursor-pointer"
                     >

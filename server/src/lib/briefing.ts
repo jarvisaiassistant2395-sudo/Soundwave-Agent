@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
+import { writeJsonFile } from "./jsonFile.js";
 import { replyToMessage, type ChatMessage } from "./chatMessages.js";
 import { appendToConversation, getConversation } from "./conversation.js";
 import { activeBrain } from "./brain/settings.js";
@@ -46,8 +47,7 @@ function loadState(): BriefingState {
 
 function saveState(next: BriefingState): void {
   try {
-    fs.mkdirSync(path.dirname(fileFor()), { recursive: true });
-    fs.writeFileSync(fileFor(), JSON.stringify(next, null, 2), "utf8");
+    writeJsonFile(fileFor(), next);
   } catch (err) {
     console.warn(`[briefing] could not save: ${(err as Error).message}`);
   }
@@ -162,7 +162,13 @@ export function markBriefingHeard(day: string, on: "pc" | "phone"): void {
   const state = loadState();
   if (state.day === day && state.heardAt) return;
   const message = todaysBriefingMessage(day);
-  saveState({ day, messageId: message?.id ?? state.messageId, preparedAt: state.day === day ? state.preparedAt : null, heardAt: Date.now(), heardOn: on });
+  saveState({
+    day,
+    messageId: message?.id ?? state.messageId,
+    preparedAt: state.day === day ? state.preparedAt : null,
+    heardAt: Date.now(),
+    heardOn: on,
+  });
 }
 
 /** Desktop app: prepare the briefing when it's due (checked every minute, and soon after start). */

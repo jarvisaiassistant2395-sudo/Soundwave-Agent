@@ -19,25 +19,10 @@ import { VOICE_META, DEFAULT_VOICE_ID, loadAgentVoice, sampleUrlFor, saveAgentVo
 import { sendChat } from "../lib/agentChat";
 import { useAuth } from "../store/auth";
 import { cn } from "../lib/cn";
+// The flag lives in lib/ so the welcome screen does not have to import this page.
+import { SETUP_DONE_KEY, markSetupDone, setupDone } from "../lib/setup";
 
-/** "The person has been through this" — the wizard stops offering itself. */
-export const SETUP_DONE_KEY = "soundwave_setup_done";
-
-export const setupDone = (): boolean => {
-  try {
-    return localStorage.getItem(SETUP_DONE_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
-
-export function markSetupDone(): void {
-  try {
-    localStorage.setItem(SETUP_DONE_KEY, "1");
-  } catch {
-    /* private mode */
-  }
-}
+export { SETUP_DONE_KEY, markSetupDone, setupDone };
 
 type StepId = "account" | "brain" | "youtube" | "voice" | "hello";
 
@@ -95,6 +80,16 @@ export function Setup() {
   // Which step to open on: the first one still worth doing. Someone who already
   // has a key and a channel lands on the voice, not on a screen telling them to
   // do what they did last month.
+  const finish = useCallback(
+    (where: "agent" | "youtube" = "agent") => {
+      if (finished.current) return;
+      finished.current = true;
+      markSetupDone();
+      void navigate(where === "agent" ? "/agent" : "/settings/youtube", { replace: true });
+    },
+    [navigate],
+  );
+
   useEffect(() => {
     if (status === null) return;
     if (!status.configured) setStep("brain");
@@ -106,17 +101,7 @@ export function Setup() {
       return;
     }
     setStep("voice");
-  }, [status, ytConnected]);
-
-  const finish = useCallback(
-    (where: "agent" | "youtube" = "agent") => {
-      if (finished.current) return;
-      finished.current = true;
-      markSetupDone();
-      navigate(where === "agent" ? "/agent" : "/settings/youtube", { replace: true });
-    },
-    [navigate],
-  );
+  }, [status, ytConnected, finish]);
 
   const saveKey = async () => {
     const apiKey = keyInput.trim();
@@ -173,7 +158,11 @@ export function Setup() {
     setAnswer("");
     try {
       const reply = await sendChat({ message, history: [], voice });
-      const text = (reply as { reply?: string; text?: string; message?: string }).reply ?? (reply as { text?: string }).text ?? (reply as { message?: string }).message ?? "";
+      const text =
+        (reply as { reply?: string; text?: string; message?: string }).reply ??
+        (reply as { text?: string }).text ??
+        (reply as { message?: string }).message ??
+        "";
       setAnswer(text || "It answered, but the reply came back empty — try it from the Command Center.");
     } catch (err) {
       const message = (err as Error).message;
@@ -191,7 +180,9 @@ export function Setup() {
         {/* The path, so the person can see there are five small things, not one big one. */}
         <aside>
           <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 text-lg font-black text-white">S</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 text-lg font-black text-white">
+              S
+            </div>
             <div className="text-sm font-semibold tracking-tight">Setting up</div>
           </div>
           <ol className="space-y-3">
@@ -203,7 +194,11 @@ export function Setup() {
                   <span
                     className={cn(
                       "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]",
-                      done ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300" : now ? "border-blue-400/60 bg-blue-500/15 text-blue-200" : "border-white/10 text-gray-500",
+                      done
+                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                        : now
+                          ? "border-blue-400/60 bg-blue-500/15 text-blue-200"
+                          : "border-white/10 text-gray-500",
                     )}
                   >
                     {done ? <Check className="h-3 w-3" /> : i + 1}
@@ -211,7 +206,10 @@ export function Setup() {
                   <button
                     type="button"
                     onClick={() => setStep(s.id)}
-                    className={cn("text-left text-xs leading-tight", now ? "font-semibold text-white" : done ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-300")}
+                    className={cn(
+                      "text-left text-xs leading-tight",
+                      now ? "font-semibold text-white" : done ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-300",
+                    )}
                   >
                     {s.title}
                   </button>
@@ -252,12 +250,11 @@ export function Setup() {
                 <KeyRound className="h-5 w-5 text-blue-400" /> Give it a brain
               </h1>
               <p className="mt-2 text-sm text-gray-400">
-                Gemini is what writes the scripts, picks the moments and answers you. Google gives the key away free — it takes about a minute, and it stays on this PC.
+                Gemini is what writes the scripts, picks the moments and answers you. Google gives the key away free — it takes about a
+                minute, and it stays on this PC.
               </p>
               <ol className="mt-4 space-y-1.5 text-sm text-gray-400">
-                <li>
-                  1. Press the button — your browser opens Google AI Studio.
-                </li>
+                <li>1. Press the button — your browser opens Google AI Studio.</li>
                 <li>2. Press "Create API key", then copy it.</li>
                 <li>3. Paste it here. It's checked before it's saved.</li>
               </ol>
@@ -303,10 +300,16 @@ export function Setup() {
                 <Youtube className="h-5 w-5 text-red-400" /> Connect YouTube
               </h1>
               <p className="mt-2 text-sm text-gray-400">
-                One press: your browser asks Google for permission to upload to your channel (and to read its numbers, so Soundwave learns what your audience rewards). Nothing is posted until you say so.
+                One press: your browser asks Google for permission to upload to your channel (and to read its numbers, so Soundwave learns
+                what your audience rewards). Nothing is posted until you say so.
               </p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
-                <Button onClick={() => void connectYouTube()} loading={busy === "youtube" || waitingYt} disabled={waitingYt} data-testid="setup-youtube">
+                <Button
+                  onClick={() => void connectYouTube()}
+                  loading={busy === "youtube" || waitingYt}
+                  disabled={waitingYt}
+                  data-testid="setup-youtube"
+                >
                   {ytConnected ? "Reconnect YouTube" : "Connect YouTube"}
                 </Button>
                 {ytConnected && <span className="text-sm text-emerald-300">Connected{ytName ? ` — ${ytName}` : ""}</span>}
@@ -342,7 +345,9 @@ export function Setup() {
                     }}
                     className={cn(
                       "flex items-center justify-between rounded-xl border px-3.5 py-3 text-left text-sm transition-colors",
-                      voice === v.id ? "border-blue-400/60 bg-blue-500/10 text-white" : "border-white/[0.08] text-gray-300 hover:border-white/20",
+                      voice === v.id
+                        ? "border-blue-400/60 bg-blue-500/10 text-white"
+                        : "border-white/[0.08] text-gray-300 hover:border-white/20",
                     )}
                   >
                     <span>
@@ -351,7 +356,11 @@ export function Setup() {
                         {v.accent} · {v.gender}
                       </span>
                     </span>
-                    {voice === v.id ? <Check className="h-4 w-4 text-blue-300" /> : <span className="text-[11px] text-gray-500">choose</span>}
+                    {voice === v.id ? (
+                      <Check className="h-4 w-4 text-blue-300" />
+                    ) : (
+                      <span className="text-[11px] text-gray-500">choose</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -392,7 +401,10 @@ export function Setup() {
                 </Button>
               </form>
               {answer && (
-                <div className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-sm text-gray-200" data-testid="setup-answer">
+                <div
+                  className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-sm text-gray-200"
+                  data-testid="setup-answer"
+                >
                   {answer}
                 </div>
               )}
@@ -405,7 +417,9 @@ export function Setup() {
                   Take me to Settings instead
                 </button>
               </div>
-              {inDesktop && <p className="mt-4 text-xs text-gray-500">Voice input works from the Command Center — hold Ctrl+Shift+Space and talk.</p>}
+              {inDesktop && (
+                <p className="mt-4 text-xs text-gray-500">Voice input works from the Command Center — hold Ctrl+Shift+Space and talk.</p>
+              )}
             </section>
           )}
         </main>

@@ -12,7 +12,6 @@ import { config } from "../src/config.js";
 import { youtubeService } from "../src/lib/youtube.js";
 import { defaultChannelId, registerChannel, resetChannelsForTests } from "../src/lib/youtubeChannels.js";
 import {
-  PostError,
   audienceBrief,
   cancelScheduledPost,
   listScheduledPosts,
@@ -70,7 +69,15 @@ function stubFetch(): void {
     if (target.includes("googleapis.com/youtube/v3/videos") && method === "GET") {
       return new Response(
         JSON.stringify({
-          items: [{ statistics: { viewCount: String(statsFixture.views), likeCount: String(statsFixture.likes), commentCount: String(statsFixture.comments) } }],
+          items: [
+            {
+              statistics: {
+                viewCount: String(statsFixture.views),
+                likeCount: String(statsFixture.likes),
+                commentCount: String(statsFixture.comments),
+              },
+            },
+          ],
         }),
         { status: 200 },
       );
@@ -103,7 +110,9 @@ afterEach(() => {
 
 describe("a clip told to post itself", () => {
   it("is checked when it is scheduled, not when it is due", () => {
-    expect(() => schedulePost({ jobId: "nope-missing", title: "Space facts", when: "at 5 pm" }, MORNING)).toThrowError(/couldn't find that clip's file/);
+    expect(() => schedulePost({ jobId: "nope-missing", title: "Space facts", when: "at 5 pm" }, MORNING)).toThrowError(
+      /couldn't find that clip's file/,
+    );
 
     const file = makeClip("job-good");
     const post = schedulePost({ jobId: "job-good", title: "Space facts", when: "at 5 pm" }, MORNING);
@@ -119,7 +128,9 @@ describe("a clip told to post itself", () => {
     makeClip("job-titleless");
     expect(() => schedulePost({ jobId: "job-titleless", title: "   ", when: "at 5 pm" }, MORNING)).toThrowError(/needs a title/);
     expect(() => schedulePost({ jobId: "job-titleless", title: "Fine", when: "whenever" }, MORNING)).toThrowError(/can't read a time/);
-    expect(() => schedulePost({ jobId: "job-titleless", title: "Fine", when: "in 10 seconds" }, MORNING)).toThrowError(/less than a minute/);
+    expect(() => schedulePost({ jobId: "job-titleless", title: "Fine", when: "in 10 seconds" }, MORNING)).toThrowError(
+      /less than a minute/,
+    );
   });
 
   it("posts at the moment it was given, and says so in the chat", async () => {

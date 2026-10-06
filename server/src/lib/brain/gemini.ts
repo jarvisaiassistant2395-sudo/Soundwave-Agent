@@ -107,7 +107,9 @@ export function listChatModels(opts: WithoutBase<core.CallOptions>): Promise<cor
  * counting work exactly the same; caching does not (a streamed chat answer is
  * about this conversation, not a reusable artifact).
  */
-export function streamContent(args: GenerateArgs & { onText?: (delta: string, full: string) => void; shouldStop?: () => boolean }): Promise<core.GenerateResponse> {
+export function streamContent(
+  args: GenerateArgs & { onText?: (delta: string, full: string) => void; shouldStop?: () => boolean },
+): Promise<core.GenerateResponse> {
   const { purpose = "chat", bypassBudget = false, cache: _cacheable = false, ...rest } = args;
   const request = { ...rest, apiBase: rest.apiBase ?? config.geminiApiBase };
   if (!bypassBudget) {
@@ -189,9 +191,13 @@ export async function uploadFile(args: {
   const apiKey = args.apiKey ?? config.geminiApiKey;
   if (!apiKey) throw new core.GeminiError("invalid_key", "No Gemini API key is set (Settings → Brain).");
   const { body, contentType } = multipartFileBody(args.data, args.mimeType, args.displayName);
+  // Content-Length is left to fetch: the body is a fixed-size buffer, so undici
+  // sets it correctly, and a hand-written one is a trap — see the note in
+  // tests/dependency_landslides.test.ts about what a dependency that swaps
+  // fetch's dispatcher does to an explicit Content-Length.
   const res = await fetch(`${apiBase}/upload/v1beta/files`, {
     method: "POST",
-    headers: { "x-goog-api-key": apiKey, "Content-Type": contentType, "Content-Length": String(body.length) },
+    headers: { "x-goog-api-key": apiKey, "Content-Type": contentType },
     body: new Uint8Array(body),
     signal: AbortSignal.timeout(args.timeoutMs ?? 120_000),
   });
@@ -208,7 +214,10 @@ export async function uploadFile(args: {
   // Video and audio are processed for a few seconds; poll a handful of times.
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    const poll = await fetch(`${apiBase}/v1beta/${uploaded.name}`, { headers: { "x-goog-api-key": apiKey }, signal: AbortSignal.timeout(30_000) });
+    const poll = await fetch(`${apiBase}/v1beta/${uploaded.name}`, {
+      headers: { "x-goog-api-key": apiKey },
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!poll.ok) break;
     const current = fileFrom((await poll.json().catch(() => ({}))) as FilesApiFile, args.mimeType);
     if (current.state !== "PROCESSING") return current;
@@ -221,5 +230,7 @@ export async function deleteFile(name: string, opts: { apiBase?: string; apiKey?
   const apiBase = (opts.apiBase ?? config.geminiApiBase).replace(/\/+$/, "");
   const apiKey = opts.apiKey ?? config.geminiApiKey;
   if (!apiKey || !name) return;
-  await fetch(`${apiBase}/v1beta/${name.replace(/^\/+/, "")}`, { method: "DELETE", headers: { "x-goog-api-key": apiKey } }).catch(() => undefined);
+  await fetch(`${apiBase}/v1beta/${name.replace(/^\/+/, "")}`, { method: "DELETE", headers: { "x-goog-api-key": apiKey } }).catch(
+    () => undefined,
+  );
 }

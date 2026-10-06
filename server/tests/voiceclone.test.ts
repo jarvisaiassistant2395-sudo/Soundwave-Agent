@@ -1,10 +1,8 @@
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import request from "supertest";
+import { beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { createApp } from "../src/app.js";
 import { JsonStore, setStoreForTests } from "../src/lib/store.js";
 import { createCloneProfile, listCloneProfiles, synthesizeClone } from "../src/lib/voiceclone.js";
 import { resolveFfmpegPath } from "../src/config.js";
@@ -12,7 +10,6 @@ import { resolveFfmpegPath } from "../src/config.js";
 // The reference clip is synthesized with ffmpeg (absent while CI runs the tests).
 const hasFfmpeg = spawnSync(resolveFfmpegPath(), ["-version"], { stdio: "ignore" }).status === 0;
 
-let app: ReturnType<typeof createApp>;
 const testUserId = "test-clone-user-123";
 let testAudioClip: Buffer;
 
@@ -21,16 +18,10 @@ beforeAll(async () => {
   const store = new JsonStore();
   await store.init();
   setStoreForTests(store);
-  app = createApp();
 
   // Create synthetic 2-second audio reference clip
   const tmpClip = path.join(os.tmpdir(), `test_ref_clip_${process.pid}.wav`);
-  spawnSync(resolveFfmpegPath(), [
-    "-y",
-    "-f", "lavfi", "-i", "sine=frequency=220:duration=2",
-    "-ar", "24000", "-ac", "1",
-    tmpClip,
-  ]);
+  spawnSync(resolveFfmpegPath(), ["-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=2", "-ar", "24000", "-ac", "1", tmpClip]);
   testAudioClip = fs.readFileSync(tmpClip);
   fs.unlinkSync(tmpClip);
 });

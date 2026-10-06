@@ -113,7 +113,7 @@ export function Navbar() {
                 <button
                   onClick={() => {
                     setOpen(false);
-                    navigate("/agent");
+                    void navigate("/agent");
                   }}
                   className="rounded-lg bg-blue-600 px-4 py-2 text-center text-xs font-medium text-white"
                 >

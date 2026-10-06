@@ -157,6 +157,9 @@ export function startYtDlpSelfUpdate(channelSetting: string = config.ytDlpAutoUp
     const { command, prefixArgs } = ytDlpSpawn();
     let output = "";
     let settled = false;
+    // Not const: `finish` (below) clears this timeout and can be reached from
+    // the spawn's error path before the assignment has happened.
+    // eslint-disable-next-line prefer-const -- clearTimeout may run first
     let timer: NodeJS.Timeout | undefined;
     const finish = (message: string, ok: boolean) => {
       if (settled) return;
@@ -316,13 +319,21 @@ function friendlyError(stderr: string): { message: string; code: YtErrorCode } {
   const s = stderr.toLowerCase();
   // Network failures first — substrings like "page" or "bot" appear in
   // unrelated messages and must not shadow the real cause.
-  if (s.includes("timed out") || s.includes("tls/ssl") || s.includes("eof") || s.includes("connection") || s.includes("network") || s.includes("resolve"))
+  if (
+    s.includes("timed out") ||
+    s.includes("tls/ssl") ||
+    s.includes("eof") ||
+    s.includes("connection") ||
+    s.includes("network") ||
+    s.includes("resolve")
+  )
     return { message: "The connection to YouTube failed. Check the server's network access and try again.", code: "YT_NETWORK" };
   if (CLIENT_REJECTION_PATTERNS.some((p) => s.includes(p)))
     return { message: clientRejectedMessage(lastErrorLine(stderr)), code: "YT_CLIENT_REJECTED" };
   if (s.includes("sign in to confirm") || s.includes("not a bot"))
     return {
-      message: "YouTube asked for a sign-in check before serving this video. Try another video, or configure YTDLP_COOKIES (a cookies.txt export) to pass the check.",
+      message:
+        "YouTube asked for a sign-in check before serving this video. Try another video, or configure YTDLP_COOKIES (a cookies.txt export) to pass the check.",
       code: "YT_BOT_CHECK",
     };
   if (s.includes("video unavailable") || s.includes("private video"))
@@ -473,13 +484,7 @@ async function runWithClientFallback(
 export async function fetchMetadata(url: string, timeoutMs?: number): Promise<YtMetadata> {
   const { stdout } = await runWithClientFallback(
     url,
-    (base) => [
-      ...base,
-      "--skip-download",
-      "--print",
-      "%(title)s\n%(duration)s\n%(webpage_url)s\n%(channel)s\n%(channel_url)s",
-      url,
-    ],
+    (base) => [...base, "--skip-download", "--print", "%(title)s\n%(duration)s\n%(webpage_url)s\n%(channel)s\n%(channel_url)s", url],
     timeoutMs ?? Math.min(config.ytDlpTimeoutMs, 60_000),
   );
   // Parse right-anchored so multi-line titles and empty channel fields cannot
@@ -563,7 +568,9 @@ export async function fetchViewSignals(
   } catch (err) {
     // The video itself may still download fine (metadata does its own retry);
     // this pass is an extra, so it degrades to "no measured signals".
-    notes.push(`Couldn't read YouTube's replay and view data for this video (${(err as Error).message}). Picking on the sound and words instead.`);
+    notes.push(
+      `Couldn't read YouTube's replay and view data for this video (${(err as Error).message}). Picking on the sound and words instead.`,
+    );
     return { heat: [], anchors: [], trends: [], stats: {}, notes };
   }
 
@@ -672,7 +679,9 @@ export async function fetchViewSignals(
         else notes.push("The top comments don't point at any specific moment (nobody wrote a timecode).");
       }
     } catch (err) {
-      notes.push(`Couldn't read the comments (${((err as Error).message || "").replace(/\s+/g, " ").slice(0, 160)}). Picking without them.`);
+      notes.push(
+        `Couldn't read the comments (${((err as Error).message || "").replace(/\s+/g, " ").slice(0, 160)}). Picking without them.`,
+      );
     }
   }
 
@@ -751,7 +760,13 @@ export async function listChannelVideos(
   return {
     channelId: typeof root.channel_id === "string" ? root.channel_id : typeof root.id === "string" ? root.id : "",
     channelName:
-      typeof root.channel === "string" ? root.channel : typeof root.uploader === "string" ? root.uploader : typeof root.title === "string" ? root.title : "",
+      typeof root.channel === "string"
+        ? root.channel
+        : typeof root.uploader === "string"
+          ? root.uploader
+          : typeof root.title === "string"
+            ? root.title
+            : "",
     videos,
   };
 }
@@ -793,10 +808,10 @@ export async function downloadVideo(
   // Everything after the per-strategy base args (see runWithClientFallback).
   const args = [
     "-f",
-    formatOverride ??
-      "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bv*[height<=1080]+ba/b[height<=1080]/b",
+    formatOverride ?? "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bv*[height<=1080]+ba/b[height<=1080]/b",
     // Prefer a single pre-merged MP4 so the imported file plays everywhere.
-    "--merge-output-format", "mp4",
+    "--merge-output-format",
+    "mp4",
   ];
   if (options.formatSort) args.push("-S", options.formatSort);
   const section = options.section ?? null;
@@ -829,29 +844,33 @@ export async function downloadVideo(
   };
 
   try {
-    await runWithClientFallback(url, (base) => [...base, ...args], timeoutMs ?? config.ytDlpTimeoutMs, (chunk) => {
-      const m = chunk.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
-      if (m) {
-        onProgress?.(Math.min(99, parseFloat(m[1]!)));
-        return;
-      }
-      // Section downloads run through ffmpeg, which reports `time=HH:MM:SS.xx`.
-      if (sectionSeconds > 0) {
-        const t = [...chunk.matchAll(/time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/g)].pop();
-        if (t) {
-          const secs = Number(t[1]) * 3600 + Number(t[2]) * 60 + Number(t[3]);
-          onProgress?.(Math.min(99, Math.max(0, (secs / sectionSeconds) * 100)));
+    await runWithClientFallback(
+      url,
+      (base) => [...base, ...args],
+      timeoutMs ?? config.ytDlpTimeoutMs,
+      (chunk) => {
+        const m = chunk.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
+        if (m) {
+          onProgress?.(Math.min(99, parseFloat(m[1]!)));
+          return;
         }
-      }
-    }, cleanup);
+        // Section downloads run through ffmpeg, which reports `time=HH:MM:SS.xx`.
+        if (sectionSeconds > 0) {
+          const t = [...chunk.matchAll(/time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/g)].pop();
+          if (t) {
+            const secs = Number(t[1]) * 3600 + Number(t[2]) * 60 + Number(t[3]);
+            onProgress?.(Math.min(99, Math.max(0, (secs / sectionSeconds) * 100)));
+          }
+        }
+      },
+      cleanup,
+    );
   } catch (e) {
     cleanup();
     throw e;
   }
 
-  const produced = fs
-    .readdirSync(dir)
-    .filter((f) => f.startsWith(`${uuid}.`) && !f.endsWith(".part") && !f.endsWith(".ytdl"));
+  const produced = fs.readdirSync(dir).filter((f) => f.startsWith(`${uuid}.`) && !f.endsWith(".part") && !f.endsWith(".ytdl"));
   const name = produced[0];
   if (!name) {
     cleanup();
@@ -968,10 +987,11 @@ export async function fetchTranscript(url: string, opts: { timeoutMs?: number; f
       );
     }
     // Prefer a file named exactly "en", then en-orig, then anything.
-    const pick =
-      captions.find((f) => /\.en\.vtt$/.test(f)) ?? captions.find((f) => /en/i.test(f)) ?? captions[0]!;
+    const pick = captions.find((f) => /\.en\.vtt$/.test(f)) ?? captions.find((f) => /en/i.test(f)) ?? captions[0]!;
     const lang = /\.([A-Za-z0-9-]+)\.vtt$/.exec(pick)?.[1] ?? "en";
-    const manual = Object.keys(((info.subtitles as Record<string, unknown>) ?? {}) as Record<string, unknown>).some((l) => l === lang || l.startsWith("en"));
+    const manual = Object.keys(((info.subtitles as Record<string, unknown>) ?? {}) as Record<string, unknown>).some(
+      (l) => l === lang || l.startsWith("en"),
+    );
     if (typeof info.title !== "string" || !info.title.trim()) {
       try {
         const meta = await fetchMetadata(url, Math.min(config.ytDlpTimeoutMs, 45_000));
@@ -1028,7 +1048,9 @@ export async function searchVideos(query: string, opts: { limit?: number; timeou
   } catch {
     throw new YtDlpError("YouTube's search didn't come back in a shape I can read.", "YT_FAILED");
   }
-  const entries = Array.isArray((data as { entries?: unknown[] })?.entries) ? ((data as { entries: unknown[] }).entries as Array<Record<string, unknown>>) : [];
+  const entries = Array.isArray((data as { entries?: unknown[] })?.entries)
+    ? ((data as { entries: unknown[] }).entries as Array<Record<string, unknown>>)
+    : [];
   const results: YtSearchResult[] = [];
   for (const e of entries) {
     const id = typeof e?.id === "string" ? e.id : "";

@@ -6,13 +6,22 @@
 # Frontend is served as a static SPA from /srv (mounted from frontend/dist).
 
 {$DOMAIN} {
-	# Security headers (mirrors the old nginx config).
+	# Security headers — kept the same as deploy/nginx.conf (the other supported
+	# front door), so which server you put in front of the app does not change
+	# what the browser is allowed to do. The CSP is the same one the API sends
+	# from server/src/lib/security.ts; if you change it, change all three.
+	#
+	# HSTS is safe here because Caddy only serves this host over HTTPS and
+	# redirects everything else. `preload` is opt-in for the public domain:
+	# if you ever need plain HTTP on it, remove that token.
 	header {
 		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		X-Frame-Options DENY
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self';script-src 'self';style-src 'self' https://fonts.googleapis.com;font-src 'self' https://fonts.gstatic.com;img-src 'self' data: blob:;media-src 'self' blob:;connect-src 'self';frame-ancestors 'none';base-uri 'self';form-action 'self';object-src 'none';script-src-attr 'none';upgrade-insecure-requests"
 	}
 
 	encode zstd gzip

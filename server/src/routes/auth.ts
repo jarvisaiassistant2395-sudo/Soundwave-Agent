@@ -22,14 +22,23 @@
 // the person's own act, from the profile banner or Settings.
 
 import { Router } from "express";
-import type { Request, Response } from "express";
+import type { Request } from "express";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 import { ApiError } from "../middleware/error.js";
 import { config } from "../config.js";
 import { localAppGuard } from "../middleware/localApp.js";
 import { authSignInLimiter } from "../lib/security.js";
-import { clearAuthCookies, createUserSession, publicUser, randomToken, setAuthCookies, sha256, signAccessToken, verifyRefreshToken } from "../lib/auth.js";
+import {
+  clearAuthCookies,
+  createUserSession,
+  publicUser,
+  randomToken,
+  setAuthCookies,
+  sha256,
+  signAccessToken,
+  verifyRefreshToken,
+} from "../lib/auth.js";
 import { getStore } from "../lib/store.js";
 import { deviceInfo, requireAuth } from "../middleware/auth.js";
 import {
@@ -51,7 +60,8 @@ const router = Router();
 function serverPort(req: Request): number {
   const fromEnv = Number(process.env.PORT);
   const header = String(req.headers.host ?? "").split(":")[1];
-  const port = Number.isFinite(Number(header)) && Number(header) > 0 ? Number(header) : Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 4000;
+  const port =
+    Number.isFinite(Number(header)) && Number(header) > 0 ? Number(header) : Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 4000;
   return port;
 }
 
@@ -100,7 +110,10 @@ router.get("/google/callback", async (req, res) => {
         signInPage({
           ok: false,
           title: "Soundwave AI — sign-in wasn't finished",
-          lines: ["Google reported that the sign-in was cancelled or refused.", "Go back to Soundwave and press Continue with Google to try again."],
+          lines: [
+            "Google reported that the sign-in was cancelled or refused.",
+            "Go back to Soundwave and press Continue with Google to try again.",
+          ],
         }),
       );
   }
@@ -110,7 +123,13 @@ router.get("/google/callback", async (req, res) => {
       return res
         .status(400)
         .type("html")
-        .send(signInPage({ ok: false, title: "Soundwave AI — sign-in failed", lines: [result.message, "Close this tab, go back to Soundwave, and press Continue with Google again."] }));
+        .send(
+          signInPage({
+            ok: false,
+            title: "Soundwave AI — sign-in failed",
+            lines: [result.message, "Close this tab, go back to Soundwave, and press Continue with Google again."],
+          }),
+        );
     }
 
     // Find or create the local account for this Google account, then tell the
@@ -148,7 +167,13 @@ router.get("/google/callback", async (req, res) => {
     res
       .status(500)
       .type("html")
-      .send(signInPage({ ok: false, title: "Soundwave AI — sign-in failed", lines: ["Something went wrong finishing the sign-in.", "Close this tab and press Continue with Google in Soundwave again."] }));
+      .send(
+        signInPage({
+          ok: false,
+          title: "Soundwave AI — sign-in failed",
+          lines: ["Something went wrong finishing the sign-in.", "Close this tab and press Continue with Google in Soundwave again."],
+        }),
+      );
   }
 });
 
@@ -188,19 +213,24 @@ router.post("/google/claim", authSignInLimiter, validate({ body: claimSchema }),
  * can be worked on offline. A packaged build has NODE_ENV=production and a
  * client, and this route simply is not there — the app window is still gated.
  */
-router.post("/dev-session", authSignInLimiter, localAppGuard(devSignInAllowed, "Sign-in is only available with Google."), async (req, res, next) => {
-  try {
-    const store = await getStore();
-    const email = "dev@soundwave.local";
-    let user = await store.findUserByEmail(email);
-    if (!user) user = await store.createUser({ email, name: "Local development" });
-    const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", deviceInfo(req), { permanent: true });
-    setAuthCookies(res, signAccessToken(user.id), bundle.refreshToken, randomToken(16));
-    res.json({ user: publicUser(user), signedIn: true, development: true });
-  } catch (err) {
-    next(err);
-  }
-});
+router.post(
+  "/dev-session",
+  authSignInLimiter,
+  localAppGuard(devSignInAllowed, "Sign-in is only available with Google."),
+  async (req, res, next) => {
+    try {
+      const store = await getStore();
+      const email = "dev@soundwave.local";
+      let user = await store.findUserByEmail(email);
+      if (!user) user = await store.createUser({ email, name: "Local development" });
+      const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", deviceInfo(req), { permanent: true });
+      setAuthCookies(res, signAccessToken(user.id), bundle.refreshToken, randomToken(16));
+      res.json({ user: publicUser(user), signedIn: true, development: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── Session ─────────────────────────────────────────────────────────────────
 
@@ -213,7 +243,14 @@ router.get("/sessions", requireAuth, async (req, res, next) => {
     const store = await getStore();
     const sessions = await store.listSessionsForUser(req.user!.id);
     res.json({
-      sessions: sessions.map((s) => ({ id: s.id, deviceInfo: s.deviceInfo, ipAddress: s.ipAddress, lastActiveAt: s.lastActiveAt, createdAt: s.createdAt, permanent: s.expiresAt === null })),
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        deviceInfo: s.deviceInfo,
+        ipAddress: s.ipAddress,
+        lastActiveAt: s.lastActiveAt,
+        createdAt: s.createdAt,
+        permanent: s.expiresAt === null,
+      })),
     });
   } catch (e) {
     next(e);
@@ -274,7 +311,9 @@ router.post("/refresh", async (req, res, next) => {
     const user = await store.findUserById(claims.sub);
     if (!user) throw new ApiError(401, "UNAUTHORIZED", "Session invalidated.");
     await store.deleteSession(session.id);
-    const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", session.deviceInfo, { permanent: session.expiresAt === null });
+    const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", session.deviceInfo, {
+      permanent: session.expiresAt === null,
+    });
     setAuthCookies(res, signAccessToken(user.id), bundle.refreshToken, randomToken(16));
     res.json({ ok: true });
   } catch (e) {

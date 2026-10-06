@@ -23,16 +23,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "../../config.js";
 import { loadTrendDigest } from "../trends.js";
-import { topTopics, type TrendingShort } from "../shortsTrends.js";
-import {
-  HOOK_PATTERNS,
-  allNiches,
-  detectNiche,
-  nicheKeywords,
-  registerExtraNiches,
-  type AddedNiche,
-  type Niche,
-} from "./core/viral.js";
+import { topTopics } from "../shortsTrends.js";
+import { HOOK_PATTERNS, allNiches, detectNiche, nicheKeywords, registerExtraNiches, type AddedNiche, type Niche } from "./core/viral.js";
 
 /** How many added niches the app keeps. Enough for a shifting few months. */
 export const MAX_ADDED_NICHES = 12;
@@ -106,9 +98,7 @@ export function nicheSlug(name: string): string {
 
 function hooksFor(input: string[] | undefined): string[] {
   const valid = HOOK_PATTERNS.map((h) => h.id);
-  const asked = (Array.isArray(input) ? input : [])
-    .map((h) => cleaner(h, 40).toLowerCase())
-    .filter((h) => valid.includes(h));
+  const asked = (Array.isArray(input) ? input : []).map((h) => cleaner(h, 40).toLowerCase()).filter((h) => valid.includes(h));
   const list = [...new Set([...asked, ...DEFAULT_HOOKS])];
   return list.slice(0, 4);
 }
@@ -143,7 +133,9 @@ export function buildAddedNiche(input: AddNicheInput, now = Date.now()): AddNich
     id,
     name,
     short,
-    audience: cleaner(input.audience, MAX_AUDIENCE) || "The people already scrolling this subject every day — they want the one thing they didn't know.",
+    audience:
+      cleaner(input.audience, MAX_AUDIENCE) ||
+      "The people already scrolling this subject every day — they want the one thing they didn't know.",
     hooks: hooksFor(input.hooks),
     angles: anglesFor(name, input.angles),
     never:
@@ -285,7 +277,7 @@ export function nichesStatus(now = Date.now()) {
         addedAt: n.addedAt ? new Date(n.addedAt).toISOString() : null,
         fresh: isFresh(n, now),
       })),
-    suggestions: suggestNiches(now),
+    suggestions: suggestNiches(),
     max: MAX_ADDED_NICHES,
   };
 }
@@ -293,9 +285,42 @@ export function nichesStatus(now = Date.now()) {
 // ── What's climbing that the researched niches don't cover ──────────────────
 
 const STOP_TOPIC = new Set([
-  "shorts", "short", "viral", "video", "videos", "youtube", "trending", "fyp", "subscribe", "watch", "part",
-  "this", "that", "with", "your", "from", "they", "them", "what", "when", "have", "just", "like", "into",
-  "more", "most", "than", "then", "will", "would", "about", "every", "because", "people", "thing", "things",
+  "shorts",
+  "short",
+  "viral",
+  "video",
+  "videos",
+  "youtube",
+  "trending",
+  "fyp",
+  "subscribe",
+  "watch",
+  "part",
+  "this",
+  "that",
+  "with",
+  "your",
+  "from",
+  "they",
+  "them",
+  "what",
+  "when",
+  "have",
+  "just",
+  "like",
+  "into",
+  "more",
+  "most",
+  "than",
+  "then",
+  "will",
+  "would",
+  "about",
+  "every",
+  "because",
+  "people",
+  "thing",
+  "things",
 ]);
 
 const words = (text: string): string[] =>
@@ -327,7 +352,8 @@ export function coveredByNiche(topic: string, niches: Niche[] = allNiches()): bo
   return false;
 }
 
-const fmtViews = (n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
+const fmtViews = (n: number): string =>
+  n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
 
 /**
  * The phrase the titles actually use around a subject word — “street food” for
@@ -337,7 +363,10 @@ const fmtViews = (n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` :
 export function phraseFor(topic: string, matches: Array<{ title: string }>): string {
   const counts = new Map<string, number>();
   for (const s of matches) {
-    const tokens = s.title.toLowerCase().split(/[^\p{L}\p{N}']+/u).filter(Boolean);
+    const tokens = s.title
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}']+/u)
+      .filter(Boolean);
     const at = tokens.findIndex((t) => t === topic);
     if (at < 0) continue;
     for (const candidate of [
@@ -369,7 +398,9 @@ const titleCase = (phrase: string): string =>
  * subject only appears when several different channels in this week's most
  * popular Shorts are posting about it and no niche covers it yet.
  */
-export function suggestNiches(now = Date.now()): NicheSuggestion[] {
+// `now` used to be a parameter here and was never read — the caller passed it,
+// the function ignored it, and the linter was the only thing that noticed.
+export function suggestNiches(): NicheSuggestion[] {
   const digest = loadTrendDigest();
   if (!digest) return [];
   const added = addedNiches();
@@ -438,7 +469,10 @@ export function loadAddedNiches(): AddedNiche[] {
 /** Boot: read the added niches once, and say what it found. */
 export function initNiches(): void {
   const added = loadAddedNiches();
-  if (added.length) console.log(`[niches] ${added.length} added niche${added.length === 1 ? "" : "s"} in the Generate tab: ${added.map((n) => n.name).join(", ")}`);
+  if (added.length)
+    console.log(
+      `[niches] ${added.length} added niche${added.length === 1 ? "" : "s"} in the Generate tab: ${added.map((n) => n.name).join(", ")}`,
+    );
 }
 
 /** Which niche a topic would use right now (the API answers this for the app). */

@@ -15,6 +15,7 @@ import {
   frame,
   fromBase64,
   isIPv4,
+  isPrivateAddress,
   open,
   randomNonce,
   seal,
@@ -146,7 +147,13 @@ async function readError(res: Response): Promise<CompanionError> {
 }
 
 /** Ask one address "are you Soundwave on the PC with this id?" */
-export async function probe(fetchFn: FetchLike, baseUrl: string, pcId: string | null, timeoutMs = HELLO_TIMEOUT_MS, outer?: AbortSignal): Promise<{ hello: Hello; offset: number } | null> {
+export async function probe(
+  fetchFn: FetchLike,
+  baseUrl: string,
+  pcId: string | null,
+  timeoutMs = HELLO_TIMEOUT_MS,
+  outer?: AbortSignal,
+): Promise<{ hello: Hello; offset: number } | null> {
   const t = timeoutSignal(timeoutMs, outer);
   const sent = Date.now();
   try {
@@ -194,7 +201,11 @@ async function firstReachable(fetchFn: FetchLike, bases: string[], pcId: string 
  * address who it is (its PC id salts the key). A fake answer gains nothing —
  * without the code shown on the PC's screen nobody can open the request.
  */
-export async function linkFromTyped(address: { host: string; port: number }, code: string, opts: { fetch?: FetchLike } = {}): Promise<PairingLink> {
+export async function linkFromTyped(
+  address: { host: string; port: number },
+  code: string,
+  opts: { fetch?: FetchLike } = {},
+): Promise<PairingLink> {
   const fetchFn = opts.fetch ?? fetch.bind(globalThis);
   const hit = await probe(fetchFn, baseUrlFor(address.host, address.port), null, 4000);
   if (!hit) {
@@ -214,7 +225,11 @@ export interface DeviceInfo {
 }
 
 /** Scan result → paired: finds the PC, proves we know the code, gets our device key. */
-export async function pairWithPc(link: PairingLink, device: DeviceInfo, opts: { fetch?: FetchLike; signal?: AbortSignal } = {}): Promise<PairingRecord> {
+export async function pairWithPc(
+  link: PairingLink,
+  device: DeviceInfo,
+  opts: { fetch?: FetchLike; signal?: AbortSignal } = {},
+): Promise<PairingRecord> {
   const fetchFn = opts.fetch ?? fetch.bind(globalThis);
   const [key, found] = await Promise.all([
     derivePairingKey(link.code, link.pcId),
@@ -233,7 +248,10 @@ export async function pairWithPc(link: PairingLink, device: DeviceInfo, opts: { 
     );
   }
   if (!found.hello.pairing) {
-    throw new CompanionError("NO_PAIRING", "Pairing isn't open on the PC. Open Soundwave AI → Settings → Phone and scan the code shown there.");
+    throw new CompanionError(
+      "NO_PAIRING",
+      "Pairing isn't open on the PC. Open Soundwave AI → Settings → Phone and scan the code shown there.",
+    );
   }
   const n = randomNonce();
   const request = frame({ op: "pair", args: device, t: Date.now() + found.offset, n });
@@ -322,7 +340,13 @@ export class CompanionClient {
 
   constructor(
     record: PairingRecord,
-    opts: { fetch?: FetchLike; conversation?: Conversation | null; memoryRev?: string | null; kitRev?: string | null; appVersion?: string } = {},
+    opts: {
+      fetch?: FetchLike;
+      conversation?: Conversation | null;
+      memoryRev?: string | null;
+      kitRev?: string | null;
+      appVersion?: string;
+    } = {},
   ) {
     this.record = record;
     this.fetchFn = opts.fetch ?? fetch.bind(globalThis);
@@ -377,8 +401,16 @@ export class CompanionClient {
     this.offset = found.offset;
     this.rememberHost(found.baseUrl);
     try {
-      const { result } = await this.rpc<PcInfo & { time: number }>("hello", this.appVersion ? { appVersion: this.appVersion } : {}, { signal });
-      this.pc = { pcName: result.pcName, voiceInput: result.voiceInput, voice: result.voice, ...(result.brain ? { brain: result.brain } : {}), memoryRev: result.memoryRev ?? null };
+      const { result } = await this.rpc<PcInfo & { time: number }>("hello", this.appVersion ? { appVersion: this.appVersion } : {}, {
+        signal,
+      });
+      this.pc = {
+        pcName: result.pcName,
+        voiceInput: result.voiceInput,
+        voice: result.voice,
+        ...(result.brain ? { brain: result.brain } : {}),
+        memoryRev: result.memoryRev ?? null,
+      };
       if (result.pcName && result.pcName !== this.record.pcName) {
         this.record = { ...this.record, pcName: result.pcName };
         this.emit("record", this.record);
@@ -425,9 +457,19 @@ export class CompanionClient {
   ): Promise<{ result: T; payload: Uint8Array }> {
     const baseUrl = this.baseUrl;
     if (!baseUrl) throw new CompanionError("OFFLINE", `Can't reach ${this.record.pcName} right now.`);
+    // The Android manifest permits cleartext app-wide (the only way to reach a
+    // PC on an arbitrary LAN address), so the app enforces the rule the
+    // platform cannot: plain http is only ever sent to a private address.
+    if (!isPrivateAddress(baseUrl)) {
+      throw new CompanionError("INSECURE_ADDRESS", `${baseUrl} is not on your own network — Soundwave only talks to your PC.`);
+    }
     const keys = await this.keys;
     const n = randomNonce();
-    const body = await seal(keys.c2s, frame({ op, args, t: Date.now() + this.offset, n }, opts.payload), aad("rpc", "c2s", this.record.deviceId));
+    const body = await seal(
+      keys.c2s,
+      frame({ op, args, t: Date.now() + this.offset, n }, opts.payload),
+      aad("rpc", "c2s", this.record.deviceId),
+    );
     const t = timeoutSignal(opts.timeoutMs ?? RPC_TIMEOUT_MS, opts.signal);
     let res: Response;
     try {
@@ -441,7 +483,9 @@ export class CompanionClient {
       if (opts.signal?.aborted) throw new CompanionError("ABORTED", "Cancelled.");
       const timedOut = (t.signal.reason as { code?: string } | undefined)?.code === "TIMEOUT";
       if (!timedOut) this.lostConnection();
-      throw timedOut ? new CompanionError("TIMEOUT", `${this.record.pcName} took too long to answer.`) : new CompanionError("OFFLINE", `Lost the connection to ${this.record.pcName}.`);
+      throw timedOut
+        ? new CompanionError("TIMEOUT", `${this.record.pcName} took too long to answer.`)
+        : new CompanionError("OFFLINE", `Lost the connection to ${this.record.pcName}.`);
     } finally {
       t.clear();
     }
@@ -460,7 +504,9 @@ export class CompanionClient {
       throw err;
     }
     if (!res.ok) throw await readError(res);
-    const { header, payload } = unframe(await open(keys.s2c, new Uint8Array(await res.arrayBuffer()), aad("rpc", "s2c", this.record.deviceId, n)));
+    const { header, payload } = unframe(
+      await open(keys.s2c, new Uint8Array(await res.arrayBuffer()), aad("rpc", "s2c", this.record.deviceId, n)),
+    );
     if (header.n !== n) throw new CompanionError("BAD_ANSWER", "Mismatched answer from the PC.");
     if (typeof header.t === "number") this.offset = header.t - Date.now();
     if (header.ok !== true) {
@@ -520,7 +566,11 @@ export class CompanionClient {
       memory?: MemorySnapshot | null;
       memoryRev?: string | null;
       kitRev?: string;
-    }>("sync", { epoch: c?.epoch ?? "", rev: c?.rev ?? -1, wait, memoryRev: this.memoryRev ?? "" }, { timeoutMs: wait ? SYNC_TIMEOUT_MS : RPC_TIMEOUT_MS, signal });
+    }>(
+      "sync",
+      { epoch: c?.epoch ?? "", rev: c?.rev ?? -1, wait, memoryRev: this.memoryRev ?? "" },
+      { timeoutMs: wait ? SYNC_TIMEOUT_MS : RPC_TIMEOUT_MS, signal },
+    );
     this.applySync(result);
   }
 
@@ -533,11 +583,14 @@ export class CompanionClient {
 
   /** Sends what was said while the PC was off; the PC answers with the whole conversation. */
   async merge(outbox: Outbox, signal?: AbortSignal): Promise<{ merged: number }> {
-    const { result } = await this.rpc<{ epoch: string; rev: number; messages: ChatMessage[]; merged: number; memory?: MemorySnapshot | null; memoryRev?: string | null }>(
-      "merge",
-      { messages: outbox.messages, memoryOps: outbox.memoryOps, heard: outbox.heard ?? [] },
-      { timeoutMs: 30_000, signal },
-    );
+    const { result } = await this.rpc<{
+      epoch: string;
+      rev: number;
+      messages: ChatMessage[];
+      merged: number;
+      memory?: MemorySnapshot | null;
+      memoryRev?: string | null;
+    }>("merge", { messages: outbox.messages, memoryOps: outbox.memoryOps, heard: outbox.heard ?? [] }, { timeoutMs: 30_000, signal });
     this.emit("flushed", outbox);
     this.applySync({ ...result, jobs: this.jobs });
     return { merged: result.merged };
@@ -545,7 +598,11 @@ export class CompanionClient {
 
   /** "🌅 Morning Setup" through the PC (it opens the morning items there). */
   async morning(): Promise<ChatMessage> {
-    const { result } = await this.rpc<{ epoch: string; rev: number; messages: ChatMessage[]; reply: ChatMessage }>("morning", {}, { timeoutMs: 75_000 });
+    const { result } = await this.rpc<{ epoch: string; rev: number; messages: ChatMessage[]; reply: ChatMessage }>(
+      "morning",
+      {},
+      { timeoutMs: 75_000 },
+    );
     this.applySync({ ...result, jobs: this.jobs });
     this.poke();
     return result.reply;
@@ -597,7 +654,11 @@ export class CompanionClient {
   }
 
   async speak(text: string, voice?: string, signal?: AbortSignal): Promise<{ audio: Uint8Array; mime: string }> {
-    const { result, payload } = await this.rpc<{ mime: string }>("speak", { text, ...(voice ? { voice } : {}) }, { timeoutMs: 30_000, signal });
+    const { result, payload } = await this.rpc<{ mime: string }>(
+      "speak",
+      { text, ...(voice ? { voice } : {}) },
+      { timeoutMs: 30_000, signal },
+    );
     return { audio: payload, mime: result.mime || "audio/mpeg" };
   }
 
@@ -609,7 +670,11 @@ export class CompanionClient {
     let offset = 0;
     onProgress?.(0);
     while (offset < info.size) {
-      const { result, payload } = await this.rpc<{ length: number }>("video.read", { jobId, offset, length: 2 * 1024 * 1024 }, { timeoutMs: 60_000, signal });
+      const { result, payload } = await this.rpc<{ length: number }>(
+        "video.read",
+        { jobId, offset, length: 2 * 1024 * 1024 },
+        { timeoutMs: 60_000, signal },
+      );
       if (!result.length) break;
       parts.push(payload);
       offset += result.length;

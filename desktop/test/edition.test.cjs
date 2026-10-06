@@ -44,7 +44,7 @@ test("the owner's build extends it and stamps its own identity", () => {
   assert.match(dev, new RegExp(`^appId: ${EDITIONS.personal.appId}$`, "m"));
   assert.match(dev, new RegExp(`^productName: ${EDITIONS.personal.productName}$`, "m"));
   // The packaged app reads this field to know which build it is.
-  assert.match(dev, /^extraMetadata:\n  soundwaveEdition: personal$/m);
+  assert.match(dev, /^extraMetadata:\n {2}soundwaveEdition: personal$/m);
   // Its own output folder and installers: never overwrite the sold ones.
   assert.match(dev, /output: release-dev/);
   assert.match(dev, /artifactName: SoundwaveAIDev-Setup-\$\{version\}\.exe/);

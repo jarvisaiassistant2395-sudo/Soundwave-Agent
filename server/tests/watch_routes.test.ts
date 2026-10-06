@@ -4,7 +4,6 @@
 // pipeline) so what's asserted here is the route → store → queue path, not the
 // network.
 import fs from "node:fs";
-import path from "node:path";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,7 +40,12 @@ const listing = (videos: Array<{ id: string; title: string }>, channelName = "Mr
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.clipsBusy.mockReturnValue({ busy: false });
-  mocks.listChannelVideos.mockResolvedValue(listing([{ id: "v1", title: "First" }, { id: "v2", title: "Second" }]));
+  mocks.listChannelVideos.mockResolvedValue(
+    listing([
+      { id: "v1", title: "First" },
+      { id: "v2", title: "Second" },
+    ]),
+  );
   fs.rmSync(DATA, { recursive: true, force: true });
   const store = new JsonStore();
   void store.init();
@@ -64,7 +68,14 @@ describe("the Watching card's routes", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.message).toBe("Watching MrBeast — 2 shorts out of every new video.");
     expect(res.body.watches).toHaveLength(1);
-    expect(res.body.watches[0]).toMatchObject({ name: "MrBeast", clips: 2, queued: 0, clippedCount: 0, lastClipped: null, lastError: null });
+    expect(res.body.watches[0]).toMatchObject({
+      name: "MrBeast",
+      clips: 2,
+      queued: 0,
+      clippedCount: 0,
+      lastClipped: null,
+      lastError: null,
+    });
     // Videos already up are skipped: the card's list is about what happens next.
     expect(res.body.watches[0].lastClipped).toBeNull();
     expect(watch.listWatches()[0]!.queue).toEqual([]);

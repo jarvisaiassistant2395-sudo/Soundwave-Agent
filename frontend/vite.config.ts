@@ -12,7 +12,16 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: process.env.API_PROXY_TARGET || "http://localhost:4000",
-        changeOrigin: true,
+        // Keep the browser's own Host. The API decides whether a request came
+        // from the app's own window by comparing the Host and Origin headers
+        // (server/src/middleware/localApp.ts notFromApp), and `changeOrigin:
+        // true` rewrote the Host to the target's while the Origin stayed the
+        // page's — so every app-local route (Settings → Brain and Phone, the
+        // agent's memory, Morning Setup, Gmail, the dev sign-in) answered
+        // "Not available from other sites." in `npm run dev`.
+        // The desktop app and docker-compose both serve the API on the page's
+        // own origin, which is why only the dev server ever saw this.
+        changeOrigin: false,
       },
     },
   },

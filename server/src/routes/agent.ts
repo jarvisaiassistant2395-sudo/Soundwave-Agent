@@ -9,11 +9,18 @@ import { ORBITAL_CHANNEL_URL, getOrbitalCatalog, getOrbitalStatus } from "../lib
 import agentShortRouter, { VIRAL_SCRIPTS, generateScript, getActiveShortJobs, startShortJob } from "./agentShort.js";
 import { NICHES, nicheCatalog } from "../lib/brain/core/viral.js";
 import { PERSONA_IDS, isPersonaId } from "../lib/brain/core/persona.js";
-import { loadPersonaSettings, personaStatus, savePersonaSettings } from "../lib/brain/persona.js";
+import { personaStatus, savePersonaSettings } from "../lib/brain/persona.js";
 import { addAddedNiche, nicheSlug, nichesStatus, removeAddedNiche, suggestionToNiche, type AddNicheResult } from "../lib/brain/niches.js";
 import { TREND_REFRESH_DAYS, refreshTrends, trendsStatus } from "../lib/trends.js";
 import { ApiError } from "../middleware/error.js";
-import { DEFAULT_AGENT_VOICE, getVoiceHealth, normalizeVoiceId, noteVoiceFailure, streamEdgeTTS, synthesizeEdgeTTS } from "../lib/edgeTts.js";
+import {
+  DEFAULT_AGENT_VOICE,
+  getVoiceHealth,
+  normalizeVoiceId,
+  noteVoiceFailure,
+  streamEdgeTTS,
+  synthesizeEdgeTTS,
+} from "../lib/edgeTts.js";
 import { isLocalVoiceId, synthesizeLocalVoice } from "../lib/kokoro.js";
 import { getConversation } from "../lib/conversation.js";
 import { SttError, getSttStatus, transcribe } from "../lib/stt.js";
@@ -79,7 +86,9 @@ router.get("/speak/stream", optionalAuth, async (req, res) => {
   if (asked.length > text.length) {
     // The apps chunk long replies; if this ever fires, something sent one huge
     // piece and the person would hear a reply stop early — say so in the log.
-    console.warn(`[voice] text longer than ${MAX_SPOKEN_CHARS} characters (${asked.length}) — speaking only the first part; the caller should split it`);
+    console.warn(
+      `[voice] text longer than ${MAX_SPOKEN_CHARS} characters (${asked.length}) — speaking only the first part; the caller should split it`,
+    );
   }
   const askedVoice = typeof req.query.voice === "string" ? req.query.voice : "";
 
@@ -196,7 +205,7 @@ const chatSchema = z
         z.object({
           sender: z.enum(["user", "assistant", "system"]),
           text: z.string().max(20_000),
-        })
+        }),
       )
       .max(100)
       .optional()
@@ -267,7 +276,9 @@ export async function agentChat(input: AgentChatInput): Promise<ChatReply> {
     } catch (err) {
       if (input.signal?.aborted) return { success: false, reply: "Cancelled.", tag: "SYS" };
       const why = err instanceof GeminiError ? describeGeminiError(err, brain.model) : `Gemini didn't answer (${(err as Error).message}).`;
-      console.warn(`[brain] ${brain.model}: ${err instanceof GeminiError ? `${err.kind} — ${err.detail.split("\n")[0]}` : (err as Error).message}`);
+      console.warn(
+        `[brain] ${brain.model}: ${err instanceof GeminiError ? `${err.kind} — ${err.detail.split("\n")[0]}` : (err as Error).message}`,
+      );
       return withoutBrain({ ...input, message }, why);
     }
   }
@@ -342,7 +353,8 @@ async function startShortFromChat(topic: string, input: AgentChatInput): Promise
   }
 }
 
-const VIDEO_QUESTION = /\b(?:where(?:'s| is| can i)|find|show|play|watch|download|open|see)\b[\s\S]*\b(?:videos?|shorts?|it)\b|\b(?:my|the|last|latest) (?:video|short)\b|\bwhat video\b/i;
+const VIDEO_QUESTION =
+  /\b(?:where(?:'s| is| can i)|find|show|play|watch|download|open|see)\b[\s\S]*\b(?:videos?|shorts?|it)\b|\b(?:my|the|last|latest) (?:video|short)\b|\bwhat video\b/i;
 
 /**
  * No brain (no key yet, or Gemini failed): only what needs no thinking —
@@ -486,7 +498,11 @@ router.post("/niches", validate({ body: addNicheSchema }), (req, res, next) => {
         (s) => s.id.toLowerCase() === wanted || s.name.toLowerCase() === wanted || nicheSlug(s.name) === nicheSlug(wanted),
       );
       if (!suggestion) {
-        throw new ApiError(404, "NO_SUCH_SUGGESTION", "That suggestion isn't on offer any more — the trends moved on. Refresh the trends and try again.");
+        throw new ApiError(
+          404,
+          "NO_SUCH_SUGGESTION",
+          "That suggestion isn't on offer any more — the trends moved on. Refresh the trends and try again.",
+        );
       }
       result = suggestionToNiche(suggestion, "user");
     } else {
@@ -502,7 +518,13 @@ router.post("/niches", validate({ body: addNicheSchema }), (req, res, next) => {
       });
     }
     if (!result.ok) throw new ApiError(400, "NICHE_NOT_ADDED", result.error);
-    res.status(201).json({ ok: true, niche: result.niche, niches: nicheCatalog(), added: nichesStatus().added, suggestions: nichesStatus().suggestions });
+    res.status(201).json({
+      ok: true,
+      niche: result.niche,
+      niches: nicheCatalog(),
+      added: nichesStatus().added,
+      suggestions: nichesStatus().suggestions,
+    });
   } catch (e) {
     next(e);
   }

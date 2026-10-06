@@ -39,13 +39,6 @@ export function decodeEntities(text: string): string {
   });
 }
 
-/** "00:01:02.500" (or "01:02.500") → seconds. */
-function cueSeconds(stamp: string): number {
-  const parts = stamp.trim().replace(",", ".").split(":").map((p) => parseFloat(p));
-  if (parts.some((p) => !Number.isFinite(p))) return 0;
-  return parts.reduce((total, p) => total * 60 + p, 0);
-}
-
 /** The words of a caption line with markup, timings and karaoke tags gone. */
 function cueText(line: string): string {
   return decodeEntities(

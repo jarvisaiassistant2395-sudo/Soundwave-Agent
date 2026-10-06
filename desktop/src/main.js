@@ -41,6 +41,7 @@ const { createKeyWatcher } = require("./keywatch.cjs");
 const { DEFAULT_WAKE_PHRASES, vkCodesFor, wakeHit } = require("./wake.cjs");
 const { currentEdition } = require("./edition.cjs");
 const { createAutoUpdater } = require("./update.cjs");
+const diagnostics = require("./diagnostics.cjs");
 const {
   HOTKEY_CHOICES,
   applySettingsPatch,
@@ -119,6 +120,8 @@ let pendingVoice = [];
 let tray = null;
 let isQuitting = false;
 let serverStarted = false;
+/** The imported bundled-server module (index.js exports `shutdown`). */
+let serverModule = null;
 let kokoroManager = null;
 let serverUrl = "";
 let appOrigin = "";
@@ -148,6 +151,37 @@ function pollHealth(url, timeoutMs) {
       });
     };
     attempt();
+  });
+}
+
+/**
+ * GET a small JSON document from the app's own loopback API (the readiness
+ * probe in the diagnostics bundle). Same shape as the health poll above: the
+ * main process talks to the server over plain node:http, never fetch, so the
+ * app never routes its own local calls through a proxy the machine may have.
+ */
+function fetchJson(url, timeoutMs = 3000) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => {
+        body += chunk;
+        if (body.length > 64_000) req.destroy();
+      });
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`no answer from ${url} in ${timeoutMs} ms`));
+    });
   });
 }
 
@@ -232,7 +266,8 @@ function updateSettings(patch) {
   const before = settings;
   settings = applySettingsPatch(settings, patch);
   if (settings.hotkey !== before.hotkey || settings.hotkeyEnabled !== before.hotkeyEnabled) applyHotkey();
-  if (settings.pushToTalk !== before.pushToTalk || settings.hotkey !== before.hotkey || settings.hotkeyEnabled !== before.hotkeyEnabled) applyPushToTalk();
+  if (settings.pushToTalk !== before.pushToTalk || settings.hotkey !== before.hotkey || settings.hotkeyEnabled !== before.hotkeyEnabled)
+    applyPushToTalk();
   if (settings.wakeEnabled !== before.wakeEnabled) applyWakeSetting();
   if (settings.openAtLogin !== before.openAtLogin && supportsLoginItems()) {
     try {
@@ -496,7 +531,9 @@ function applyWakeSetting() {
 
 /** What the wake listener said it heard (from the hidden page, after whisper). */
 function onWakeHeard(text) {
-  const said = String(text ?? "").trim().slice(0, 600);
+  const said = String(text ?? "")
+    .trim()
+    .slice(0, 600);
   if (!said) return;
   wakeInfo.heard += 1;
   wakeInfo.lastHeard = said.slice(0, 200);
@@ -616,7 +653,14 @@ function refreshTrayMenu() {
       { label: "Generate a short", click: () => showMainWindow("/agent?tab=generator") },
       { type: "separator" },
       ...(supportsLoginItems()
-        ? [{ label: "Start with Windows", type: "checkbox", checked: settings.openAtLogin, click: (item) => updateSettings({ openAtLogin: item.checked }) }]
+        ? [
+            {
+              label: "Start with Windows",
+              type: "checkbox",
+              checked: settings.openAtLogin,
+              click: (item) => updateSettings({ openAtLogin: item.checked }),
+            },
+          ]
         : []),
       {
         label: "Keep running in the tray when closed",
@@ -712,7 +756,11 @@ function startUpdates() {
     // One notification, the first time a download lands — not on every tick.
     if (state.status === "ready" && settings.notifications && state.available && lastReadyVersion !== state.available) {
       lastReadyVersion = state.available;
-      notify({ title: `${APP_NAME} ${state.available} is ready`, body: "It goes in the next time you restart — or press Restart now in Settings.", route: "/settings/preferences" });
+      notify({
+        title: `${APP_NAME} ${state.available} is ready`,
+        body: "It goes in the next time you restart — or press Restart now in Settings.",
+        route: "/settings/preferences",
+      });
     }
   });
   updater.start();
@@ -755,6 +803,44 @@ function registerIpc() {
   ipcMain.handle("soundwave:is-app-focused", (event) => {
     if (!trusted(event)) return false;
     return alive(mainWindow) && mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized();
+  });
+  // Settings → Help: the log folder, and a diagnostics block for support.
+  ipcMain.handle("soundwave:open-logs", (event) => {
+    if (!trusted(event)) return false;
+    const dir = diagnostics.dirPath() || app.getPath("userData");
+    // An empty folder is a worse answer than a file: make sure today's log
+    // exists before opening it, so "open logs" never shows nothing.
+    try {
+      if (!diagnostics.filePath()) diagnostics.install(dir);
+    } catch {
+      /* fall through to opening the folder */
+    }
+    shell.openPath(dir).catch(() => {});
+    return true;
+  });
+  ipcMain.handle("soundwave:copy-diagnostics", async (event) => {
+    if (!trusted(event)) return null;
+    const extra = {
+      edition: EDITION.id,
+      settings: {
+        hotkey: settings.hotkey,
+        closeToTray: settings.closeToTray,
+        notifications: settings.notifications,
+        wakeWord: settings.wakeWord,
+        voiceInput: settings.voiceInput,
+      },
+      update: updater ? updater.state : null,
+      wake: wakeInfo ? { state: wakeInfo.state, detail: wakeInfo.detail } : null,
+    };
+    // What the API thinks of itself: which store is live, whether it had to
+    // recover, whether FFmpeg is there. Asking the running server beats
+    // guessing from here.
+    try {
+      extra.api = await fetchJson(`${serverUrl}/api/ready`);
+    } catch (err) {
+      extra.api = `unreachable: ${err.message}`;
+    }
+    return diagnostics.diagnostics({ app, version: app.getVersion(), edition: EDITION.id, extra });
   });
   ipcMain.on("soundwave:voice-listener", (event) => {
     if (!trusted(event) || !alive(overlayWindow) || event.sender !== overlayWindow.webContents) return;
@@ -840,6 +926,13 @@ async function main() {
   const appRoot = path.join(__dirname, "..", "app");
   const binDir = app.isPackaged ? path.join(process.resourcesPath, "bin") : path.join(__dirname, "..", "bin");
   const userDataDir = app.getPath("userData");
+
+  // The log file first, before anything that can fail: a shell that dies during
+  // startup is exactly the case where "there is nowhere to look" hurts most.
+  // The server writes into the same folder (SOUNDWAVE_LOG_DIR in server-env).
+  diagnostics.install(path.join(userDataDir, "logs"));
+  diagnostics.installCrashHandlers({ app, electron: require("electron"), version: app.getVersion() });
+  process.on("exit", (code) => diagnostics.log("info", "[desktop] shell exiting", { code }));
 
   settingsFile = path.join(userDataDir, "desktop-settings.json");
   settings = loadSettings(settingsFile);
@@ -973,8 +1066,12 @@ async function main() {
   };
 
   // Import the bundled server (ESM) — this starts listening on loopback.
-  await import(pathToFileURL(path.join(appRoot, "server", "dist", "index.js")).href);
+  // The module is kept so quitting can ask it to shut down cleanly (see
+  // before-quit): it exports `shutdown`, which stops the schedulers, closes the
+  // listener and flushes the store to disk.
+  serverModule = await import(pathToFileURL(path.join(appRoot, "server", "dist", "index.js")).href);
   serverStarted = true;
+  diagnostics.log("info", "[desktop] bundled server started", { url: serverUrl });
 
   createTray();
   applyHotkey();
@@ -1048,13 +1145,31 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
+let quitFlushed = false;
+
+app.on("before-quit", (event) => {
   isQuitting = true;
   // Stop the supervised local service when Soundwave quits; setup downloads and
   // the service itself never keep running as an orphan process.
   kokoroManager?.stop();
-  // Server runs in-process — quitting the app stops the API with it.
-  if (serverStarted) console.log("[soundwave-desktop] shutting down");
+  if (!serverStarted || quitFlushed) return;
+
+  // The API runs in this process, so quitting kills it — and the store writes
+  // on a 150 ms debounce (server lib/store.ts), which means the last thing the
+  // person did could simply never reach the disk. Ask it to shut down cleanly
+  // first (stop the schedulers, close the listener, flush the store), then
+  // really quit. Guarded: a failed flush must not trap the app open.
+  event.preventDefault();
+  diagnostics.log("info", "[desktop] quitting — flushing the server");
+  void (async () => {
+    try {
+      await serverModule?.shutdown?.("app-quit");
+    } catch (err) {
+      diagnostics.log("warn", "[desktop] the server did not shut down cleanly", err);
+    }
+    quitFlushed = true;
+    app.quit();
+  })();
 });
 
 app.on("will-quit", () => {

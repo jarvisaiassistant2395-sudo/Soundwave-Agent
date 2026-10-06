@@ -9,6 +9,7 @@ import {
   formatPairingCode,
   frame,
   fromBase64,
+  isPrivateAddress,
   normalizePairingCode,
   open,
   parsePairingLink,
@@ -45,7 +46,9 @@ describe("pairing links (the QR code)", () => {
   });
 
   it("accepts full origins (a tunnel/VPN name) and drops junk hosts", () => {
-    const l = parsePairingLink("soundwave://pair?c=ABCDEFGHJKMN&i=pc_0123456789abcdef&p=47800&h=https%3A%2F%2Fpc.example.ts.net,bad host,javascript:alert(1)");
+    const l = parsePairingLink(
+      "soundwave://pair?c=ABCDEFGHJKMN&i=pc_0123456789abcdef&p=47800&h=https%3A%2F%2Fpc.example.ts.net,bad host,javascript:alert(1)",
+    );
     expect(l?.hosts).toEqual(["https://pc.example.ts.net"]);
     expect(baseUrlFor("https://pc.example.ts.net", 47800)).toBe("https://pc.example.ts.net");
     expect(baseUrlFor("192.168.1.23", 47800)).toBe("http://192.168.1.23:47800");
@@ -100,10 +103,49 @@ describe("envelopes", () => {
 
 describe("the stored pairing", () => {
   it("round-trips and rejects junk", () => {
-    const r = { pcId: "pc_0123456789abcdef", pcName: "PC", deviceId: "d_1", deviceKey: "AAAA", hosts: ["192.168.1.2"], port: 47800, pairedAt: "2026-01-01T00:00:00Z" };
+    const r = {
+      pcId: "pc_0123456789abcdef",
+      pcName: "PC",
+      deviceId: "d_1",
+      deviceKey: "AAAA",
+      hosts: ["192.168.1.2"],
+      port: 47800,
+      pairedAt: "2026-01-01T00:00:00Z",
+    };
     expect(decodeRecord(encodeRecord(r))).toEqual(r);
     expect(decodeRecord("{}")).toBeNull();
     expect(decodeRecord("not json")).toBeNull();
     expect(decodeRecord(null)).toBeNull();
+  });
+});
+
+describe("what the phone may talk to in the clear", () => {
+  // The Android manifest has to allow cleartext app-wide to reach a PC on an
+  // arbitrary LAN address, so this is the rule the app enforces itself: plain
+  // http only ever goes to the person's own network.
+  it("allows the person's own machine and network", () => {
+    expect(isPrivateAddress("http://192.168.1.5:47800")).toBe(true);
+    expect(isPrivateAddress("http://10.0.0.7:47800")).toBe(true);
+    expect(isPrivateAddress("http://172.16.4.9:47800")).toBe(true);
+    expect(isPrivateAddress("http://172.31.255.254:47800")).toBe(true);
+    expect(isPrivateAddress("http://127.0.0.1:47800")).toBe(true);
+    expect(isPrivateAddress("http://localhost:47800")).toBe(true);
+    expect(isPrivateAddress("http://169.254.10.2:47800")).toBe(true);
+    expect(isPrivateAddress("http://macbook.local:47800")).toBe(true);
+    expect(isPrivateAddress("http://[::1]:47800")).toBe(true);
+    expect(isPrivateAddress("http://[fd00::1]:47800")).toBe(true);
+    // https is the encrypted case — allowed anywhere, which is what makes a
+    // tunnel or a VPN name usable.
+    expect(isPrivateAddress("https://pc.example.com")).toBe(true);
+  });
+
+  it("refuses a public address, a public name, and anything that isn't http(s)", () => {
+    expect(isPrivateAddress("http://8.8.8.8:47800")).toBe(false);
+    expect(isPrivateAddress("http://172.15.0.1:47800")).toBe(false); // just outside the range
+    expect(isPrivateAddress("http://172.32.0.1:47800")).toBe(false);
+    expect(isPrivateAddress("http://203.0.113.9:47800")).toBe(false);
+    expect(isPrivateAddress("http://example.com:47800")).toBe(false);
+    expect(isPrivateAddress("ftp://192.168.1.5")).toBe(false);
+    expect(isPrivateAddress("not a url")).toBe(false);
   });
 });

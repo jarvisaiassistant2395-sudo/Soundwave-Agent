@@ -34,32 +34,202 @@ export const FILE_TEXT_MAX_CHARS = 300_000;
 export const FILE_TEXT_MAX_BYTES = 24 * 1024 * 1024;
 
 const TEXT_EXTENSIONS = new Set([
-  "txt", "text", "md", "markdown", "mdx", "rst", "log", "csv", "tsv", "json", "jsonl", "ndjson", "yaml", "yml", "toml", "ini", "cfg", "conf", "env", "properties",
-  "xml", "html", "htm", "xhtml", "css", "scss", "sass", "less", "svg",
-  "js", "mjs", "cjs", "jsx", "ts", "tsx", "py", "rb", "go", "rs", "java", "kt", "kts", "swift", "c", "h", "cpp", "cc", "hpp", "cs", "php", "pl", "lua", "r", "m", "mm", "scala", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "sql", "graphql", "gql", "proto", "dockerfile", "makefile", "gitignore", "editorconfig",
-  "srt", "vtt", "ass", "sub", "tex", "bib", "ris", "ics", "vcf", "diff", "patch", "rtf",
+  "txt",
+  "text",
+  "md",
+  "markdown",
+  "mdx",
+  "rst",
+  "log",
+  "csv",
+  "tsv",
+  "json",
+  "jsonl",
+  "ndjson",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "cfg",
+  "conf",
+  "env",
+  "properties",
+  "xml",
+  "html",
+  "htm",
+  "xhtml",
+  "css",
+  "scss",
+  "sass",
+  "less",
+  "svg",
+  "js",
+  "mjs",
+  "cjs",
+  "jsx",
+  "ts",
+  "tsx",
+  "py",
+  "rb",
+  "go",
+  "rs",
+  "java",
+  "kt",
+  "kts",
+  "swift",
+  "c",
+  "h",
+  "cpp",
+  "cc",
+  "hpp",
+  "cs",
+  "php",
+  "pl",
+  "lua",
+  "r",
+  "m",
+  "mm",
+  "scala",
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "ps1",
+  "bat",
+  "cmd",
+  "sql",
+  "graphql",
+  "gql",
+  "proto",
+  "dockerfile",
+  "makefile",
+  "gitignore",
+  "editorconfig",
+  "srt",
+  "vtt",
+  "ass",
+  "sub",
+  "tex",
+  "bib",
+  "ris",
+  "ics",
+  "vcf",
+  "diff",
+  "patch",
+  "rtf",
 ]);
 
 /** Extensions that are really ZIP archives of XML (or a book). */
-const ZIP_READERS: Record<string, LocalReader> = { docx: "docx", docm: "docx", xlsx: "xlsx", xlsm: "xlsx", pptx: "pptx", ppsx: "pptx", epub: "epub" };
+const ZIP_READERS: Record<string, LocalReader> = {
+  docx: "docx",
+  docm: "docx",
+  xlsx: "xlsx",
+  xlsm: "xlsx",
+  pptx: "pptx",
+  ppsx: "pptx",
+  epub: "epub",
+};
 
 const MIME_BY_EXTENSION: Record<string, string> = {
-  txt: "text/plain", text: "text/plain", md: "text/markdown", markdown: "text/markdown", log: "text/plain", csv: "text/csv", tsv: "text/tab-separated-values",
-  json: "application/json", jsonl: "application/json", ndjson: "application/json", yaml: "application/yaml", yml: "application/yaml", toml: "text/plain", ini: "text/plain", cfg: "text/plain", conf: "text/plain", env: "text/plain", properties: "text/plain",
-  xml: "text/xml", html: "text/html", htm: "text/html", xhtml: "text/html", css: "text/css", scss: "text/plain", less: "text/plain", svg: "image/svg+xml",
-  js: "text/javascript", mjs: "text/javascript", cjs: "text/javascript", jsx: "text/javascript", ts: "text/x-typescript", tsx: "text/x-typescript",
-  py: "text/x-python", rb: "text/x-ruby", go: "text/x-go", rs: "text/x-rust", java: "text/x-java", kt: "text/x-kotlin", swift: "text/x-swift",
-  c: "text/x-c", h: "text/x-c", cpp: "text/x-c++", cc: "text/x-c++", hpp: "text/x-c++", cs: "text/x-csharp", php: "text/x-php", sh: "text/x-sh", bash: "text/x-sh", zsh: "text/x-sh", ps1: "text/plain", bat: "text/plain", cmd: "text/plain",
-  sql: "text/plain", graphql: "text/plain", proto: "text/plain", srt: "text/plain", vtt: "text/vtt", tex: "text/plain", rtf: "application/rtf",
+  txt: "text/plain",
+  text: "text/plain",
+  md: "text/markdown",
+  markdown: "text/markdown",
+  log: "text/plain",
+  csv: "text/csv",
+  tsv: "text/tab-separated-values",
+  json: "application/json",
+  jsonl: "application/json",
+  ndjson: "application/json",
+  yaml: "application/yaml",
+  yml: "application/yaml",
+  toml: "text/plain",
+  ini: "text/plain",
+  cfg: "text/plain",
+  conf: "text/plain",
+  env: "text/plain",
+  properties: "text/plain",
+  xml: "text/xml",
+  html: "text/html",
+  htm: "text/html",
+  xhtml: "text/html",
+  css: "text/css",
+  scss: "text/plain",
+  less: "text/plain",
+  svg: "image/svg+xml",
+  js: "text/javascript",
+  mjs: "text/javascript",
+  cjs: "text/javascript",
+  jsx: "text/javascript",
+  ts: "text/x-typescript",
+  tsx: "text/x-typescript",
+  py: "text/x-python",
+  rb: "text/x-ruby",
+  go: "text/x-go",
+  rs: "text/x-rust",
+  java: "text/x-java",
+  kt: "text/x-kotlin",
+  swift: "text/x-swift",
+  c: "text/x-c",
+  h: "text/x-c",
+  cpp: "text/x-c++",
+  cc: "text/x-c++",
+  hpp: "text/x-c++",
+  cs: "text/x-csharp",
+  php: "text/x-php",
+  sh: "text/x-sh",
+  bash: "text/x-sh",
+  zsh: "text/x-sh",
+  ps1: "text/plain",
+  bat: "text/plain",
+  cmd: "text/plain",
+  sql: "text/plain",
+  graphql: "text/plain",
+  proto: "text/plain",
+  srt: "text/plain",
+  vtt: "text/vtt",
+  tex: "text/plain",
+  rtf: "application/rtf",
   pdf: "application/pdf",
-  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif", avif: "image/avif",
-  mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/opus", flac: "audio/flac", weba: "audio/webm", amr: "audio/amr",
-  mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", mkv: "video/x-matroska", webm: "video/webm", avi: "video/x-msvideo", mpeg: "video/mpeg", mpg: "video/mpeg", "3gp": "video/3gpp", wmv: "video/x-ms-wmv",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  opus: "audio/opus",
+  flac: "audio/flac",
+  weba: "audio/webm",
+  amr: "audio/amr",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  webm: "video/webm",
+  avi: "video/x-msvideo",
+  mpeg: "video/mpeg",
+  mpg: "video/mpeg",
+  "3gp": "video/3gpp",
+  wmv: "video/x-ms-wmv",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  doc: "application/msword", xls: "application/vnd.ms-excel", ppt: "application/vnd.ms-powerpoint",
-  epub: "application/epub+zip", zip: "application/zip",
+  doc: "application/msword",
+  xls: "application/vnd.ms-excel",
+  ppt: "application/vnd.ms-powerpoint",
+  epub: "application/epub+zip",
+  zip: "application/zip",
 };
 
 const extensionOf = (name: string): string => {
@@ -111,11 +281,15 @@ export function classifyFile(name: string, mime: string, buf: Buffer): FileShape
   // A text extension (or a text MIME) only makes it text if the bytes agree:
   // a PNG that someone renamed to .txt is a picture, and handing its bytes to
   // the model as text would be worse than saying what it really is.
-  if ((resolved.startsWith("text/") || TEXT_EXTENSIONS.has(ext) || /^application\/(json|xml|yaml|rtf)/.test(resolved)) && readsAsText(buf)) {
+  if (
+    (resolved.startsWith("text/") || TEXT_EXTENSIONS.has(ext) || /^application\/(json|xml|yaml|rtf)/.test(resolved)) &&
+    readsAsText(buf)
+  ) {
     return { kind: "text", mime: resolved, reader: "text", native: false };
   }
   // No extension, nothing useful from the browser: decide by the bytes.
-  if (readsAsText(buf)) return { kind: "text", mime: resolved === "application/octet-stream" ? "text/plain" : resolved, reader: "text", native: false };
+  if (readsAsText(buf))
+    return { kind: "text", mime: resolved === "application/octet-stream" ? "text/plain" : resolved, reader: "text", native: false };
   if (ext === "zip") return { kind: "other", mime: resolved, reader: "none", native: false };
   // A binary file wearing a text extension is still just bytes.
   if (TEXT_EXTENSIONS.has(ext)) return { kind: "other", mime: resolved, reader: "none", native: false };
@@ -172,7 +346,16 @@ function rtfToText(rtf: string): string {
 /** The bytes as text, with a note about how much was kept. */
 function plainText(buf: Buffer, mime: string, name: string): ExtractedText {
   const ext = extensionOf(name);
-  let text = buf.subarray(0, FILE_TEXT_MAX_BYTES).toString("utf8").replace(/\r\n/g, "\n").replace(/\u0000/g, "");
+  // NUL bytes are stripped on purpose: they turn up in exported documents and
+  // break the XML the exporter builds later.
+  // eslint-disable-next-line no-control-regex -- removing NULs on purpose
+  let text = buf
+    .subarray(0, FILE_TEXT_MAX_BYTES)
+    .toString("utf8")
+    .replace(/\r\n/g, "\n")
+    // NUL bytes come out of exported documents and break the XML built later.
+    // eslint-disable-next-line no-control-regex -- removing NULs on purpose
+    .replace(/\u0000/g, "");
   if (mime === "text/html" || ext === "html" || ext === "htm") text = htmlToText(text);
   else if (mime === "application/rtf" || ext === "rtf") text = rtfToText(text);
   else if (ext === "json" || mime === "application/json") {
@@ -201,9 +384,29 @@ export function extractText(buf: Buffer, shape: FileShape, name = ""): Extracted
         return plainText(buf, shape.mime, name);
       case "pdf": {
         const pdf = pdfText(buf);
-        if (pdf.encrypted) return { text: "", note: "this PDF is password-protected, so nothing could be read from it", truncated: false, scanned: false, encrypted: true };
-        if (pdf.scanned) return { text: "", note: "this PDF is a scan — there is no text in the file itself, only page images", truncated: false, scanned: true, encrypted: false };
-        return { text: pdf.text, note: pdf.truncated ? "the first part of it" : "", truncated: pdf.truncated, scanned: false, encrypted: false };
+        if (pdf.encrypted)
+          return {
+            text: "",
+            note: "this PDF is password-protected, so nothing could be read from it",
+            truncated: false,
+            scanned: false,
+            encrypted: true,
+          };
+        if (pdf.scanned)
+          return {
+            text: "",
+            note: "this PDF is a scan — there is no text in the file itself, only page images",
+            truncated: false,
+            scanned: true,
+            encrypted: false,
+          };
+        return {
+          text: pdf.text,
+          note: pdf.truncated ? "the first part of it" : "",
+          truncated: pdf.truncated,
+          scanned: false,
+          encrypted: false,
+        };
       }
       case "docx": {
         const text = docxText(buf);
@@ -235,7 +438,13 @@ export function extractText(buf: Buffer, shape: FileShape, name = ""): Extracted
 
 function cut(text: string, what: string): ExtractedText {
   const truncated = text.length > FILE_TEXT_MAX_CHARS;
-  return { text: truncated ? text.slice(0, FILE_TEXT_MAX_CHARS) : text, note: truncated ? `${what}, up to the size limit` : what, truncated, scanned: false, encrypted: false };
+  return {
+    text: truncated ? text.slice(0, FILE_TEXT_MAX_CHARS) : text,
+    note: truncated ? `${what}, up to the size limit` : what,
+    truncated,
+    scanned: false,
+    encrypted: false,
+  };
 }
 
 /** "12.4 KB" — how file sizes are written everywhere in the app. */

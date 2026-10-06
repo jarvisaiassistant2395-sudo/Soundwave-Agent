@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { config } from "../config.js";
 import type {
   DataStore,
@@ -24,6 +24,15 @@ export class PrismaStore implements DataStore {
 
   constructor() {
     this.prisma = new PrismaClient();
+  }
+
+  /**
+   * Close the pool on the way out (index.ts `shutdown`). Postgres has already
+   * committed every write — this is about letting the connections go cleanly
+   * instead of leaving the server waiting on them for the client timeout.
+   */
+  async flush(): Promise<void> {
+    await this.prisma.$disconnect();
   }
 
   // users ────────────────────────────────────────────────────────────────────
@@ -66,7 +75,9 @@ export class PrismaStore implements DataStore {
         ...(patch.stripeCustomerId !== undefined ? { stripeCustomerId: patch.stripeCustomerId } : {}),
         ...(patch.stripeSubscriptionId !== undefined ? { stripeSubscriptionId: patch.stripeSubscriptionId } : {}),
         ...(patch.charactersUsedThisMonth !== undefined ? { charactersUsedThisMonth: patch.charactersUsedThisMonth } : {}),
-        ...(patch.subscriptionStartedAt !== undefined ? { subscriptionStartedAt: patch.subscriptionStartedAt ? new Date(patch.subscriptionStartedAt) : null } : {}),
+        ...(patch.subscriptionStartedAt !== undefined
+          ? { subscriptionStartedAt: patch.subscriptionStartedAt ? new Date(patch.subscriptionStartedAt) : null }
+          : {}),
         ...(patch.videoSecondsUsedThisMonth !== undefined ? { videoSecondsUsedThisMonth: patch.videoSecondsUsedThisMonth } : {}),
         ...(patch.clipsUsedThisMonth !== undefined ? { clipsUsedThisMonth: patch.clipsUsedThisMonth } : {}),
         ...(patch.characterResetDate !== undefined ? { characterResetDate: s2d(patch.characterResetDate)! } : {}),
@@ -173,12 +184,8 @@ export class PrismaStore implements DataStore {
         ...(patch.textContent !== undefined ? { textContent: patch.textContent } : {}),
         ...(patch.voiceId !== undefined ? { voiceId: patch.voiceId } : {}),
         ...(patch.voiceSettings !== undefined ? { voiceSettings: patch.voiceSettings as object } : {}),
-        ...(patch.subtitleData !== undefined
-          ? { subtitleData: patch.subtitleData === null ? null : (patch.subtitleData as any) }
-          : {}),
-        ...(patch.subtitleStyle !== undefined
-          ? { subtitleStyle: patch.subtitleStyle === null ? null : (patch.subtitleStyle as any) }
-          : {}),
+        ...(patch.subtitleData !== undefined ? { subtitleData: patch.subtitleData === null ? null : (patch.subtitleData as any) } : {}),
+        ...(patch.subtitleStyle !== undefined ? { subtitleStyle: patch.subtitleStyle === null ? null : (patch.subtitleStyle as any) } : {}),
         ...(patch.videoBackgroundUrl !== undefined ? { videoBackgroundUrl: patch.videoBackgroundUrl } : {}),
         ...(patch.audioUrl !== undefined ? { audioUrl: patch.audioUrl } : {}),
         ...(patch.exportedVideoUrl !== undefined ? { exportedVideoUrl: patch.exportedVideoUrl } : {}),
@@ -336,7 +343,7 @@ export class PrismaStore implements DataStore {
 }
 
 // ── mappers ─────────────────────────────────────────────────────────────────
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 function mapUser(u: any): StoredUser {
   return {
     id: u.id,

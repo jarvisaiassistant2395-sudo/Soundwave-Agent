@@ -74,18 +74,18 @@ export function Settings() {
   const active = location.pathname.includes("/brain")
     ? "brain"
     : location.pathname.includes("/billing")
-    ? "billing"
-    : location.pathname.includes("/brand")
-      ? "brand"
-      : location.pathname.includes("/preferences")
-      ? "preferences"
-      : location.pathname.includes("/voice")
-        ? "voice"
-        : location.pathname.includes("/phone")
-          ? "phone"
-          : location.pathname.includes("/morning")
-            ? "morning"
-            : "profile";
+      ? "billing"
+      : location.pathname.includes("/brand")
+        ? "brand"
+        : location.pathname.includes("/preferences")
+          ? "preferences"
+          : location.pathname.includes("/voice")
+            ? "voice"
+            : location.pathname.includes("/phone")
+              ? "phone"
+              : location.pathname.includes("/morning")
+                ? "morning"
+                : "profile";
 
   useEffect(() => {
     void refreshQuota();
@@ -139,7 +139,9 @@ function ProfileTab() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      const updated = await http.put<{ id: string; name: string; email: string; plan: Plan; avatarUrl: string | null }>("/user/profile", { name });
+      const updated = await http.put<{ id: string; name: string; email: string; plan: Plan; avatarUrl: string | null }>("/user/profile", {
+        name,
+      });
       setUser(updated);
       toast.success("Profile updated");
     } catch (e) {
@@ -174,7 +176,12 @@ function ProfileTab() {
       <Card title="Profile" icon={<User className="h-4 w-4" />}>
         <div className="flex items-center gap-4">
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-xl font-bold text-white">
-            {(user?.name ?? "U").split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
+            {(user?.name ?? "U")
+              .split(" ")
+              .map((p) => p[0])
+              .join("")
+              .slice(0, 2)
+              .toUpperCase()}
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold text-white">{user?.name}</p>
@@ -189,7 +196,9 @@ function ProfileTab() {
             disabled
             hint="This is the Google account Soundwave is linked to on this PC — it is how you sign in, so there is no password to set."
           />
-          <Button onClick={saveProfile} loading={saving}>Save changes</Button>
+          <Button onClick={saveProfile} loading={saving}>
+            Save changes
+          </Button>
         </div>
       </Card>
 
@@ -197,23 +206,43 @@ function ProfileTab() {
         <div className="space-y-4">
           <div className="border-t border-gray-800 pt-4">
             <p className="text-sm text-gray-400">Sign out everything except this window:</p>
-            <Button onClick={signOutOthers} variant="outline" className="mt-2">Sign out all other sessions</Button>
+            <Button onClick={signOutOthers} variant="outline" className="mt-2">
+              Sign out all other sessions
+            </Button>
           </div>
         </div>
       </Card>
 
       <Card title="Danger zone" icon={<Trash2 className="h-4 w-4" />} className="border-red-500/30">
         <p className="text-sm text-gray-400">Deleting your account removes your cloud projects. We keep a 30-day recovery window.</p>
-        <Button variant="danger" className="mt-3" onClick={() => setDeleteOpen(true)}>Delete account</Button>
+        <Button variant="danger" className="mt-3" onClick={() => setDeleteOpen(true)}>
+          Delete account
+        </Button>
       </Card>
 
-      <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete account" description="This action is permanent after the 30-day recovery period.">
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Delete account"
+        description="This action is permanent after the 30-day recovery period."
+      >
         <div className="space-y-4">
           <p className="text-sm text-gray-400">
             Type <span className="text-gray-200">{user?.email}</span> to confirm.
           </p>
-          <TextField label="Your Google account" value={deleteEmail} onChange={(e) => setDeleteEmail(e.target.value)} inputMode="email" autoComplete="off" />
-          <Button fullWidth variant="danger" onClick={deleteAccount} disabled={deleteEmail.trim().toLowerCase() !== (user?.email ?? "").toLowerCase()}>
+          <TextField
+            label="Your Google account"
+            value={deleteEmail}
+            onChange={(e) => setDeleteEmail(e.target.value)}
+            inputMode="email"
+            autoComplete="off"
+          />
+          <Button
+            fullWidth
+            variant="danger"
+            onClick={deleteAccount}
+            disabled={deleteEmail.trim().toLowerCase() !== (user?.email ?? "").toLowerCase()}
+          >
             Permanently delete my account
           </Button>
         </div>
@@ -274,7 +303,8 @@ type Invoice = {
 const money = (cents: number, currency: string) =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: (currency || "usd").toUpperCase() }).format(cents / 100);
 
-const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "");
+const day = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "";
 
 function BillingTab() {
   const { user, quota, setUser, refreshQuota, loadSession } = useAuth();
@@ -330,7 +360,6 @@ function BillingTab() {
       .get<{ lifetime: LifetimeOffer }>("/billing/plans")
       .then((r) => setOffer(r.lifetime ?? null))
       .catch(() => setOffer(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Back from the browser: what Stripe says now is the truth. */
@@ -364,7 +393,7 @@ function BillingTab() {
       toast.info("No changes made", "You closed the payment page — nothing was charged.");
     }
     // Taken once: coming back to this tab shouldn't re-run the whole thing.
-    navigate("/settings/billing", { replace: true });
+    void navigate("/settings/billing", { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
@@ -449,8 +478,11 @@ function BillingTab() {
   const applyPlan = async (p: "PRO" | "ENTERPRISE") => {
     setBusy("dev");
     try {
-      const res = await http.post<{ user: { id: string; plan: Plan; name: string; email: string } }>("/billing/apply-plan", { plan: p, billing: cadence });
-      setUser({ ...(user!), plan: res.user.plan });
+      const res = await http.post<{ user: { id: string; plan: Plan; name: string; email: string } }>("/billing/apply-plan", {
+        plan: p,
+        billing: cadence,
+      });
+      setUser({ ...user!, plan: res.user.plan });
       await refreshQuota();
       await loadBilling();
       toast.success(`Plan changed to ${p}`, "This build has no Stripe keys, so the plan was switched locally.");
@@ -500,15 +532,20 @@ function BillingTab() {
             )}
             {sub?.needsAttention && (
               <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-300">
-                <TriangleAlert className="h-3.5 w-3.5" /> Stripe couldn&apos;t take the last payment — update your card to keep {planDef.name}.
+                <TriangleAlert className="h-3.5 w-3.5" /> Stripe couldn&apos;t take the last payment — update your card to keep{" "}
+                {planDef.name}.
               </p>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {personal && <span className="text-xs text-gray-500">This build has no payments in it — nothing here to buy.</span>}
-            {!personal && status?.lifetime && <span className="text-xs text-gray-500">Nothing renews and nothing is owed — this plan is yours for good.</span>}
+            {!personal && status?.lifetime && (
+              <span className="text-xs text-gray-500">Nothing renews and nothing is owed — this plan is yours for good.</span>
+            )}
             {!personal && status?.grandfathered && !status?.lifetime && (
-              <span className="text-xs text-gray-500">You subscribed before the plans changed, so you keep your price — it stays what it was.</span>
+              <span className="text-xs text-gray-500">
+                You subscribed before the plans changed, so you keep your price — it stays what it was.
+              </span>
             )}
             {!personal && !status?.lifetime && configured && nextPlan && (
               <Button size="sm" onClick={() => void upgrade(nextPlan)} loading={busy === "checkout"} disabled={Boolean(waiting)}>
@@ -521,14 +558,22 @@ function BillingTab() {
               </Button>
             )}
             {!personal && !configured && plan !== "ENTERPRISE" && (
-              <Button size="sm" variant="outline" onClick={() => void applyPlan(plan === "FREE" ? "PRO" : "ENTERPRISE")} loading={busy === "dev"}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void applyPlan(plan === "FREE" ? "PRO" : "ENTERPRISE")}
+                loading={busy === "dev"}
+              >
                 Switch to {plan === "FREE" ? "Pro" : "Enterprise"} (local)
               </Button>
             )}
           </div>
         </div>
         <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-800">
-          <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-500 transition-all duration-300"
+            style={{ width: `${pct}%` }}
+          />
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MiniStat label="Resolution" value={planDef.maxResolution} />
@@ -543,15 +588,22 @@ function BillingTab() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="max-w-xl">
               <p className="text-sm text-gray-300">
-                Everything Enterprise gives, paid once: <span className="font-semibold text-white">{money(offer.priceUsd * 100, "usd")}</span> — no renewal, no
-                invoice, ever. It costs us almost nothing to keep you running (your own PC, your own Gemini key), which is why we can sell it and a cloud
+                Everything Enterprise gives, paid once:{" "}
+                <span className="font-semibold text-white">{money(offer.priceUsd * 100, "usd")}</span> — no renewal, no invoice, ever. It
+                costs us almost nothing to keep you running (your own PC, your own Gemini key), which is why we can sell it and a cloud
                 clipper can't.
               </p>
               <p className="mt-2 text-xs text-gray-500" data-testid="founder-seats">
                 {Math.max(0, offer.seats - offer.sold)} of {offer.seats} Founder seats left.
               </p>
             </div>
-            <Button size="sm" onClick={() => void upgrade("LIFETIME")} loading={busy === "checkout"} disabled={Boolean(waiting)} data-testid="founder-buy">
+            <Button
+              size="sm"
+              onClick={() => void upgrade("LIFETIME")}
+              loading={busy === "checkout"}
+              disabled={Boolean(waiting)}
+              data-testid="founder-buy"
+            >
               Buy the lifetime
             </Button>
           </div>
@@ -561,9 +613,9 @@ function BillingTab() {
       {personal && (
         <Card title="Your own build" icon={<Sparkles className="h-4 w-4" />}>
           <p className="text-sm text-gray-300">
-            This is the build with no payments in it, installed for your own use. Everything is open — {PLANS.ENTERPRISE.videoMinutesPerMonth} minutes of video a
-            month, unlimited clips, {PLANS.ENTERPRISE.maxResolution} exports, no watermark, cloud projects and API keys — and no card, invoice or subscription
-            exists anywhere in it.
+            This is the build with no payments in it, installed for your own use. Everything is open —{" "}
+            {PLANS.ENTERPRISE.videoMinutesPerMonth} minutes of video a month, unlimited clips, {PLANS.ENTERPRISE.maxResolution} exports, no
+            watermark, cloud projects and API keys — and no card, invoice or subscription exists anywhere in it.
           </p>
         </Card>
       )}
@@ -590,7 +642,13 @@ function BillingTab() {
               const def = PLANS[id];
               const current = plan === id;
               return (
-                <div key={id} className={cn("rounded-card border p-4", current ? "border-blue-500/40 bg-blue-500/[0.04]" : "border-gray-800 bg-gray-900/40")}>
+                <div
+                  key={id}
+                  className={cn(
+                    "rounded-card border p-4",
+                    current ? "border-blue-500/40 bg-blue-500/[0.04]" : "border-gray-800 bg-gray-900/40",
+                  )}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-white">{def.name}</p>
                     <p className="text-sm text-gray-300">
@@ -603,7 +661,10 @@ function BillingTab() {
                       <span className="font-medium text-gray-200">{def.videoMinutesPerMonth} minutes</span> of video a month
                     </li>
                     <li>{def.clipsPerMonth === null ? "Unlimited clips" : `${def.clipsPerMonth} clips a month`}</li>
-                    <li>Up to {def.maxResolution}{def.watermark ? "" : " · no watermark"}</li>
+                    <li>
+                      Up to {def.maxResolution}
+                      {def.watermark ? "" : " · no watermark"}
+                    </li>
                     {def.clipRetentionDays !== null && <li>Clips kept {def.clipRetentionDays} days</li>}
                     {def.cloudSave && <li>Cloud projects</li>}
                     {def.apiAccess && <li>API access</li>}
@@ -622,7 +683,12 @@ function BillingTab() {
               );
             })}
           </div>
-          {cadence === "annual" && <p className="mt-3 text-xs text-gray-500">Billed once a year at {money(PLANS.PRO.annualPricePerMonth * 12 * 100, "usd")} for Pro, {money(PLANS.ENTERPRISE.annualPricePerMonth * 12 * 100, "usd")} for Enterprise.</p>}
+          {cadence === "annual" && (
+            <p className="mt-3 text-xs text-gray-500">
+              Billed once a year at {money(PLANS.PRO.annualPricePerMonth * 12 * 100, "usd")} for Pro,{" "}
+              {money(PLANS.ENTERPRISE.annualPricePerMonth * 12 * 100, "usd")} for Enterprise.
+            </p>
+          )}
         </Card>
       )}
 
@@ -644,51 +710,63 @@ function BillingTab() {
       )}
 
       {!personal && (
-      <Card title="Payment method" icon={<CreditCard className="h-4 w-4" />}>
-        {!configured ? (
-          <p className="text-sm text-gray-400">
-            This build has no Stripe keys, so there is nothing to charge and nothing to pay. The plan buttons above switch the plan locally so the whole quota path can be used.
-          </p>
-        ) : sub ? (
-          <p className="text-sm text-gray-400">
-            Your card is held by Stripe, never by Soundwave. Change or remove it in the billing page — that is where cancellations happen too, and your access
-            continues until {sub.currentPeriodEnd ? day(sub.currentPeriodEnd) : "the end of the period"}.
-          </p>
-        ) : (
-          <p className="text-sm text-gray-400">No card on file yet. Upgrading opens Stripe Checkout in your browser; card details never touch this app.</p>
-        )}
-        {status?.problem && <p className="mt-2 text-xs text-amber-300">Stripe couldn&apos;t be reached just now ({status.problem}) — showing what this computer already knows.</p>}
-      </Card>
+        <Card title="Payment method" icon={<CreditCard className="h-4 w-4" />}>
+          {!configured ? (
+            <p className="text-sm text-gray-400">
+              This build has no Stripe keys, so there is nothing to charge and nothing to pay. The plan buttons above switch the plan
+              locally so the whole quota path can be used.
+            </p>
+          ) : sub ? (
+            <p className="text-sm text-gray-400">
+              Your card is held by Stripe, never by Soundwave. Change or remove it in the billing page — that is where cancellations happen
+              too, and your access continues until {sub.currentPeriodEnd ? day(sub.currentPeriodEnd) : "the end of the period"}.
+            </p>
+          ) : (
+            <p className="text-sm text-gray-400">
+              No card on file yet. Upgrading opens Stripe Checkout in your browser; card details never touch this app.
+            </p>
+          )}
+          {status?.problem && (
+            <p className="mt-2 text-xs text-amber-300">
+              Stripe couldn&apos;t be reached just now ({status.problem}) — showing what this computer already knows.
+            </p>
+          )}
+        </Card>
       )}
 
       {!personal && (
-      <Card title="Billing history" icon={<CreditCard className="h-4 w-4" />}>
-        {invoices === null ? (
-          <p className="text-sm text-gray-500">Loading…</p>
-        ) : invoices.length === 0 ? (
-          <p className="text-sm text-gray-500">No invoices yet.</p>
-        ) : (
-          <ul className="divide-y divide-gray-800">
-            {invoices.map((inv) => (
-              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-gray-200">
-                    {money(inv.amount, inv.currency)} <span className="text-xs text-gray-500">{inv.stripeInvoiceId ?? inv.id}</span>
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {inv.createdAt ? day(inv.createdAt) : ""} · {inv.status}
-                  </p>
-                </div>
-                {(inv.pdfUrl || inv.hostedUrl) && (
-                  <Button size="sm" variant="ghost" icon={<Download className="h-4 w-4" />} onClick={() => void openInBrowser(inv.pdfUrl ?? inv.hostedUrl!)}>
-                    Receipt
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+        <Card title="Billing history" icon={<CreditCard className="h-4 w-4" />}>
+          {invoices === null ? (
+            <p className="text-sm text-gray-500">Loading…</p>
+          ) : invoices.length === 0 ? (
+            <p className="text-sm text-gray-500">No invoices yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-800">
+              {invoices.map((inv) => (
+                <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-gray-200">
+                      {money(inv.amount, inv.currency)} <span className="text-xs text-gray-500">{inv.stripeInvoiceId ?? inv.id}</span>
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {inv.createdAt ? day(inv.createdAt) : ""} · {inv.status}
+                    </p>
+                  </div>
+                  {(inv.pdfUrl || inv.hostedUrl) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Download className="h-4 w-4" />}
+                      onClick={() => void openInBrowser(inv.pdfUrl ?? inv.hostedUrl!)}
+                    >
+                      Receipt
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       )}
 
       {!personal && configured && plan !== "FREE" && (
@@ -758,8 +836,8 @@ function PreferencesTab() {
       <Card title="The assistant's mode" icon={<Sparkles className="h-4 w-4" />}>
         <div className="space-y-3">
           <p className="text-xs text-gray-500">
-            How it talks to you everywhere — the Command Center, the voice bar and the phone. It can also change this
-            itself: ask it to "be more professional" or "call me boss".
+            How it talks to you everywhere — the Command Center, the voice bar and the phone. It can also change this itself: ask it to "be
+            more professional" or "call me boss".
           </p>
           <AgentModeChips />
         </div>
@@ -817,7 +895,9 @@ function PreferencesTab() {
               <p className="text-sm font-medium text-white">Download my data</p>
               <p className="text-xs text-gray-500">Your profile, projects and logs.</p>
             </div>
-            <Button size="sm" variant="outline" icon={<Download className="h-4 w-4" />} onClick={downloadData}>Export</Button>
+            <Button size="sm" variant="outline" icon={<Download className="h-4 w-4" />} onClick={downloadData}>
+              Export
+            </Button>
           </div>
         </div>
       </Card>
@@ -862,7 +942,16 @@ function VoiceDesktopTab() {
       .catch(() => undefined);
     // The wake listener and the key watcher change on their own; the state line
     // must be true, not "as it was when the page opened".
-    const poll = desktop ? window.setInterval(() => void desktop.getState().then(setDesk).catch(() => undefined), 4000) : undefined;
+    const poll = desktop
+      ? window.setInterval(
+          () =>
+            void desktop
+              .getState()
+              .then(setDesk)
+              .catch(() => undefined),
+          4000,
+        )
+      : undefined;
     const off = desktop?.onUpdate?.((state) => setUpdate(state));
     return () => {
       if (poll) window.clearInterval(poll);
@@ -881,7 +970,8 @@ function VoiceDesktopTab() {
       setDesk(next);
       if (next.update) setUpdate(next.update);
       if (patch.hotkey || patch.hotkeyEnabled) {
-        if (next.hotkeyEnabled && !next.hotkeyRegistered) toast.error("Shortcut not available", next.hotkeyError ?? "Another app uses it — pick a different one.");
+        if (next.hotkeyEnabled && !next.hotkeyRegistered)
+          toast.error("Shortcut not available", next.hotkeyError ?? "Another app uses it — pick a different one.");
         else if (next.hotkeyEnabled) toast.success("Voice shortcut set", `Press ${next.hotkeyLabel} from any app to talk to Soundwave.`);
       }
     } catch (e) {
@@ -942,7 +1032,9 @@ function VoiceDesktopTab() {
           <div
             className={cn(
               "flex items-start gap-2.5 rounded-lg border p-3 text-sm",
-              status?.available ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-200" : "border-amber-500/30 bg-amber-500/5 text-amber-200",
+              status?.available
+                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-200"
+                : "border-amber-500/30 bg-amber-500/5 text-amber-200",
             )}
           >
             {status === null ? (
@@ -975,13 +1067,24 @@ function VoiceDesktopTab() {
             {test === "listening" && (
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <span className="h-2 w-40 overflow-hidden rounded-full bg-gray-800">
-                  <span className="block h-full rounded-full bg-emerald-400 transition-[width] duration-75" style={{ width: `${Math.round(level * 100)}%` }} />
+                  <span
+                    className="block h-full rounded-full bg-emerald-400 transition-[width] duration-75"
+                    style={{ width: `${Math.round(level * 100)}%` }}
+                  />
                 </span>
                 Say something…
               </div>
             )}
             {heard !== null && test === "idle" && (
-              <p className="text-sm text-gray-300">{heard ? <>I heard: “<span className="text-white">{heard}</span>”</> : "I didn't hear anything — check the microphone."}</p>
+              <p className="text-sm text-gray-300">
+                {heard ? (
+                  <>
+                    I heard: “<span className="text-white">{heard}</span>”
+                  </>
+                ) : (
+                  "I didn't hear anything — check the microphone."
+                )}
+              </p>
             )}
           </div>
 
@@ -1035,7 +1138,11 @@ function VoiceDesktopTab() {
                 !desk.wakeEnabled ? (
                   "Off."
                 ) : desk.wake.state === "listening" ? (
-                  desk.wake.lastHit ? `Heard it — ${desk.wake.lastHit} (${desk.wake.heard} checked, ${desk.wake.ignored} ignored)` : "Listening. Everything you say is checked on this PC and thrown away unless it's the phrase — nothing is uploaded."
+                  desk.wake.lastHit ? (
+                    `Heard it — ${desk.wake.lastHit} (${desk.wake.heard} checked, ${desk.wake.ignored} ignored)`
+                  ) : (
+                    "Listening. Everything you say is checked on this PC and thrown away unless it's the phrase — nothing is uploaded."
+                  )
                 ) : desk.wake.state === "paused" ? (
                   "Paused while Soundwave is recording or speaking."
                 ) : desk.wake.state === "error" ? (
@@ -1075,10 +1182,20 @@ function VoiceDesktopTab() {
               </div>
             </SettingRow>
             <SettingRow title="Keep running in the tray" hint="Closing the window keeps it running.">
-              <Toggle checked={desk.closeToTray} onChange={(v) => void updateDesk({ closeToTray: v })} label="Keep running in the tray" disabled={savingDesk} />
+              <Toggle
+                checked={desk.closeToTray}
+                onChange={(v) => void updateDesk({ closeToTray: v })}
+                label="Keep running in the tray"
+                disabled={savingDesk}
+              />
             </SettingRow>
             <SettingRow title="Start with Windows" hint="Quiet start in the tray.">
-              <Toggle checked={desk.openAtLogin} onChange={(v) => void updateDesk({ openAtLogin: v })} label="Start with Windows" disabled={savingDesk} />
+              <Toggle
+                checked={desk.openAtLogin}
+                onChange={(v) => void updateDesk({ openAtLogin: v })}
+                label="Start with Windows"
+                disabled={savingDesk}
+              />
             </SettingRow>
             <SettingRow title="Notifications" hint="When a short is ready or fails.">
               <div className="flex items-center gap-3">
@@ -1086,17 +1203,32 @@ function VoiceDesktopTab() {
                   variant="ghost"
                   size="sm"
                   icon={<Bell className="h-4 w-4" />}
-                  onClick={() => notifyUser({ title: "Soundwave AI", body: "Notifications work. You'll hear from me when a short is ready.", route: "/agent" })}
+                  onClick={() =>
+                    notifyUser({
+                      title: "Soundwave AI",
+                      body: "Notifications work. You'll hear from me when a short is ready.",
+                      route: "/agent",
+                    })
+                  }
                   disabled={!desk.notifications}
                 >
                   Test
                 </Button>
-                <Toggle checked={desk.notifications} onChange={(v) => void updateDesk({ notifications: v })} label="Notifications" disabled={savingDesk} />
+                <Toggle
+                  checked={desk.notifications}
+                  onChange={(v) => void updateDesk({ notifications: v })}
+                  label="Notifications"
+                  disabled={savingDesk}
+                />
               </div>
             </SettingRow>
             <p className="pt-2 text-xs text-gray-600">
               Soundwave AI {desk.version} · shortcut {hotkeyLabel(desk.hotkey)}
-              {desk.pushToTalk && desk.pushToTalkStatus.ready ? " (hold to talk)" : desk.pushToTalk ? " (press to start, press again to send)" : ""}
+              {desk.pushToTalk && desk.pushToTalkStatus.ready
+                ? " (hold to talk)"
+                : desk.pushToTalk
+                  ? " (press to start, press again to send)"
+                  : ""}
             </p>
           </div>
         )}
@@ -1140,13 +1272,18 @@ function VoiceDesktopTab() {
                       const next = await desktop?.checkForUpdate();
                       if (next) setUpdate(next);
                       if (next && next.status === "current") toast.success("You're up to date", `${next.version} is the newest version.`);
-                      else if (next && next.status === "failed") toast.error("Couldn't reach the update feed", "Nothing is wrong with your copy — it will try again later.");
+                      else if (next && next.status === "failed")
+                        toast.error("Couldn't reach the update feed", "Nothing is wrong with your copy — it will try again later.");
                     } finally {
                       setCheckingUpdate(false);
                     }
                   }}
                 >
-                  {update.status === "checking" ? "Checking…" : update.status === "downloading" ? `Downloading ${update.progress}%` : "Check for updates"}
+                  {update.status === "checking"
+                    ? "Checking…"
+                    : update.status === "downloading"
+                      ? `Downloading ${update.progress}%`
+                      : "Check for updates"}
                 </Button>
               )}
             </div>
@@ -1171,13 +1308,29 @@ function updateLine(update: DesktopUpdateState): string {
     case "current":
       return "You're on the newest version";
     case "failed":
-      return "Couldn't check for updates";
+      // The updater's own words, when it has them: "Couldn't check for
+      // updates" on its own is the message that makes people open a support
+      // ticket. electron-updater distinguishes a dead network from a feed
+      // that answers with something it will not install, and that difference
+      // is worth showing (the sha512 in latest.yml is checked, so a corrupted
+      // download and an unreachable host read very differently).
+      return update.error ? `Couldn't update: ${update.error}` : "Couldn't check for updates";
     default:
       return "Updates are on";
   }
 }
 
-function Card({ title, icon, children, className }: { title: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Card({
+  title,
+  icon,
+  children,
+  className,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div className={cn("rounded-card border border-gray-800 bg-panel p-5 sm:p-6", className)}>
       <div className="mb-5 flex items-center gap-2">

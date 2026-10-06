@@ -1,25 +1,25 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { 
-  Sparkles, 
-  Download, 
-  RefreshCw, 
+import {
+  Sparkles,
+  Download,
+  RefreshCw,
   Film,
-  Flame, 
-  Volume2, 
-  Cpu, 
-  Clock, 
-  Settings as SettingsIcon, 
-  Send, 
-  Play, 
-  Mic, 
-  MicOff, 
-  Activity, 
-  Trash2, 
-  Workflow, 
-  TrendingUp, 
-  Youtube, 
-  ExternalLink, 
+  Flame,
+  Volume2,
+  Cpu,
+  Clock,
+  Settings as SettingsIcon,
+  Send,
+  Play,
+  Mic,
+  MicOff,
+  Activity,
+  Trash2,
+  Workflow,
+  TrendingUp,
+  Youtube,
+  ExternalLink,
   Loader2,
   Mail,
   Smartphone,
@@ -65,7 +65,15 @@ import {
 import { speak, speakLong, stopSpeaking, voiceProblemReason } from "../lib/speech";
 import { HOLD_MS, useVoiceCapture } from "../hooks/useVoiceCapture";
 import { useGmail } from "../hooks/useGmail";
-import { VOICE_PREFS_EVENT, VoiceInputError, fetchVoiceInputStatus, isVoicePrefKey, loadVoicePrefs, saveVoicePrefs, type VoiceInputStatus } from "../lib/voiceInput";
+import {
+  VOICE_PREFS_EVENT,
+  VoiceInputError,
+  fetchVoiceInputStatus,
+  isVoicePrefKey,
+  loadVoicePrefs,
+  saveVoicePrefs,
+  type VoiceInputStatus,
+} from "../lib/voiceInput";
 import { DEFAULT_HOTKEY, getDesktop, hotkeyLabel } from "../lib/desktop";
 import { JOB_STARTED_EVENT, VOICE_COMMAND_EVENT } from "../components/agent/BackgroundServices";
 import { memoryApi, noteAge, type MemoryState } from "../lib/memory";
@@ -93,7 +101,6 @@ interface OrbitalUsedEntry {
   topic?: string;
   section?: { start: number; end: number } | null;
 }
-
 
 /** GET /api/v1/agent/trends — what the agent last found going viral. */
 export interface TrendStatus {
@@ -255,10 +262,7 @@ export function AgentHub() {
   // The on-this-PC voices (Kokoro) appear in the same pickers, after the
   // Soundwave ones, only while the local voice service is running.
   const { status: localVoiceStatus } = useLocalVoices({ startOnFirstUse: selectedVoice.startsWith("kokoro:") });
-  const voiceChoices = useMemo(
-    () => [...AGENT_VOICES, ...localVoiceStatus.voices],
-    [localVoiceStatus],
-  );
+  const voiceChoices = useMemo(() => [...AGENT_VOICES, ...localVoiceStatus.voices], [localVoiceStatus]);
 
   /**
    * The Generate tab's grid. The researched nine keep their order and their
@@ -283,13 +287,24 @@ export function AgentHub() {
         ...(n.why ? { why: n.why } : {}),
       }));
     const researched: NicheInfo[] = served.length
-      ? served.filter((n) => !n.added).map((n): NicheInfo => ({ id: n.id, name: n.name, desc: n.description, iconName: icons[n.id] ?? "sparkles" }))
+      ? served
+          .filter((n) => !n.added)
+          .map((n): NicheInfo => ({ id: n.id, name: n.name, desc: n.description, iconName: icons[n.id] ?? "sparkles" }))
       : NICHES;
     // A niche the agent added this very minute is in `added` but might not be in
     // the catalog yet (the reply arrives before the refetch): keep it visible.
     for (const a of nicheState?.added ?? []) {
       if (!added.some((n) => n.id === a.id)) {
-        added.push({ id: a.id, name: a.name, desc: a.description, iconName: icons[a.id] ?? "radar", added: true, fresh: a.fresh, source: a.source, ...(a.why ? { why: a.why } : {}) });
+        added.push({
+          id: a.id,
+          name: a.name,
+          desc: a.description,
+          iconName: icons[a.id] ?? "radar",
+          added: true,
+          fresh: a.fresh,
+          source: a.source,
+          ...(a.why ? { why: a.why } : {}),
+        });
       }
     }
     return [...added, ...researched.filter((n) => !added.some((a) => a.id === n.id))];
@@ -305,7 +320,12 @@ export function AgentHub() {
     const added = await addSuggestion(suggestion);
     setAddingNicheId(null);
     if (added) {
-      setSelectedNiche(added.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+      setSelectedNiche(
+        added.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+      );
       toast.success(`“${added.name}” is in the picker — pick it and press Generate.`);
     } else {
       toast.error("Could not add that niche just now.");
@@ -330,9 +350,7 @@ export function AgentHub() {
 
   // Quality is remembered between sessions, and it starts at the sharp,
   // publishable render: 1080p at 60fps. 720p is the fast draft.
-  const [resolution, setResolution] = useState<"720p" | "1080p">(() =>
-    localStorage.getItem(QUALITY_KEY) === "720p" ? "720p" : "1080p",
-  );
+  const [resolution, setResolution] = useState<"720p" | "1080p">(() => (localStorage.getItem(QUALITY_KEY) === "720p" ? "720p" : "1080p"));
   const [seconds, setSeconds] = useState<number>(() => {
     const saved = Number(localStorage.getItem(LENGTH_KEY));
     return [30, 60, 90].includes(saved) ? saved : 60;
@@ -499,7 +517,6 @@ export function AgentHub() {
     } catch {}
   };
 
-
   /** The channels and their publishing plans (never the sign-ins — the server keeps those). */
   const fetchChannels = async () => {
     try {
@@ -551,7 +568,7 @@ export function AgentHub() {
       if (!res.ok) throw new Error(data?.error?.message || "The channel isn't connected any more.");
       setYtChannels(data.channels || []);
       setYtPlanStatus(data.plan || null);
-      fetchYtStatus();
+      void fetchYtStatus();
       toast.success("Channel removed", `“${name}” is no longer connected.`);
     } catch (e) {
       toast.error("Channel", (e as Error).message);
@@ -589,10 +606,10 @@ export function AgentHub() {
       .catch(() => {});
 
     // Initial Orbital background status, YouTube status & what's viral right now
-    fetchOrbitalStatus();
-    fetchYtStatus();
-    fetchChannels();
-    fetchTrendStatus();
+    void fetchOrbitalStatus();
+    void fetchYtStatus();
+    void fetchChannels();
+    void fetchTrendStatus();
   }, []);
 
   // Clock & Uptime Ticker
@@ -639,7 +656,6 @@ export function AgentHub() {
       if (document.visibilityState === "visible") void refreshStats();
     }, 5000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Agent speech: always a Soundwave voice ─────────────────────────────
@@ -773,7 +789,6 @@ export function AgentHub() {
     observer.observe(el);
     for (const card of Array.from(el.children)) observer.observe(card);
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completedVideoUrl]);
 
   // Size the orb from the space the center column really has, so the dock
@@ -842,7 +857,11 @@ export function AgentHub() {
       // The agent changed its own voice mid-conversation (the set_mode tool):
       // the header's mode pill follows at once, without waiting for its poll.
       if (data.modeChanged) {
-        window.dispatchEvent(new CustomEvent<ModesChangedDetail>(MODES_CHANGED_EVENT, { detail: { persona: data.modeChanged.persona as ModesChangedDetail["persona"], address: data.modeChanged.address } }));
+        window.dispatchEvent(
+          new CustomEvent<ModesChangedDetail>(MODES_CHANGED_EVENT, {
+            detail: { persona: data.modeChanged.persona as ModesChangedDetail["persona"], address: data.modeChanged.address },
+          }),
+        );
       }
       // It added (or removed) a niche in the Generate tab: refetch and say so.
       if (data.nichesChanged?.length) {
@@ -906,7 +925,6 @@ export function AgentHub() {
     if (micPhase === "starting" || micPhase === "listening") setAssistantState("LISTENING");
     else if (micPhase === "transcribing") setAssistantState("THINKING");
     else setAssistantState((prev) => (prev === "LISTENING" ? idleState() : prev));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micPhase]);
 
   // Mic button: a tap toggles listening, holding it is push-to-talk.
@@ -1033,7 +1051,9 @@ export function AgentHub() {
           if (cancelled) return;
           if (res.status === 404) {
             setChatMessages((prev) =>
-              prev.some((m) => m.jobId === jobId && m.jobState !== "started") ? prev : [...prev, failureMessage(jobId, topic, "that render is no longer available.")],
+              prev.some((m) => m.jobId === jobId && m.jobState !== "started")
+                ? prev
+                : [...prev, failureMessage(jobId, topic, "that render is no longer available.")],
             );
             continue;
           }
@@ -1058,7 +1078,9 @@ export function AgentHub() {
             );
           } else if (job.status === "FAILED") {
             setChatMessages((prev) =>
-              prev.some((m) => m.jobId === jobId && m.jobState === "failed") ? prev : [...prev, failureMessage(jobId, topic, job.errorMessage || "rendering failed")],
+              prev.some((m) => m.jobId === jobId && m.jobState === "failed")
+                ? prev
+                : [...prev, failureMessage(jobId, topic, job.errorMessage || "rendering failed")],
             );
           } else if (!activeJobIdRef.current) {
             void trackShortJob(jobId, topic);
@@ -1088,7 +1110,10 @@ export function AgentHub() {
     if (isRunningMorning) return;
     setIsRunningMorning(true);
     setCommandsCount((c) => c + 1);
-    setChatMessages((prev) => [...prev, { id: newMessageId(), sender: "user", text: "🌅 Morning Setup", time: chatTime(), at: Date.now() }]);
+    setChatMessages((prev) => [
+      ...prev,
+      { id: newMessageId(), sender: "user", text: "🌅 Morning Setup", time: chatTime(), at: Date.now() },
+    ]);
     setAssistantState("THINKING");
     try {
       const data = await morningApi.run();
@@ -1097,7 +1122,17 @@ export function AgentHub() {
       if (voiceFeedbackRef.current) speakBriefing(aiMsg.text);
     } catch (e) {
       const message = (e as Error).message;
-      setChatMessages((prev) => [...prev, { id: newMessageId(), sender: "assistant", text: `I couldn't run the Morning Setup: ${message}`, time: chatTime(), at: Date.now(), tag: "SYS" }]);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: newMessageId(),
+          sender: "assistant",
+          text: `I couldn't run the Morning Setup: ${message}`,
+          time: chatTime(),
+          at: Date.now(),
+          tag: "SYS",
+        },
+      ]);
     } finally {
       setIsRunningMorning(false);
       setAssistantState((prev) => (prev === "SPEAKING" ? prev : idleState()));
@@ -1117,7 +1152,11 @@ export function AgentHub() {
         let st = await morningApi.briefing();
         if (!st.plan.auto || !st.inWindow || st.heard) return;
         if (!st.message) {
-          setBriefingNote(st.plan.topics.length ? `Preparing your morning briefing — researching ${st.plan.topics.length} topic${st.plan.topics.length === 1 ? "" : "s"}…` : "Preparing your morning briefing…");
+          setBriefingNote(
+            st.plan.topics.length
+              ? `Preparing your morning briefing — researching ${st.plan.topics.length} topic${st.plan.topics.length === 1 ? "" : "s"}…`
+              : "Preparing your morning briefing…",
+          );
           st = await morningApi.prepareBriefing();
         }
         const msg = st.message;
@@ -1156,7 +1195,6 @@ export function AgentHub() {
   };
   useEffect(() => {
     if (settingsOpen && settingsTab === "memory") void refreshMemory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen, settingsTab]);
   const memoryAction = async (run: () => Promise<MemoryState>, done?: string) => {
     try {
@@ -1185,7 +1223,9 @@ export function AgentHub() {
       const until = Date.now() + 5 * 60_000;
       while (Date.now() < until) {
         await new Promise((r) => setTimeout(r, 2500));
-        const st = await fetch("/api/v1/youtube/status").then((r) => r.json()).catch(() => null);
+        const st = await fetch("/api/v1/youtube/status")
+          .then((r) => r.json())
+          .catch(() => null);
         if (st?.connected && st?.hasRefreshToken) {
           setYtStatus(st);
           // A finished sign-in is a channel: it shows up in the list with its own plan.
@@ -1200,7 +1240,6 @@ export function AgentHub() {
       setIsConnectingYt(false);
     }
   };
-
 
   // ── Ghost Operator Macro Runner ─────────────────────────────────────────
   // The steps really run on this PC: the chat shows what each one did (or why
@@ -1256,7 +1295,7 @@ export function AgentHub() {
       const data = await res.json();
       if (data.ok) {
         toast.success("YouTube Connected", `Authenticated channel: ${data.channelTitle || "Active"}`);
-        fetchYtStatus();
+        void fetchYtStatus();
       } else {
         toast.error("Connection Failed", data.error || "Could not verify credentials with Google");
       }
@@ -1286,7 +1325,7 @@ export function AgentHub() {
       if (res.ok && data.ok) {
         if (payload.clientJson) setYtClientPaste("");
         toast.success("YouTube Settings Saved", data.connected ? "Channel linked and auto-publish ready!" : "Preferences updated.");
-        fetchYtStatus();
+        void fetchYtStatus();
         return true;
       }
       toast.error("Save Error", data.error?.message || data.error || "Failed to update configuration");
@@ -1309,10 +1348,11 @@ export function AgentHub() {
     try {
       setIsUploadingToYt(true);
       toast.info("Uploading to YouTube", "Transmitting short to YouTube Shorts API...");
-      const rawTitle = (scriptText || generatedScript || customTopic || selectedNiche)
-        .split("\n")[0]
-        ?.replace(/^[#\s*]+/, "")
-        .slice(0, 75) || `Viral Short #${Math.floor(Math.random() * 1000)}`;
+      const rawTitle =
+        (scriptText || generatedScript || customTopic || selectedNiche)
+          .split("\n")[0]
+          ?.replace(/^[#\s*]+/, "")
+          .slice(0, 75) || `Viral Short #${Math.floor(Math.random() * 1000)}`;
 
       const res = await fetch("/api/v1/youtube/upload", {
         method: "POST",
@@ -1348,7 +1388,10 @@ export function AgentHub() {
       const data = await res.json().catch(() => ({}));
       if (data.status) setOrbitalStatus(data.status);
       if (res.ok && data.ok) {
-        toast.success("Orbital NCG channel checked", `${data.status?.catalogSize ?? 0} videos · ${data.status?.available ?? 0} not used yet`);
+        toast.success(
+          "Orbital NCG channel checked",
+          `${data.status?.catalogSize ?? 0} videos · ${data.status?.available ?? 0} not used yet`,
+        );
       } else {
         toast.error("Couldn't reach the Orbital NCG channel", data.error || "Channel listing failed");
       }
@@ -1423,7 +1466,7 @@ export function AgentHub() {
       const finish = () => {
         if (activeJobIdRef.current === jobId) activeJobIdRef.current = null;
         setIsGenerating(false);
-        fetchOrbitalStatus();
+        void fetchOrbitalStatus();
         resolve();
       };
 
@@ -1436,10 +1479,7 @@ export function AgentHub() {
         setAssistantState("STANDBY");
 
         const finalVideoUrl =
-          resultData.outputUrl ||
-          resultData.videoUrl ||
-          resultData.downloadUrl ||
-          `/api/v1/export/jobs/${jobId}/download`;
+          resultData.outputUrl || resultData.videoUrl || resultData.downloadUrl || `/api/v1/export/jobs/${jobId}/download`;
         const background: ShortBackground | undefined = resultData.background || resultData.settings?.background;
 
         if (resultData.script) setGeneratedScript(resultData.script);
@@ -1457,7 +1497,11 @@ export function AgentHub() {
           storyboard: resultData.storyboard ?? resultData.settings?.storyboard,
         });
         setChatMessages((prev) => (prev.some((m) => m.jobId === jobId && m.jobState === "done") ? prev : [...prev, successNotice]));
-        speakText(hasYt ? "Your short has been rendered and posted to YouTube Shorts!" : "Your video has finished rendering and is ready to download!");
+        speakText(
+          hasYt
+            ? "Your short has been rendered and posted to YouTube Shorts!"
+            : "Your video has finished rendering and is ready to download!",
+        );
         void notifyJobOutcome({ id: jobId, status: "COMPLETED", topic, youtubeUrl: resultData.youtubeUrl });
         const edit = resultData.storyboard as { beats?: number; photos?: number; sounds?: number } | undefined;
         const editLine =
@@ -1578,7 +1622,9 @@ export function AgentHub() {
 
       const text = await res.text();
       let initData: any = {};
-      try { initData = JSON.parse(text); } catch {}
+      try {
+        initData = JSON.parse(text);
+      } catch {}
       if (!res.ok) throw new Error(initData.error || text || "Generation failed to start");
 
       const jobId = initData.jobId;
@@ -1595,9 +1641,7 @@ export function AgentHub() {
 
   // Export Conversation
   const handleExtractConversation = () => {
-    const text = chatMessages
-      .map((m) => `[${m.time}] ${m.sender.toUpperCase()}: ${m.text}`)
-      .join("\n\n");
+    const text = chatMessages.map((m) => `[${m.time}] ${m.sender.toUpperCase()}: ${m.text}`).join("\n\n");
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1673,7 +1717,7 @@ export function AgentHub() {
             type="button"
             onClick={() => {
               setOrbitalHistoryOpen(true);
-              fetchOrbitalStatus();
+              void fetchOrbitalStatus();
             }}
             className="sw-pill sw-pill-button font-mono text-[11px] tabular-nums"
             title="Unused Orbital NCG backgrounds"
@@ -1710,7 +1754,12 @@ export function AgentHub() {
                 <Cpu className="h-3.5 w-3.5" />
                 System
               </span>
-              <button onClick={() => void refreshStats()} className="sw-btn sw-btn-ghost h-6 w-6 p-0" title="Refresh stats" aria-label="Refresh stats">
+              <button
+                onClick={() => void refreshStats()}
+                className="sw-btn sw-btn-ghost h-6 w-6 p-0"
+                title="Refresh stats"
+                aria-label="Refresh stats"
+              >
                 <RefreshCw className="h-3 w-3" />
               </button>
             </div>
@@ -1744,7 +1793,7 @@ export function AgentHub() {
                   type="button"
                   onClick={() => {
                     setOrbitalHistoryOpen(true);
-                    fetchOrbitalStatus();
+                    void fetchOrbitalStatus();
                   }}
                   className="sw-btn sw-btn-ghost h-6 w-6 p-0"
                   title="Show the Orbital videos already used"
@@ -1818,12 +1867,14 @@ export function AgentHub() {
                 <Youtube className="h-3.5 w-3.5" />
                 YouTube
               </span>
-              <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                ytStatus.connected
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                  : "bg-gray-800 text-gray-400 border border-gray-700"
-              }`}>
-                {ytStatus.connected ? (ytStatus.channelTitle || "LINKED") : "NOT LINKED"}
+              <span
+                className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                  ytStatus.connected
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : "bg-gray-800 text-gray-400 border border-gray-700"
+                }`}
+              >
+                {ytStatus.connected ? ytStatus.channelTitle || "LINKED" : "NOT LINKED"}
               </span>
             </div>
 
@@ -1834,11 +1885,21 @@ export function AgentHub() {
                 onClick={() => {
                   const next = !ytAutoPublish;
                   setYtAutoPublish(next);
-                  fetch("/api/v1/youtube/config", {
+                  void fetch("/api/v1/youtube/config", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ autoPublish: next }),
-                  }).then(() => fetchYtStatus());
+                  })
+                    .then((res) => {
+                      // Leaving the switch flipped after the server refused it
+                      // would promise an auto-post that will never happen.
+                      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+                      void fetchYtStatus();
+                    })
+                    .catch(() => {
+                      setYtAutoPublish(!next);
+                      toast.error("Auto-post wasn't changed", "The server didn't accept the new setting.");
+                    });
                 }}
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold transition-all cursor-pointer ${
                   ytAutoPublish ? "bg-red-600 text-white shadow-sm shadow-red-500/40" : "bg-gray-800 text-gray-400"
@@ -1906,12 +1967,7 @@ export function AgentHub() {
                 </span>
               </div>
               <div className="relative aspect-[9/16] max-h-44 w-full rounded-lg border border-white/6 bg-black overflow-hidden flex items-center justify-center mx-auto">
-                <video
-                  src={completedVideoUrl}
-                  controls
-                  playsInline
-                  className="h-full w-full object-contain"
-                />
+                <video src={completedVideoUrl} controls playsInline className="h-full w-full object-contain" />
               </div>
               {lastBackground && (
                 <a
@@ -1992,7 +2048,10 @@ export function AgentHub() {
                 <span className="font-mono tabular-nums text-gray-300">{stats.loadPercent != null ? `${stats.loadPercent}%` : "—"}</span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
-                <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500" style={{ width: `${stats.loadPercent ?? 0}%` }} />
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500"
+                  style={{ width: `${stats.loadPercent ?? 0}%` }}
+                />
               </div>
             </div>
           </div>
@@ -2012,30 +2071,30 @@ export function AgentHub() {
             />
 
             {/* Who is listening */}
-            <h2 className="mt-1 text-base font-semibold tracking-tight text-white">
-              {assistantName}
-            </h2>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-white">{assistantName}</h2>
             <AgentModeNote className="mt-1" />
 
             {/* What it is doing right now, in one line */}
             <div className="mt-3">
               <span className="sw-pill px-4 py-1.5 text-xs">
-                <span className={`h-2 w-2 rounded-full animate-pulse ${isMicActive ? "bg-emerald-400" : micPhase === "transcribing" ? "bg-cyan-400" : "bg-emerald-400"}`} />
+                <span
+                  className={`h-2 w-2 rounded-full animate-pulse ${isMicActive ? "bg-emerald-400" : micPhase === "transcribing" ? "bg-cyan-400" : "bg-emerald-400"}`}
+                />
                 {micPhase === "starting"
                   ? "Starting mic…"
                   : isMicActive
-                  ? "Listening…"
-                  : micPhase === "transcribing"
-                  ? "Transcribing…"
-                  : assistantState === "THINKING"
-                  ? "Thinking…"
-                  : assistantState === "SPEAKING"
-                  ? `Speaking (${displayNameFor(selectedVoice)})`
-                  : assistantState === "GENERATING" || isGenerating
-                  ? `Rendering ${progressPercent}%`
-                  : voiceHotkey
-                  ? hotkeyLabel(voiceHotkey)
-                  : "Tap the mic"}
+                    ? "Listening…"
+                    : micPhase === "transcribing"
+                      ? "Transcribing…"
+                      : assistantState === "THINKING"
+                        ? "Thinking…"
+                        : assistantState === "SPEAKING"
+                          ? `Speaking (${displayNameFor(selectedVoice)})`
+                          : assistantState === "GENERATING" || isGenerating
+                            ? `Rendering ${progressPercent}%`
+                            : voiceHotkey
+                              ? hotkeyLabel(voiceHotkey)
+                              : "Tap the mic"}
               </span>
             </div>
           </div>
@@ -2067,18 +2126,18 @@ export function AgentHub() {
                 isMicActive
                   ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-300 shadow-lg shadow-emerald-500/20"
                   : micPhase === "transcribing"
-                  ? "border-cyan-400/50 bg-cyan-500/10 text-cyan-300"
-                  : voiceInputStatus && !voiceInputStatus.available
-                  ? "border-white/8 bg-[#14161d] text-gray-500 hover:border-amber-500/40"
-                  : "border-white/10 bg-[#14161d] text-gray-300 hover:border-cyan-300/70/40 hover:text-white"
+                    ? "border-cyan-400/50 bg-cyan-500/10 text-cyan-300"
+                    : voiceInputStatus && !voiceInputStatus.available
+                      ? "border-white/8 bg-[#14161d] text-gray-500 hover:border-amber-500/40"
+                      : "border-white/10 bg-[#14161d] text-gray-300 hover:border-cyan-300/70/40 hover:text-white"
               }`}
               style={isMicActive ? { boxShadow: `0 0 0 ${2 + Math.round(capture.level * 10)}px rgba(52, 211, 153, 0.22)` } : undefined}
               title={
                 voiceInputStatus && !voiceInputStatus.available
                   ? `Voice input unavailable: ${voiceInputStatus.reason ?? "speech engine missing"}`
                   : isMicActive
-                  ? "Tap to send (or just pause)"
-                  : `Talk to Soundwave — tap, or hold to talk${voiceHotkey ? ` · ${hotkeyLabel(voiceHotkey)}` : ""}`
+                    ? "Tap to send (or just pause)"
+                    : `Talk to Soundwave — tap, or hold to talk${voiceHotkey ? ` · ${hotkeyLabel(voiceHotkey)}` : ""}`
               }
               aria-label={isMicActive ? "Stop listening and send" : "Talk to Soundwave"}
               aria-pressed={isMicActive}
@@ -2165,10 +2224,7 @@ export function AgentHub() {
           {/* Messages Feed — the conversation scrolls inside its own box */}
           <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-3.5 py-4 pr-1">
             {chatMessages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex gap-2.5 ${msg.sender === "user" ? "flex-row-reverse" : "flex-row"}`}
-              >
+              <div key={msg.id} className={`flex gap-2.5 ${msg.sender === "user" ? "flex-row-reverse" : "flex-row"}`}>
                 <span
                   className={cn(
                     "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-[10px] font-bold",
@@ -2181,168 +2237,179 @@ export function AgentHub() {
                   {msg.sender === "user" ? "YOU" : "SW"}
                 </span>
                 <div className={cn("sw-bubble min-w-0 max-w-[92%] sw-rise", msg.sender === "user" ? "sw-bubble-user" : "sw-bubble-agent")}>
-                <div className="whitespace-pre-line text-[13px]">{msg.text}</div>
-                {msg.emailDraftIds?.map((draftId) => <EmailDraftCard key={draftId} draftId={draftId} />)}
-                {/* What the agent actually sent on the person's instruction: the
+                  <div className="whitespace-pre-line text-[13px]">{msg.text}</div>
+                  {msg.emailDraftIds?.map((draftId) => (
+                    <EmailDraftCard key={draftId} draftId={draftId} />
+                  ))}
+                  {/* What the agent actually sent on the person's instruction: the
                     exact recipient and subject, so "sent" is never just a claim. */}
-                {msg.emailSent?.map((mail, i) => (
-                  <section
-                    key={`${mail.to}-${i}`}
-                    className="mt-3 rounded-lg border border-emerald-500/30 bg-[#08090B] p-3 text-[11px]"
-                    aria-label="Email sent"
-                    data-testid="email-sent-note"
-                  >
-                    <div className="flex items-center gap-2 text-emerald-200">
-                      <Send className="h-4 w-4 shrink-0" />
-                      <b>Email sent</b>
-                      <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-300">
-                        From your Gmail
-                      </span>
-                    </div>
-                    <p className="mt-2 truncate text-gray-300"><span className="text-gray-500">To:</span> {mail.to}</p>
-                    <p className="mt-1 truncate text-gray-300"><span className="text-gray-500">Subject:</span> {mail.subject || "(no subject)"}</p>
-                  </section>
-                ))}
+                  {msg.emailSent?.map((mail, i) => (
+                    <section
+                      key={`${mail.to}-${i}`}
+                      className="mt-3 rounded-lg border border-emerald-500/30 bg-[#08090B] p-3 text-[11px]"
+                      aria-label="Email sent"
+                      data-testid="email-sent-note"
+                    >
+                      <div className="flex items-center gap-2 text-emerald-200">
+                        <Send className="h-4 w-4 shrink-0" />
+                        <b>Email sent</b>
+                        <span className="ml-auto inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-300">
+                          From your Gmail
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-gray-300">
+                        <span className="text-gray-500">To:</span> {mail.to}
+                      </p>
+                      <p className="mt-1 truncate text-gray-300">
+                        <span className="text-gray-500">Subject:</span> {mail.subject || "(no subject)"}
+                      </p>
+                    </section>
+                  ))}
 
-                {/* Email the agent queued for later: the moment it goes out, and
+                  {/* Email the agent queued for later: the moment it goes out, and
                     that cancelling it lives in Settings → Email. */}
-                {msg.emailScheduled?.map((mail, i) => (
-                  <section
-                    key={`${mail.to}-${mail.at}-${i}`}
-                    className="mt-3 rounded-lg border border-cyan-500/30 bg-[#08090B] p-3 text-[11px]"
-                    aria-label="Email scheduled"
-                    data-testid="email-scheduled-note"
-                  >
-                    <div className="flex items-center gap-2 text-cyan-200">
-                      <Clock className="h-4 w-4 shrink-0" />
-                      <b>Email scheduled</b>
-                      <span className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] text-cyan-300">
-                        Sends by itself
-                      </span>
-                    </div>
-                    <p className="mt-2 truncate text-gray-300"><span className="text-gray-500">To:</span> {mail.to}</p>
-                    <p className="mt-1 truncate text-gray-300"><span className="text-gray-500">Subject:</span> {mail.subject || "(no subject)"}</p>
-                    <p className="mt-1 text-gray-400">
-                      Goes out {mail.when || new Date(mail.at).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })} — no confirmation
-                      needed. Cancel it in Settings → Email.
-                    </p>
-                  </section>
-                ))}
+                  {msg.emailScheduled?.map((mail, i) => (
+                    <section
+                      key={`${mail.to}-${mail.at}-${i}`}
+                      className="mt-3 rounded-lg border border-cyan-500/30 bg-[#08090B] p-3 text-[11px]"
+                      aria-label="Email scheduled"
+                      data-testid="email-scheduled-note"
+                    >
+                      <div className="flex items-center gap-2 text-cyan-200">
+                        <Clock className="h-4 w-4 shrink-0" />
+                        <b>Email scheduled</b>
+                        <span className="ml-auto inline-flex items-center gap-1 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] text-cyan-300">
+                          Sends by itself
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-gray-300">
+                        <span className="text-gray-500">To:</span> {mail.to}
+                      </p>
+                      <p className="mt-1 truncate text-gray-300">
+                        <span className="text-gray-500">Subject:</span> {mail.subject || "(no subject)"}
+                      </p>
+                      <p className="mt-1 text-gray-400">
+                        Goes out{" "}
+                        {mail.when ||
+                          new Date(mail.at).toLocaleString("en-GB", {
+                            weekday: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: false,
+                          })}{" "}
+                        — no confirmation needed. Cancel it in Settings → Email.
+                      </p>
+                    </section>
+                  ))}
 
-                {/* Inline Video Player & Download Button */}
-                {Boolean(msg.videoUrl || msg.downloadUrl) && (
-                  <div className="mt-2.5 rounded-lg border border-cyan-500/30 bg-[#040814] p-2.5 space-y-2 font-mono">
-                    <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-white/6 pb-1">
-                      <span className="flex items-center gap-1.5">
-                        <Film className="h-3.5 w-3.5 text-cyan-400" />
-                        Short
-                      </span>
-                      {/* Clipped shorts carry the measured interest behind them —
+                  {/* Inline Video Player & Download Button */}
+                  {Boolean(msg.videoUrl || msg.downloadUrl) && (
+                    <div className="mt-2.5 rounded-lg border border-cyan-500/30 bg-[#040814] p-2.5 space-y-2 font-mono">
+                      <div className="flex items-center justify-between text-[11px] text-cyan-300 font-bold border-b border-white/6 pb-1">
+                        <span className="flex items-center gap-1.5">
+                          <Film className="h-3.5 w-3.5 text-cyan-400" />
+                          Short
+                        </span>
+                        {/* Clipped shorts carry the measured interest behind them —
                           YouTube's own replay data, comments and this week's
                           trends. The number is checkable on YouTube itself, so
                           it is shown rather than hidden in a tooltip alone. */}
-                      {typeof msg.interest === "number" && msg.interest > 0 && (
-                        <span
-                          className="flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300"
-                          title={msg.interestReason || "Measured audience interest for this moment"}
-                        >
-                          <Flame className="h-2.5 w-2.5" />
-                          {msg.interest}% interest
-                        </span>
-                      )}
-                    </div>
+                        {typeof msg.interest === "number" && msg.interest > 0 && (
+                          <span
+                            className="flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300"
+                            title={msg.interestReason || "Measured audience interest for this moment"}
+                          >
+                            <Flame className="h-2.5 w-2.5" />
+                            {msg.interest}% interest
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="relative rounded-lg overflow-hidden border border-white/10 bg-black max-h-52 flex justify-center items-center">
-                      <video
-                        src={msg.videoUrl || msg.downloadUrl}
-                        controls
-                        playsInline
-                        className="max-h-52 rounded-md aspect-[9/16] object-contain shadow-lg"
-                      />
-                    </div>
+                      <div className="relative rounded-lg overflow-hidden border border-white/10 bg-black max-h-52 flex justify-center items-center">
+                        <video
+                          src={msg.videoUrl || msg.downloadUrl}
+                          controls
+                          playsInline
+                          className="max-h-52 rounded-md aspect-[9/16] object-contain shadow-lg"
+                        />
+                      </div>
 
-                    {msg.background && (
-                      <a
-                        href={msg.background.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded-md border border-white/10 bg-[#08090c] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
-                        title={`Imported via the YouTube link importer: ${msg.background.url}`}
-                      >
-                        <Youtube className="h-3 w-3 shrink-0 text-red-500" />
-                        <span className="truncate">{msg.background.title}</span>
-                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />
-                      </a>
-                    )}
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <IconLink
-                        label="Download the MP4"
-                        href={(msg.downloadUrl || msg.videoUrl)!}
-                        download="soundwave_viral_short.mp4"
-                        tone="cyan"
-                        className="flex-1"
-                      >
-                        <Download />
-                      </IconLink>
-                      {msg.youtubeUrl ? (
-                        <IconLink
-                          label="Open it on YouTube"
-                          href={msg.youtubeUrl}
+                      {msg.background && (
+                        <a
+                          href={msg.background.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          tone="ghost"
+                          className="flex items-center gap-1.5 rounded-md border border-white/10 bg-[#08090c] px-2 py-1 text-[10px] text-gray-300 hover:text-cyan-300 transition-colors"
+                          title={`Imported via the YouTube link importer: ${msg.background.url}`}
                         >
-                          <Youtube className="text-red-500" />
-                        </IconLink>
-                      ) : (
-                        <IconButton
-                          label="Post it to YouTube Shorts"
-                          onClick={() => handleManualUploadYt(msg.videoUrl || msg.downloadUrl!, msg.text)}
-                          disabled={isUploadingToYt}
-                          tone="red"
-                        >
-                          {isUploadingToYt ? <Loader2 className="animate-spin" /> : <Youtube />}
-                        </IconButton>
+                          <Youtube className="h-3 w-3 shrink-0 text-red-500" />
+                          <span className="truncate">{msg.background.title}</span>
+                          <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                        </a>
                       )}
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <IconLink
+                          label="Download the MP4"
+                          href={(msg.downloadUrl || msg.videoUrl)!}
+                          download="soundwave_viral_short.mp4"
+                          tone="cyan"
+                          className="flex-1"
+                        >
+                          <Download />
+                        </IconLink>
+                        {msg.youtubeUrl ? (
+                          <IconLink label="Open it on YouTube" href={msg.youtubeUrl} target="_blank" rel="noopener noreferrer" tone="ghost">
+                            <Youtube className="text-red-500" />
+                          </IconLink>
+                        ) : (
+                          <IconButton
+                            label="Post it to YouTube Shorts"
+                            onClick={() => handleManualUploadYt(msg.videoUrl || msg.downloadUrl!, msg.text)}
+                            disabled={isUploadingToYt}
+                            tone="red"
+                          >
+                            {isUploadingToYt ? <Loader2 className="animate-spin" /> : <Youtube />}
+                          </IconButton>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="sw-bubble-meta">
+                    <span className="sw-bubble-tag">
+                      {msg.via === "phone" && <Smartphone className="h-2.5 w-2.5" aria-label="From your phone" />}
+                      {msg.viaVoice && <Mic className="h-2.5 w-2.5" aria-label="Spoken" />}
+                      {msg.briefingDate && <Sunrise className="h-2.5 w-2.5 text-amber-300" aria-label="Morning briefing" />}
+                      {msg.answeredBy === "phone" && <Smartphone className="h-2.5 w-2.5" aria-label="Answered on your phone" />}
+                      {msg.via === "phone"
+                        ? msg.viaVoice
+                          ? "YOU (PHONE, VOICE)"
+                          : "YOU (PHONE)"
+                        : msg.viaVoice
+                          ? "YOU (VOICE)"
+                          : msg.briefingDate
+                            ? msg.answeredBy === "phone"
+                              ? "MORNING BRIEFING (ON PHONE)"
+                              : "MORNING BRIEFING"
+                            : msg.answeredBy === "phone"
+                              ? "AGENT (ON PHONE, PC OFF)"
+                              : msg.tag || (msg.sender === "user" ? "USER" : "AGENT")}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {msg.sender === "assistant" && (
+                        <button
+                          onClick={() => speakText(msg.text, selectedVoice)}
+                          title="Say it again"
+                          aria-label="Say it again"
+                          className="text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
+                        >
+                          <Volume2 className="h-3 w-3" />
+                        </button>
+                      )}
+                      <span>{msg.time}</span>
                     </div>
                   </div>
-                )}
-
-                <div className="sw-bubble-meta">
-                  <span className="sw-bubble-tag">
-                    {msg.via === "phone" && <Smartphone className="h-2.5 w-2.5" aria-label="From your phone" />}
-                    {msg.viaVoice && <Mic className="h-2.5 w-2.5" aria-label="Spoken" />}
-                    {msg.briefingDate && <Sunrise className="h-2.5 w-2.5 text-amber-300" aria-label="Morning briefing" />}
-                    {msg.answeredBy === "phone" && <Smartphone className="h-2.5 w-2.5" aria-label="Answered on your phone" />}
-                    {msg.via === "phone"
-                      ? msg.viaVoice
-                        ? "YOU (PHONE, VOICE)"
-                        : "YOU (PHONE)"
-                      : msg.viaVoice
-                        ? "YOU (VOICE)"
-                        : msg.briefingDate
-                          ? msg.answeredBy === "phone"
-                            ? "MORNING BRIEFING (ON PHONE)"
-                            : "MORNING BRIEFING"
-                          : msg.answeredBy === "phone"
-                            ? "AGENT (ON PHONE, PC OFF)"
-                            : msg.tag || (msg.sender === "user" ? "USER" : "AGENT")}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {msg.sender === "assistant" && (
-                      <button
-                        onClick={() => speakText(msg.text, selectedVoice)}
-                        title="Say it again"
-                        aria-label="Say it again"
-                        className="text-gray-400 transition-colors hover:text-cyan-400 cursor-pointer"
-                      >
-                        <Volume2 className="h-3 w-3" />
-                      </button>
-                    )}
-                    <span>{msg.time}</span>
-                  </div>
-                </div>
                 </div>
               </div>
             ))}
@@ -2366,7 +2433,10 @@ export function AgentHub() {
             )}
 
             {briefingNote && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[10px] text-amber-200 font-mono flex items-center gap-2" data-testid="briefing-note">
+              <div
+                className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[10px] text-amber-200 font-mono flex items-center gap-2"
+                data-testid="briefing-note"
+              >
                 <Loader2 className="h-3 w-3 animate-spin" />
                 {briefingNote}
               </div>
@@ -2384,11 +2454,7 @@ export function AgentHub() {
                 <Sunrise className="h-3.5 w-3.5 text-amber-300" />
                 Morning
               </button>
-              <button
-                onClick={() => setGeneratorModalOpen(true)}
-                className="sw-chip shrink-0"
-                title="Make a short"
-              >
+              <button onClick={() => setGeneratorModalOpen(true)} className="sw-chip shrink-0" title="Make a short">
                 <Film className="h-3.5 w-3.5 text-cyan-300" />
                 Make a short
               </button>
@@ -2423,12 +2489,7 @@ export function AgentHub() {
 
       {/* ── 3. MODAL: 1-CLICK VIRAL SHORT GENERATOR ───────────────────── */}
       {generatorModalOpen && (
-        <Modal
-          open={generatorModalOpen}
-          onClose={() => setGeneratorModalOpen(false)}
-          title="New short"
-          size="lg"
-        >
+        <Modal open={generatorModalOpen} onClose={() => setGeneratorModalOpen(false)} title="New short" size="lg">
           <div className="space-y-5">
             {/* Niche Grid — the researched nine, plus whatever Soundwave added */}
             <section className="space-y-2.5">
@@ -2503,11 +2564,7 @@ export function AgentHub() {
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <label className="sw-label">Narrator voice</label>
-                <select
-                  value={selectedVoice}
-                  onChange={(e) => handleVoiceChange(e.target.value)}
-                  className="sw-select py-2 text-[12.5px]"
-                >
+                <select value={selectedVoice} onChange={(e) => handleVoiceChange(e.target.value)} className="sw-select py-2 text-[12.5px]">
                   {!localVoiceStatus.available && localVoiceStatus.setup?.managed && (
                     <option disabled value="__kokoro_status">
                       {localVoiceSetupLabel(localVoiceStatus.setup)}
@@ -2535,11 +2592,7 @@ export function AgentHub() {
 
               <div>
                 <label className="sw-label">Length</label>
-                <select
-                  value={seconds}
-                  onChange={(e) => pickSeconds(Number(e.target.value))}
-                  className="sw-select py-2 text-[12.5px]"
-                >
+                <select value={seconds} onChange={(e) => pickSeconds(Number(e.target.value))} className="sw-select py-2 text-[12.5px]">
                   <option value={30}>30 seconds</option>
                   <option value={60}>60 seconds</option>
                   <option value={90}>90 seconds</option>
@@ -2558,8 +2611,8 @@ export function AgentHub() {
                     Viral edit
                   </span>
                   <p className="mt-1 text-[11px] leading-snug text-gray-500">
-                    Photos that pop up on the words they show, sound effects, a beat under the voice and a
-                    moving camera — planned around the script. Off is the plain render: gameplay, voice and captions.
+                    Photos that pop up on the words they show, sound effects, a beat under the voice and a moving camera — planned around
+                    the script. Off is the plain render: gameplay, voice and captions.
                   </p>
                 </div>
                 <button
@@ -2650,7 +2703,13 @@ export function AgentHub() {
                     <ul className="space-y-0.5 border-t border-white/10 pt-1">
                       {trendStatus.top!.slice(0, 3).map((t) => (
                         <li key={t.id} className="text-[10px] leading-snug line-clamp-1">
-                          <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-cyan-300/80 hover:text-cyan-200" title={`${t.title}${t.channel ? ` — ${t.channel}` : ""}`}>
+                          <a
+                            href={t.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-300/80 hover:text-cyan-200"
+                            title={`${t.title}${t.channel ? ` — ${t.channel}` : ""}`}
+                          >
                             ▶ {compactViews(t.views)} · {t.title}
                           </a>
                         </li>
@@ -2667,7 +2726,9 @@ export function AgentHub() {
             {/* Background Footage Source: Orbital NCG via the YouTube link importer */}
             <section className="space-y-2.5 rounded-xl border border-white/8 bg-[#08090c] p-3">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-gray-300" title="From youtube.com/@OrbitalNCG, never reused">Background</span>
+                <span className="font-semibold text-gray-300" title="From youtube.com/@OrbitalNCG, never reused">
+                  Background
+                </span>
                 <span className="font-bold text-cyan-400">
                   {orbitalStatus?.available != null ? `${orbitalStatus.available} unused` : "Orbital NCG"}
                 </span>
@@ -2687,7 +2748,7 @@ export function AgentHub() {
                   label={`Backgrounds already used (${orbitalStatus?.usedCount ?? 0})`}
                   onClick={() => {
                     setOrbitalHistoryOpen(true);
-                    fetchOrbitalStatus();
+                    void fetchOrbitalStatus();
                   }}
                 >
                   <Clock className="text-cyan-400" />
@@ -2751,10 +2812,7 @@ export function AgentHub() {
                   <span className="text-cyan-400 font-bold">{progressPercent}%</span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-800">
-                  <div
-                    className="h-full bg-cyan-400 transition-all duration-300"
-                    style={{ width: `${progressPercent}%` }}
-                  />
+                  <div className="h-full bg-cyan-400 transition-all duration-300" style={{ width: `${progressPercent}%` }} />
                 </div>
               </div>
             )}
@@ -2763,12 +2821,7 @@ export function AgentHub() {
             {(completedVideoUrl || generatedScript) && (
               <div className="rounded-lg border border-cyan-500/30 bg-[#08090c] p-3 space-y-2">
                 {completedVideoUrl && (
-                  <video
-                    src={completedVideoUrl}
-                    controls
-                    autoPlay
-                    className="max-h-48 mx-auto rounded-lg aspect-[9/16] object-cover"
-                  />
+                  <video src={completedVideoUrl} controls autoPlay className="max-h-48 mx-auto rounded-lg aspect-[9/16] object-cover" />
                 )}
                 {generatedScript && (
                   <div className="text-[10px] text-gray-300 bg-[#050B14] p-2 rounded border border-white/10 max-h-24 overflow-y-auto whitespace-pre-wrap">
@@ -2818,23 +2871,25 @@ export function AgentHub() {
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-4">
               <span className="sw-hint">
-                {customTopic.trim() ? `Topic: “${customTopic.trim()}”` : `Niche: ${nicheTiles.find((n) => n.id === selectedNiche)?.name ?? selectedNiche}`}
+                {customTopic.trim()
+                  ? `Topic: “${customTopic.trim()}”`
+                  : `Niche: ${nicheTiles.find((n) => n.id === selectedNiche)?.name ?? selectedNiche}`}
                 {" · "}
                 {resolution} · {seconds}s
               </span>
               <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setGeneratorModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleGenerateShort}
-                loading={isGenerating}
-                icon={<Sparkles className="h-3.5 w-3.5" />}
-              >
-                {isGenerating ? "Rendering…" : "Generate short"}
-              </Button>
+                <Button variant="outline" size="sm" onClick={() => setGeneratorModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleGenerateShort}
+                  loading={isGenerating}
+                  icon={<Sparkles className="h-3.5 w-3.5" />}
+                >
+                  {isGenerating ? "Rendering…" : "Generate short"}
+                </Button>
               </div>
             </div>
           </div>
@@ -2843,32 +2898,26 @@ export function AgentHub() {
 
       {/* ── 4. MODAL: GHOST OPERATOR MACROS ───────────────────────────── */}
       {macrosModalOpen && (
-        <Modal
-          open={macrosModalOpen}
-          onClose={() => setMacrosModalOpen(false)}
-          title="Macros"
-        >
+        <Modal open={macrosModalOpen} onClose={() => setMacrosModalOpen(false)} title="Macros">
           <div className="space-y-3 font-mono text-xs">
             <p className="text-[11px] text-gray-400">
-              Multi-step automations that <b className="text-gray-300">really run on this PC</b>. Steps Soundwave can't do yet are skipped and say why.
+              Multi-step automations that <b className="text-gray-300">really run on this PC</b>. Steps Soundwave can't do yet are skipped
+              and say why.
             </p>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {macrosList.map((m) => (
-                <div
-                  key={m.id}
-                  className="rounded-lg border border-white/10 bg-[#08090c] p-3 flex items-center justify-between"
-                >
+                <div key={m.id} className="rounded-lg border border-white/10 bg-[#08090c] p-3 flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold text-white">{m.name}</h4>
                     <p className="text-[11px] text-gray-400 mt-0.5">{m.description}</p>
                     <span className="mt-1 block truncate text-[10px] text-cyan-400">
-                      {(m.steps?.length || 0)} steps · {(m.steps ?? []).map((s) => s.action).join(" → ")}
+                      {m.steps?.length || 0} steps · {(m.steps ?? []).map((s) => s.action).join(" → ")}
                     </span>
                   </div>
                   <button
                     onClick={() => {
-                      runMacro(m.id);
+                      void runMacro(m.id);
                       setMacrosModalOpen(false);
                     }}
                     disabled={isRunningMacro}
@@ -3045,8 +3094,8 @@ export function AgentHub() {
                       {voiceInputStatus?.available
                         ? `On this PC (whisper.cpp) — nothing leaves it${voiceHotkey ? ` · ${hotkeyLabel(voiceHotkey)}` : ""}`
                         : voiceInputStatus
-                        ? `Unavailable: ${voiceInputStatus.reason ?? "speech engine missing"}`
-                        : "Checking…"}
+                          ? `Unavailable: ${voiceInputStatus.reason ?? "speech engine missing"}`
+                          : "Checking…"}
                     </p>
                   </div>
                   <Link
@@ -3057,7 +3106,6 @@ export function AgentHub() {
                     Options
                   </Link>
                 </div>
-
               </div>
             )}
 
@@ -3069,14 +3117,20 @@ export function AgentHub() {
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-gray-300 font-semibold">Notes ({memoryState?.notes.length ?? 0}/{memoryState?.maxNotes ?? 60})</label>
+                    <label className="text-gray-300 font-semibold">
+                      Notes ({memoryState?.notes.length ?? 0}/{memoryState?.maxNotes ?? 60})
+                    </label>
                   </div>
                   <div className="max-h-48 overflow-y-auto space-y-1 border border-white/10 rounded-lg p-2 bg-[#08090c]">
                     {!memoryState || memoryState.notes.length === 0 ? (
                       <p className="p-1 text-[11px] text-gray-500">No notes yet.</p>
                     ) : (
                       memoryState.notes.map((n) => (
-                        <div key={n.id} className="group flex items-start justify-between gap-2 rounded px-1 py-0.5 hover:bg-white/[0.03]" data-testid="memory-note">
+                        <div
+                          key={n.id}
+                          className="group flex items-start justify-between gap-2 rounded px-1 py-0.5 hover:bg-white/[0.03]"
+                          data-testid="memory-note"
+                        >
                           <span className="text-[11px] text-gray-200">
                             <span className="text-violet-400">·</span> {n.text}
                             <span className="ml-1.5 text-[10px] text-gray-500">
@@ -3135,7 +3189,9 @@ export function AgentHub() {
                     {memoryState?.briefing ? (
                       <>
                         <span className="text-amber-200">
-                          {memoryState.briefing.auto ? `Every morning at ${memoryState.briefing.time}` : "Only when you start Morning Setup"}
+                          {memoryState.briefing.auto
+                            ? `Every morning at ${memoryState.briefing.time}`
+                            : "Only when you start Morning Setup"}
                         </span>
                         {" · "}
                         {memoryState.briefing.topics.length ? memoryState.briefing.topics.join(" · ") : "no topics yet"}
@@ -3143,7 +3199,11 @@ export function AgentHub() {
                     ) : (
                       "—"
                     )}
-                    <Link to="/settings/morning" onClick={() => setSettingsOpen(false)} className="ml-2 text-cyan-400 hover:text-cyan-300 underline">
+                    <Link
+                      to="/settings/morning"
+                      onClick={() => setSettingsOpen(false)}
+                      className="ml-2 text-cyan-400 hover:text-cyan-300 underline"
+                    >
                       Change
                     </Link>
                   </div>
@@ -3151,7 +3211,10 @@ export function AgentHub() {
 
                 <div className="space-y-1.5">
                   <label className="font-semibold text-gray-300">Summary</label>
-                  <div className="rounded-lg border border-white/10 bg-[#08090c] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap" data-testid="memory-summary">
+                  <div
+                    className="rounded-lg border border-white/10 bg-[#08090c] p-2.5 text-[11px] text-gray-300 whitespace-pre-wrap"
+                    data-testid="memory-summary"
+                  >
                     {memoryState?.summary ? (
                       <>
                         {memoryState.summary.text}
@@ -3177,7 +3240,8 @@ export function AgentHub() {
                     label="Forget every note and the summary"
                     tone="plain"
                     onClick={() => {
-                      if (window.confirm("Forget every note and the conversation summary? The conversation itself stays.")) void memoryAction(() => memoryApi.clear(), "Memory cleared.");
+                      if (window.confirm("Forget every note and the conversation summary? The conversation itself stays."))
+                        void memoryAction(() => memoryApi.clear(), "Memory cleared.");
                     }}
                   >
                     <Trash />
@@ -3196,17 +3260,29 @@ export function AgentHub() {
                       <Mail className="h-4 w-4 text-cyan-300" />
                       <span className="font-bold">Google account</span>
                     </div>
-                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${gmailStatus.connected ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-300" : gmailStatus.needsReconnect ? "border border-amber-500/30 bg-amber-500/20 text-amber-200" : "bg-gray-800 text-gray-400"}`}>
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${gmailStatus.connected ? "border border-emerald-500/30 bg-emerald-500/20 text-emerald-300" : gmailStatus.needsReconnect ? "border border-amber-500/30 bg-amber-500/20 text-amber-200" : "bg-gray-800 text-gray-400"}`}
+                    >
                       {gmailStatus.connected ? "CONNECTED" : gmailStatus.needsReconnect ? "RECONNECT" : "NOT LINKED"}
                     </span>
                   </div>
                   {gmailStatus.connected ? (
-                    <p className="text-[11px] text-gray-300">Connected as <b className="text-white">{gmailStatus.email}</b>.</p>
+                    <p className="text-[11px] text-gray-300">
+                      Connected as <b className="text-white">{gmailStatus.email}</b>.
+                    </p>
                   ) : (
-                    <p className="text-[11px] text-gray-400">Connect the Google account Soundwave should use for email, contacts, calendar and Drive. It uses the Google OAuth client configured in YouTube settings.</p>
+                    <p className="text-[11px] text-gray-400">
+                      Connect the Google account Soundwave should use for email, contacts, calendar and Drive. It uses the Google OAuth
+                      client configured in YouTube settings.
+                    </p>
                   )}
                   <div className="rounded-md border border-white/10 bg-[#0b0c0f] p-2.5 text-[10px] leading-relaxed text-gray-300">
-                    Soundwave can <b className="text-cyan-200">read your inbox</b>, <b className="text-cyan-200">write drafts</b>, and <b className="text-cyan-200">send email when you tell it to</b> — plus look up your contacts, read the next days of your calendar and find files on Drive (all read-only). Sending from chat is on by default and capped below; every message it sends is listed here, and a draft card still asks you to confirm before anything the agent saved goes out. When you ask it to read or write a message, that content goes to the Gemini provider configured in Settings → Brain. Instructions inside an email are never treated as yours.
+                    Soundwave can <b className="text-cyan-200">read your inbox</b>, <b className="text-cyan-200">write drafts</b>, and{" "}
+                    <b className="text-cyan-200">send email when you tell it to</b> — plus look up your contacts, read the next days of your
+                    calendar and find files on Drive (all read-only). Sending from chat is on by default and capped below; every message it
+                    sends is listed here, and a draft card still asks you to confirm before anything the agent saved goes out. When you ask
+                    it to read or write a message, that content goes to the Gemini provider configured in Settings → Brain. Instructions
+                    inside an email are never treated as yours.
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {!gmailStatus.connected ? (
@@ -3214,24 +3290,40 @@ export function AgentHub() {
                         {isConnectingGmail ? "Waiting for Google…" : gmailStatus.needsReconnect ? "Reconnect Google" : "Connect Google"}
                       </Button>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => void handleDisconnectGmail()}>Disconnect Google</Button>
+                      <Button size="sm" variant="outline" onClick={() => void handleDisconnectGmail()}>
+                        Disconnect Google
+                      </Button>
                     )}
-                    <button type="button" onClick={() => { void fetchGmailStatus(); void fetchGmailPolicy(); void fetchGmailScheduled(); }} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white">Refresh status</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void fetchGmailStatus();
+                        void fetchGmailPolicy();
+                        void fetchGmailScheduled();
+                      }}
+                      className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[10px] text-gray-400 hover:text-white"
+                    >
+                      Refresh status
+                    </button>
                   </div>
 
                   {gmailStatus.connected && (
                     <div className="flex flex-wrap gap-1.5 border-t border-white/10 pt-2.5" data-testid="google-scopes">
-                      {([
-                        ["Gmail", gmailStatus.scopes?.gmail],
-                        ["Contacts", gmailStatus.scopes?.contacts],
-                        ["Calendar", gmailStatus.scopes?.calendar],
-                        ["Drive", gmailStatus.scopes?.drive],
-                      ] as const).map(([label, granted]) => (
+                      {(
+                        [
+                          ["Gmail", gmailStatus.scopes?.gmail],
+                          ["Contacts", gmailStatus.scopes?.contacts],
+                          ["Calendar", gmailStatus.scopes?.calendar],
+                          ["Drive", gmailStatus.scopes?.drive],
+                        ] as const
+                      ).map(([label, granted]) => (
                         <span
                           key={label}
                           className={cn(
                             "rounded border px-1.5 py-0.5 text-[9px]",
-                            granted ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-[#0b0c0f] text-gray-500",
+                            granted
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                              : "border-white/10 bg-[#0b0c0f] text-gray-500",
                           )}
                           title={granted ? `${label} is allowed` : `Not allowed — reconnect Google and allow ${label}`}
                         >
@@ -3242,7 +3334,17 @@ export function AgentHub() {
                   )}
 
                   <p className="text-[9px] leading-relaxed text-gray-500">
-                    Google may require these APIs to be enabled in that OAuth project. If sign-in is blocked, enable them in <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline">Google Cloud</a> and add this account as a test user. Disconnecting removes Soundwave's saved sign-in; drafts already in Gmail stay there.
+                    Google may require these APIs to be enabled in that OAuth project. If sign-in is blocked, enable them in{" "}
+                    <a
+                      href="https://console.cloud.google.com/apis/library/gmail.googleapis.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-cyan-300 underline"
+                    >
+                      Google Cloud
+                    </a>{" "}
+                    and add this account as a test user. Disconnecting removes Soundwave's saved sign-in; drafts already in Gmail stay
+                    there.
                   </p>
                 </div>
 
@@ -3268,7 +3370,9 @@ export function AgentHub() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <label className="text-[10px] text-gray-400" htmlFor="gmail-daily-limit">Emails the agent may send per day</label>
+                    <label className="text-[10px] text-gray-400" htmlFor="gmail-daily-limit">
+                      Emails the agent may send per day
+                    </label>
                     <input
                       id="gmail-daily-limit"
                       type="number"
@@ -3295,27 +3399,34 @@ export function AgentHub() {
                       <Clock className="h-3.5 w-3.5 text-cyan-300" />
                       <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">Waiting to go out</p>
                       {gmailScheduled?.scheduled?.length ? (
-                        <span className="rounded bg-cyan-500/15 px-1.5 py-px text-[9px] font-bold text-cyan-300">{gmailScheduled.scheduled.length}</span>
+                        <span className="rounded bg-cyan-500/15 px-1.5 py-px text-[9px] font-bold text-cyan-300">
+                          {gmailScheduled.scheduled.length}
+                        </span>
                       ) : null}
                     </div>
                     {gmailScheduled?.scheduled?.length ? (
                       <ul className="mt-2 space-y-2">
                         {gmailScheduled.scheduled.map((entry) => (
-                          <li key={entry.id} className="rounded-md border border-cyan-500/25 bg-[#0b0c0f] p-2.5" data-testid="gmail-scheduled-row">
+                          <li
+                            key={entry.id}
+                            className="rounded-md border border-cyan-500/25 bg-[#0b0c0f] p-2.5"
+                            data-testid="gmail-scheduled-row"
+                          >
                             <div className="flex items-start gap-2">
                               <span className="mt-0.5 shrink-0 rounded bg-cyan-500/15 px-1.5 py-px text-[9px] font-bold text-cyan-300">
                                 {entry.status === "sending" ? "SENDING" : "SCHEDULED"}
                               </span>
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-[11px] text-gray-200" title={`${entry.subject || "(no subject)"} — ${entry.to}`}>
+                                <p
+                                  className="truncate text-[11px] text-gray-200"
+                                  title={`${entry.subject || "(no subject)"} — ${entry.to}`}
+                                >
                                   {entry.subject || "(no subject)"}
                                 </p>
                                 <p className="truncate text-[10px] text-gray-400">
                                   {entry.to || entry.cc || entry.bcc || "the conversation"} · {entry.atLocal}
                                 </p>
-                                <p className="mt-0.5 text-[10px] text-cyan-200/80">
-                                  Goes out {entry.due}. No confirmation needed.
-                                </p>
+                                <p className="mt-0.5 text-[10px] text-cyan-200/80">Goes out {entry.due}. No confirmation needed.</p>
                                 {entry.lastError ? <p className="mt-0.5 text-[10px] text-amber-200/90">{entry.lastError}</p> : null}
                                 <details className="mt-1">
                                   <summary className="cursor-pointer text-[10px] text-gray-500 hover:text-gray-300">Message</summary>
@@ -3337,7 +3448,8 @@ export function AgentHub() {
                       </ul>
                     ) : (
                       <p className="mt-1.5 text-[10px] text-gray-500">
-                        Nothing scheduled. Say “email Marko that I'll be late, at 5 pm” and it is written and checked now, then sent at 17:00 by itself — even if the app was closed and reopened, as long as Soundwave is running when the time comes.
+                        Nothing scheduled. Say “email Marko that I'll be late, at 5 pm” and it is written and checked now, then sent at
+                        17:00 by itself — even if the app was closed and reopened, as long as Soundwave is running when the time comes.
                       </p>
                     )}
                     {gmailScheduled?.history?.length ? (
@@ -3347,12 +3459,19 @@ export function AgentHub() {
                             <span
                               className={cn(
                                 "mt-0.5 shrink-0 rounded px-1 py-px text-[8px] font-bold",
-                                entry.status === "sent" ? "bg-emerald-500/15 text-emerald-300" : entry.status === "cancelled" ? "bg-gray-700/40 text-gray-300" : "bg-amber-500/15 text-amber-200",
+                                entry.status === "sent"
+                                  ? "bg-emerald-500/15 text-emerald-300"
+                                  : entry.status === "cancelled"
+                                    ? "bg-gray-700/40 text-gray-300"
+                                    : "bg-amber-500/15 text-amber-200",
                               )}
                             >
                               {entry.status === "sent" ? "SENT" : entry.status === "cancelled" ? "CANCELLED" : entry.status.toUpperCase()}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-gray-400" title={entry.lastError || `${entry.subject} — ${entry.to}`}>
+                            <span
+                              className="min-w-0 flex-1 truncate text-gray-400"
+                              title={entry.lastError || `${entry.subject} — ${entry.to}`}
+                            >
                               {entry.subject || "(no subject)"} <span className="text-gray-600">→ {entry.to || "the conversation"}</span>
                               {entry.lastError ? <span className="text-amber-200/80"> · {entry.lastError}</span> : null}
                             </span>
@@ -3369,7 +3488,12 @@ export function AgentHub() {
                       <ul className="mt-1.5 space-y-1">
                         {gmailPolicy.sent.slice(0, 5).map((entry, i) => (
                           <li key={`${entry.at}-${i}`} className="flex items-start gap-2 text-[10px]">
-                            <span className={cn("mt-0.5 shrink-0 rounded px-1 py-px text-[8px] font-bold", entry.source === "agent" ? "bg-cyan-500/15 text-cyan-300" : "bg-gray-700/40 text-gray-300")}>
+                            <span
+                              className={cn(
+                                "mt-0.5 shrink-0 rounded px-1 py-px text-[8px] font-bold",
+                                entry.source === "agent" ? "bg-cyan-500/15 text-cyan-300" : "bg-gray-700/40 text-gray-300",
+                              )}
+                            >
                               {entry.source === "agent" ? "AGENT" : "YOU"}
                             </span>
                             <span className="min-w-0 flex-1 truncate text-gray-300" title={`${entry.subject} — ${entry.to}`}>
@@ -3381,11 +3505,17 @@ export function AgentHub() {
                       </ul>
                     </div>
                   ) : (
-                    <p className="border-t border-white/10 pt-2.5 text-[10px] text-gray-500">Nothing has been sent through Soundwave yet.</p>
+                    <p className="border-t border-white/10 pt-2.5 text-[10px] text-gray-500">
+                      Nothing has been sent through Soundwave yet.
+                    </p>
                   )}
 
                   <p className="text-[9px] leading-relaxed text-gray-500">
-                    A scheduled email is sent at the time you named without asking again — that is the point of scheduling it — and it is held on this PC, so the app has to be running then (a PC that was asleep sends it at the next start, and says how late it was). The agent only sends when you ask it to, never from something an email says, and it never guesses an address: it uses the one you gave or looks it up in your contacts. Sending the exact same message twice within five minutes is refused, and a draft you asked it to save can be sent later by saying “send it” — unless it changed in Gmail first.
+                    A scheduled email is sent at the time you named without asking again — that is the point of scheduling it — and it is
+                    held on this PC, so the app has to be running then (a PC that was asleep sends it at the next start, and says how late
+                    it was). The agent only sends when you ask it to, never from something an email says, and it never guesses an address:
+                    it uses the one you gave or looks it up in your contacts. Sending the exact same message twice within five minutes is
+                    refused, and a draft you asked it to save can be sent later by saying “send it” — unless it changed in Gmail first.
                   </p>
                 </div>
               </div>
@@ -3464,7 +3594,12 @@ export function AgentHub() {
                           </div>
                           <p className="text-[10px] text-gray-500">
                             Uploads and the channel's name only ·{" "}
-                            <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
+                            <a
+                              href="https://myaccount.google.com/permissions"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-red-400 underline hover:text-red-300"
+                            >
                               remove access
                             </a>
                           </p>
@@ -3472,7 +3607,8 @@ export function AgentHub() {
                       ) : (
                         <div className="space-y-2" data-testid="yt-manual">
                           <p className="text-[10px] text-gray-400">
-                            This build has no built-in Google app, so YouTube needs <b className="text-gray-200">your own free client once</b>:
+                            This build has no built-in Google app, so YouTube needs{" "}
+                            <b className="text-gray-200">your own free client once</b>:
                           </p>
                           <textarea
                             rows={2}
@@ -3519,20 +3655,33 @@ export function AgentHub() {
                       <ol className="list-decimal space-y-1 pl-4" data-testid="yt-steps">
                         <li>
                           Open the{" "}
-                          <a href="https://console.cloud.google.com/auth/clients/create" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
+                          <a
+                            href="https://console.cloud.google.com/auth/clients/create"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-red-400 underline hover:text-red-300"
+                          >
                             OAuth clients page
                           </a>{" "}
-                          with the account that owns your channel — Google walks you through the project and the consent screen the first time (accept the defaults). If it asks to enable the API first,{" "}
-                          <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-red-400 underline hover:text-red-300">
+                          with the account that owns your channel — Google walks you through the project and the consent screen the first
+                          time (accept the defaults). If it asks to enable the API first,{" "}
+                          <a
+                            href="https://console.cloud.google.com/apis/library/youtube.googleapis.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-red-400 underline hover:text-red-300"
+                          >
                             it's one click here
                           </a>
                           .
                         </li>
                         <li>
-                          Add your Gmail under <b className="text-gray-300">Audience → Test users</b>, or press <b className="text-gray-300">Publish app</b> so Google doesn't end the sign-in after 7 days.
+                          Add your Gmail under <b className="text-gray-300">Audience → Test users</b>, or press{" "}
+                          <b className="text-gray-300">Publish app</b> so Google doesn't end the sign-in after 7 days.
                         </li>
                         <li>
-                          <b className="text-gray-300">Create client</b> → type <b className="text-gray-300">Desktop app</b> → Create → <b className="text-gray-300">Download JSON</b>.
+                          <b className="text-gray-300">Create client</b> → type <b className="text-gray-300">Desktop app</b> → Create →{" "}
+                          <b className="text-gray-300">Download JSON</b>.
                         </li>
                         <li>
                           Paste it above and press <b className="text-gray-300">Connect YouTube</b> — sign in with Google and you're done.
@@ -3548,12 +3697,16 @@ export function AgentHub() {
                           onChange={(e) => setYtRefreshToken(e.target.value)}
                           className="w-full rounded border border-white/10 bg-[#0b0c0f] px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
                         />
-                        <p className="mt-1 text-gray-500">Needs a “Web application” client with https://developers.google.com/oauthplayground as redirect URI and the scopes youtube.upload + youtube.readonly.</p>
+                        <p className="mt-1 text-gray-500">
+                          Needs a “Web application” client with https://developers.google.com/oauthplayground as redirect URI and the scopes
+                          youtube.upload + youtube.readonly.
+                        </p>
                       </div>
 
                       {!ytStatus.oneClick && (
                         <p className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200/80">
-                          New Google Cloud projects keep uploads <b>Private</b> until YouTube's API audit. You can always post the MP4 yourself.
+                          New Google Cloud projects keep uploads <b>Private</b> until YouTube's API audit. You can always post the MP4
+                          yourself.
                         </p>
                       )}
 
@@ -3641,22 +3794,12 @@ export function AgentHub() {
                   ) : (
                     <div className="space-y-1.5">
                       {ytChannels.map((ch) => (
-                        <ChannelRow
-                          key={ch.id}
-                          channel={ch}
-                          onSave={patchChannel}
-                          onDefault={setDefaultChannel}
-                          onRemove={removeChannel}
-                        />
+                        <ChannelRow key={ch.id} channel={ch} onSave={patchChannel} onDefault={setDefaultChannel} onRemove={removeChannel} />
                       ))}
                     </div>
                   )}
 
-                  {ytPlanStatus?.blocked && ytChannels.length > 0 && (
-                    <p className="text-[9px] text-gray-500">⏱ {ytPlanStatus.blocked}</p>
-                  )}
-
-
+                  {ytPlanStatus?.blocked && ytChannels.length > 0 && <p className="text-[9px] text-gray-500">⏱ {ytPlanStatus.blocked}</p>}
                 </div>
               </div>
             )}
@@ -3742,7 +3885,12 @@ export function AgentHub() {
           <div className="space-y-3 font-mono text-xs">
             <p className="text-[11px] text-gray-400">
               One{" "}
-              <a href={ORBITAL_CHANNEL_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline hover:text-cyan-200">
+              <a
+                href={ORBITAL_CHANNEL_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-cyan-300 underline hover:text-cyan-200"
+              >
                 @OrbitalNCG
               </a>{" "}
               video per short, never reused. Counted once a short is rendered from it.
@@ -3763,9 +3911,7 @@ export function AgentHub() {
               </div>
             </div>
             {orbitalStatus?.catalogFetchedAt && (
-              <p className="text-[10px] text-gray-500">
-                Channel last checked {new Date(orbitalStatus.catalogFetchedAt).toLocaleString()}
-              </p>
+              <p className="text-[10px] text-gray-500">Channel last checked {new Date(orbitalStatus.catalogFetchedAt).toLocaleString()}</p>
             )}
 
             <div className="space-y-1.5">
@@ -3777,7 +3923,10 @@ export function AgentHub() {
               ) : (
                 <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.used.map((u) => (
-                    <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#08090c] px-2.5 py-1.5">
+                    <div
+                      key={u.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-white/6 bg-[#08090c] px-2.5 py-1.5"
+                    >
                       <div className="min-w-0">
                         <span className="block truncate text-[11px] text-white" title={u.title}>
                           {u.title}
@@ -3807,7 +3956,10 @@ export function AgentHub() {
                 <h4 className="text-[11px] font-bold text-amber-300">Skipped ({orbitalStatus.skipped.length})</h4>
                 <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                   {orbitalStatus.skipped.map((sk) => (
-                    <div key={sk.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#08090c] px-2.5 py-1.5">
+                    <div
+                      key={sk.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-[#08090c] px-2.5 py-1.5"
+                    >
                       <div className="min-w-0">
                         <span className="block truncate text-[11px] text-white" title={sk.title}>
                           {sk.title}
@@ -3836,4 +3988,3 @@ export function AgentHub() {
     </div>
   );
 }
-

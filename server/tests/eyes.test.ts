@@ -87,7 +87,7 @@ describe("vttToText", () => {
   });
 
   it("decodes the entities that show up in captions and picks a clock", () => {
-    expect(decodeEntities("Tom &amp; Jerry &quot;best&quot; &#39;bit&#39;")).toBe('Tom & Jerry "best" \'bit\'');
+    expect(decodeEntities("Tom &amp; Jerry &quot;best&quot; &#39;bit&#39;")).toBe("Tom & Jerry \"best\" 'bit'");
     expect(clock(59)).toBe("0:59");
     expect(clock(754)).toBe("12:34");
     expect(clock(3723)).toBe("1:02:03");
@@ -182,7 +182,9 @@ describe("reading a page here (Readability + Turndown, no service)", () => {
     const out = articleMarkdown(ARTICLE_HTML, "https://example.com/rockets");
     expect(out?.text ?? "").not.toMatch(/injected/);
     // A shell whose text only exists in JavaScript has no article to read.
-    expect(articleMarkdown('<html><body><div id="root"></div><script>render()</script></body></html>', "https://example.com/app")).toBeNull();
+    expect(
+      articleMarkdown('<html><body><div id="root"></div><script>render()</script></body></html>', "https://example.com/app"),
+    ).toBeNull();
   });
 
   it("returns nothing for markup it cannot parse or pages too big to be an article", () => {
@@ -212,7 +214,7 @@ describe("readPage", () => {
       if (req.url === "/blocked-by-js") {
         // A shell with no content: the direct fetch "succeeds" and is useless.
         res.setHeader("Content-Type", "text/html");
-        res.end("<html><body><div id=\"root\"></div><script>render()</script></body></html>");
+        res.end('<html><body><div id="root"></div><script>render()</script></body></html>');
         return;
       }
       res.setHeader("Content-Type", "text/plain");
@@ -271,8 +273,8 @@ const SIDECAR_ARTICLE_HTML = `<!doctype html><html><head><title>Pipes, explained
 const SIDECAR_SHELL_HTML = `<html><body><div id="root"></div><script>render()</script></body></html>`;
 
 describe("readPage: the local page reader gets the first try", () => {
-  let reader: http.Server;   // the reader service (r.jina.ai stand-in)
-  let sidecar: http.Server;  // the Scrapling sidecar stand-in
+  let reader: http.Server; // the reader service (r.jina.ai stand-in)
+  let sidecar: http.Server; // the Scrapling sidecar stand-in
   let readerBase = "";
   let sidecarBase = "";
   let readerAsked = 0;
@@ -297,7 +299,19 @@ describe("readPage: the local page reader gets the first try", () => {
         const parsed = JSON.parse(body || "{}") as { url?: string; mode?: string };
         sidecarAsked.push({ url: parsed.url ?? "", mode: parsed.mode ?? "" });
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, url: parsed.url, status: 200, title: "Pipes, explained", html: sidecarHtml, mode: "fast", ms: 12, note: "", error: "" }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            url: parsed.url,
+            status: 200,
+            title: "Pipes, explained",
+            html: sidecarHtml,
+            mode: "fast",
+            ms: 12,
+            note: "",
+            error: "",
+          }),
+        );
       });
     });
     await new Promise<void>((r) => sidecar.listen(0, "127.0.0.1", r));
@@ -401,9 +415,10 @@ const ctx = (eyes: Eyes, desktop = true): ToolContext => ({
   eyes,
 });
 
-const tool = (name: string) => toolsFor(ctx(standIn())).find((t) => t.declaration.name === name)!;
 const run = async (name: string, args: Record<string, unknown>, c = ctx(standIn())) =>
-  toolsFor(c).find((t) => t.declaration.name === name)!.run(args, c);
+  toolsFor(c)
+    .find((t) => t.declaration.name === name)!
+    .run(args, c);
 
 describe("read_video", () => {
   it("hands the transcript back with the video's facts, and flags auto captions", async () => {
@@ -423,7 +438,9 @@ describe("read_video", () => {
     const c = ctx(
       standIn({
         readVideo: async () => {
-          throw new Error("This video has no captions, so I can't read it — but I can cut shorts out of it (that listens to the audio with the speech engine).");
+          throw new Error(
+            "This video has no captions, so I can't read it — but I can cut shorts out of it (that listens to the audio with the speech engine).",
+          );
         },
       }),
     );
@@ -450,7 +467,9 @@ describe("read_web_page", () => {
     const c = ctx(
       standIn({
         readPage: async () => {
-          throw new Error("I couldn't read example.com (the page had no readable text; the reader service also failed: the reader answered 429).");
+          throw new Error(
+            "I couldn't read example.com (the page had no readable text; the reader service also failed: the reader answered 429).",
+          );
         },
       }),
     );

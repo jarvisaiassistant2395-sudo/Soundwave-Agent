@@ -67,14 +67,10 @@ export type PairingPhase = { kind: "idle" } | { kind: "working"; pcName: string 
 
 /** The morning briefing on this phone: being prepared (by the PC or here), being spoken, or not. */
 export type BriefingPhase =
-  | { kind: "idle" }
-  | { kind: "preparing"; by: "pc" | "phone"; topics: string[] }
-  | { kind: "speaking"; messageId: string };
+  { kind: "idle" } | { kind: "preparing"; by: "pc" | "phone"; topics: string[] } | { kind: "speaking"; messageId: string };
 
 /** Can the phone chat on its own right now (and if not, why)? */
-export type PhoneChat =
-  | { ready: true; modelLabel: string }
-  | { ready: false; reason: "sharing_off" | "no_key" | "old_pc" | "unknown" };
+export type PhoneChat = { ready: true; modelLabel: string } | { ready: false; reason: "sharing_off" | "no_key" | "old_pc" | "unknown" };
 
 export interface Companion {
   /** undefined while loading from storage. */
@@ -380,10 +376,10 @@ export function useCompanion(): Companion {
         const ids = new Set(sent.messages.map((m) => m.id));
         const rest = outboxRef.current;
         setOutbox({
-        messages: rest.messages.filter((m) => !ids.has(m.id)),
-        memoryOps: rest.memoryOps.slice(sent.memoryOps.length),
-        heard: (rest.heard ?? []).filter((d) => !(sent.heard ?? []).includes(d)),
-      });
+          messages: rest.messages.filter((m) => !ids.has(m.id)),
+          memoryOps: rest.memoryOps.slice(sent.memoryOps.length),
+          heard: (rest.heard ?? []).filter((d) => !(sent.heard ?? []).includes(d)),
+        });
       }),
       c.on("record", (r) => void storage.savePairing(r)),
     ];
@@ -425,7 +421,10 @@ export function useCompanion(): Companion {
   const phoneMode = !online && state.kind !== "forgotten" && Boolean(kit);
 
   /** The Soundwave voice to speak with: the phone's pick, else the PC's. */
-  const voiceFor = useCallback(() => settingsRef.current.voice ?? pcRef.current?.voice ?? kitRef.current?.voice ?? DEFAULT_PHONE_VOICE_ID, []);
+  const voiceFor = useCallback(
+    () => settingsRef.current.voice ?? pcRef.current?.voice ?? kitRef.current?.voice ?? DEFAULT_PHONE_VOICE_ID,
+    [],
+  );
 
   /**
    * Who makes the speech: the PC while it's reachable, else the phone itself
@@ -460,7 +459,8 @@ export function useCompanion(): Companion {
       } catch (err) {
         // The voice service being down is not worth nagging about (the reply is
         // on screen), but a phone that made no sound at all is worth saying.
-        if (err instanceof SpeechPlaybackError) toast("I couldn't make a sound just now — the phone's media volume may be at zero.", "error", 6000);
+        if (err instanceof SpeechPlaybackError)
+          toast("I couldn't make a sound just now — the phone's media volume may be at zero.", "error", 6000);
       } finally {
         setSpeaking(false);
       }
@@ -606,7 +606,8 @@ export function useCompanion(): Companion {
           const fresh = await refreshKitRef.current?.().catch(() => null);
           return fresh ?? kitRef.current;
         };
-        const find = () => [...(conversationRef.current?.messages ?? [])].reverse().find((m) => m.sender === "assistant" && m.briefingDate === day) ?? null;
+        const find = () =>
+          [...(conversationRef.current?.messages ?? [])].reverse().find((m) => m.sender === "assistant" && m.briefingDate === day) ?? null;
         let msg = find();
         if (!opts.force && !plan?.topics.length && !msg && stateRef.current.kind !== "online") return;
         if (stateRef.current.kind === "online") {
@@ -728,7 +729,7 @@ export function useCompanion(): Companion {
         if (volumeBefore >= 0) void restoreMediaVolume(volumeBefore);
       }
     },
-    [settled, addLocal, markHeard, synthesizer, writeBriefingOnPhone],
+    [settled, markHeard, synthesizer, writeBriefingOnPhone],
   );
   const deliverBriefingRef = useRef<(opts?: { force?: boolean }) => Promise<void>>(async () => undefined);
   deliverBriefingRef.current = (opts) =>
@@ -737,7 +738,17 @@ export function useCompanion(): Companion {
       // Keep it in the chat too: a toast is gone in seconds, and this is
       // something the person should be able to read (and ask about) later.
       const at = Date.now();
-      addLocal([{ id: phoneMessageId(at), sender: "assistant", text: `⚠️ The morning briefing didn't work this time: ${message}.`, time: timeLabel(at), at, tag: "SYS", answeredBy: "phone" }]);
+      addLocal([
+        {
+          id: phoneMessageId(at),
+          sender: "assistant",
+          text: `⚠️ The morning briefing didn't work this time: ${message}.`,
+          time: timeLabel(at),
+          at,
+          tag: "SYS",
+          answeredBy: "phone",
+        },
+      ]);
       toast(`The morning briefing didn't work this time: ${message}`, "error", 6000);
     });
 
@@ -745,13 +756,17 @@ export function useCompanion(): Companion {
   // An alarm that was turned off means the briefing starts now, even outside
   // the usual morning window (that's what the alarm is for).
   const planKey = memory?.briefing ? `${memory.briefing.auto}|${memory.briefing.time}|${memory.briefing.topics.length}` : "";
+  // The pairing is what this effect actually needs, not the whole record: its
+  // deviceId is what it depends on, and reading it outside keeps the
+  // dependency list honest instead of disabling the rule.
+  const pairedDeviceId = record?.deviceId ?? null;
   useEffect(() => {
-    if (!loaded || !record) return;
+    if (!loaded || !pairedDeviceId) return;
     void (async () => {
       const due = await consumePendingBriefing();
       void deliverBriefingRef.current(due ? { force: true } : undefined);
     })();
-  }, [loaded, record?.deviceId, planKey]);
+  }, [loaded, pairedDeviceId, planKey]);
 
   // The alarm was turned off while the app was already running: start the briefing.
   useEffect(() => {
@@ -774,7 +789,17 @@ export function useCompanion(): Companion {
       const k = kitRef.current!;
       const now = Date.now();
       const history = (conversationRef.current?.messages ?? []).map((m) => ({ sender: m.sender, text: m.text }));
-      addLocal([{ id: phoneMessageId(now), sender: "user", text, time: timeLabel(now), at: now, via: "phone", ...(viaVoice ? { viaVoice: true } : {}) }]);
+      addLocal([
+        {
+          id: phoneMessageId(now),
+          sender: "user",
+          text,
+          time: timeLabel(now),
+          at: now,
+          via: "phone",
+          ...(viaVoice ? { viaVoice: true } : {}),
+        },
+      ]);
       const ops: MemoryOp[] = [];
       const reply = await offlineReply({
         kit: k,
@@ -795,7 +820,15 @@ export function useCompanion(): Companion {
         },
       });
       const at = Math.max(Date.now(), now + 1);
-      const msg: ChatMessage = { id: phoneMessageId(at), sender: "assistant", text: reply.text, time: timeLabel(at), at, tag: reply.failed ? "SYS" : "VOICE", answeredBy: "phone" };
+      const msg: ChatMessage = {
+        id: phoneMessageId(at),
+        sender: "assistant",
+        text: reply.text,
+        time: timeLabel(at),
+        at,
+        tag: reply.failed ? "SYS" : "VOICE",
+        answeredBy: "phone",
+      };
       addLocal([msg], ops);
       const mode = settingsRef.current.speak;
       if (mode === "always" || (mode === "voice" && viaVoice)) void speakRef.current(msg);
@@ -839,7 +872,11 @@ export function useCompanion(): Companion {
     if (!k) throw new CompanionError("OFFLINE", `Can't reach ${c.record.pcName} right now.`);
     const now = Date.now();
     addLocal([{ id: phoneMessageId(now), sender: "user", text: "🌅 Morning Setup", time: timeLabel(now), at: now, via: "phone" }]);
-    const r = await offlineMorning({ kit: k, memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps), fetchText: phoneFetchText });
+    const r = await offlineMorning({
+      kit: k,
+      memory: effectiveMemory(memoryRef.current, outboxRef.current.memoryOps),
+      fetchText: phoneFetchText,
+    });
     const at = Math.max(Date.now(), now + 1);
     const msg: ChatMessage = {
       id: phoneMessageId(at),
@@ -850,7 +887,9 @@ export function useCompanion(): Companion {
       tag: "SYS",
       answeredBy: "phone",
       briefingDate: r.briefingDate,
-      actionOutput: [`Your PC is off, so nothing was opened there.`, r.research, r.weatherNote ? `Weather: ${r.weatherNote}` : ""].filter(Boolean).join("\n"),
+      actionOutput: [`Your PC is off, so nothing was opened there.`, r.research, r.weatherNote ? `Weather: ${r.weatherNote}` : ""]
+        .filter(Boolean)
+        .join("\n"),
     };
     addLocal([msg]);
     if (!heardRef.current.includes(r.briefingDate)) {

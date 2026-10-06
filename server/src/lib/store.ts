@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { config } from "../config.js";
 import type { Plan } from "./plans.js";
+import { dailyBackup, listBackups, readJsonFile, writeJsonFile } from "./jsonFile.js";
 
 // ── Repository interface ────────────────────────────────────────────────────
 // The production deployment implements this with PostgreSQL via Prisma
@@ -125,6 +126,13 @@ export interface StoredInvoice {
 
 export interface DataStore {
   readonly kind: string;
+  /**
+   * Write anything still in memory to disk now, instead of waiting for the
+   * debounce (JsonStore) or the connection pool to get round to it. Called on
+   * the way out of the process (lib/../index.ts `shutdown`) — an app that is
+   * quit, stopped or restarted must not lose the last thing that happened.
+   */
+  flush?(): Promise<void> | void;
   // users
   findUserByEmail(email: string): Promise<StoredUser | null>;
   findUserById(id: string): Promise<StoredUser | null>;
@@ -176,6 +184,13 @@ export interface DataStore {
 }
 
 interface DbShape {
+  /**
+   * The shape of the file itself, so a future change to the fields has
+   * somewhere to hang a migration. `emptyDb()` starts at 1; a reader that finds
+   * a lower number can upgrade it, and one that finds a higher number knows the
+   * file was written by a newer app than this one.
+   */
+  version: number;
   users: StoredUser[];
   sessions: StoredSession[];
   projects: StoredProject[];
@@ -185,8 +200,11 @@ interface DbShape {
   invoices: StoredInvoice[];
 }
 
+const DB_VERSION = 1;
+
 function emptyDb(): DbShape {
   return {
+    version: DB_VERSION,
     users: [],
     sessions: [],
     projects: [],
@@ -197,15 +215,37 @@ function emptyDb(): DbShape {
   };
 }
 
+/** What a JsonStore found when it opened its file — surfaced by health/status. */
+export interface JsonStoreHealth {
+  /**
+   *   ok         the file was read as it was written
+   *   fresh      there was no file yet — a first run, which is not a problem
+   *   recovered  the file could not be read; the data came back from a backup
+   *   lost       the file could not be read and no backup was usable. The app
+   *              runs on an empty store and the unreadable file was kept
+   *              (`quarantine`), but something is genuinely wrong here and
+   *              `/api/ready` says so.
+   */
+  status: "ok" | "fresh" | "recovered" | "lost";
+  /** The broken file that was set aside, if any. */
+  quarantine: string | null;
+  /** The backup the data came back from, if any. */
+  recoveredFrom: string | null;
+  /** The last write failure, if the disk is refusing writes. */
+  lastWriteError: string | null;
+}
+
 const uuid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 
-/** File-persisted in-memory store (development / demo). */
+/** File-persisted in-memory store (development / demo, and every desktop install). */
 export class JsonStore implements DataStore {
   readonly kind = "json";
   private db: DbShape = emptyDb();
   private file: string;
   private saveTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+  private health: JsonStoreHealth = { status: "ok", quarantine: null, recoveredFrom: null, lastWriteError: null };
 
   constructor() {
     this.file = path.join(config.dataDir, "store.json");
@@ -213,26 +253,113 @@ export class JsonStore implements DataStore {
 
   async init(): Promise<void> {
     fs.mkdirSync(config.dataDir, { recursive: true });
-    try {
-      const raw = fs.readFileSync(this.file, "utf8");
-      const parsed = JSON.parse(raw) as Partial<DbShape>;
-      this.db = { ...emptyDb(), ...parsed };
-    } catch {
-      this.db = emptyDb();
+    const read = readJsonFile<Partial<DbShape>>(this.file, () => emptyDb());
+
+    if (read.status === "corrupt") {
+      // The file was there and could not be read. It is already moved aside
+      // (jsonFile.readJsonFile never deletes it), so nothing below can write
+      // over it — and before falling back to "a brand new install", walk the
+      // daily backups: the person's account, projects and keys are in there.
+      console.error(
+        `[soundwave] ⚠ store.json could not be read (${read.quarantine ?? "and it could not be moved aside — check permissions"})`,
+      );
+      const backup = this.loadNewestBackup();
+      this.health = {
+        status: backup ? "recovered" : "lost",
+        quarantine: read.quarantine,
+        recoveredFrom: backup,
+        lastWriteError: null,
+      };
+      if (backup) {
+        console.warn(`[soundwave] store.json recovered from ${path.basename(backup)} — changes made after that backup are gone.`);
+      } else {
+        console.error("[soundwave] ⚠ no usable store backup: running on an empty store. The unreadable file was kept.");
+      }
+    } else {
+      this.db = this.normalise(read.value);
+      this.health = {
+        status: read.status === "missing" ? "fresh" : "ok",
+        quarantine: null,
+        recoveredFrom: null,
+        lastWriteError: null,
+      };
     }
-    this.persist();
+
+    this.writeNow();
+    // A good copy for tomorrow, and a floor under the next crash: taken from the
+    // file we just wrote, and only when what we read was sound — a broken state
+    // must never become a "backup" of itself.
+    if (this.health.status === "ok" || this.health.status === "fresh") dailyBackup(this.file);
   }
 
-  private persist(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      try {
-        fs.mkdirSync(path.dirname(this.file), { recursive: true });
-        fs.writeFileSync(this.file, JSON.stringify(this.db), "utf8");
-      } catch {
-        /* non-fatal */
+  /** Fill in anything a file written by an older build does not have yet. */
+  private normalise(parsed: Partial<DbShape>): DbShape {
+    const merged = { ...emptyDb(), ...parsed, version: DB_VERSION };
+    // A hand-edited or truncated file must not crash a request later; the
+    // collections are always arrays here, once, at the door.
+    for (const key of ["users", "sessions", "projects", "usageLogs", "exportJobs", "apiKeys", "invoices"] as const) {
+      if (!Array.isArray(merged[key])) merged[key] = [];
+    }
+    return merged;
+  }
+
+  private loadNewestBackup(): string | null {
+    for (const backup of listBackups(this.file)) {
+      const read = readJsonFile<Partial<DbShape>>(backup, () => emptyDb());
+      if (read.status === "ok") {
+        this.db = this.normalise(read.value);
+        return backup;
       }
-    }, 150);
+    }
+    return null;
+  }
+
+  /** What this store found on disk (store health in `/api/health`). */
+  describe(): JsonStoreHealth {
+    return { ...this.health };
+  }
+
+  /** Debounced save: many mutations in one turn become one write. */
+  private persist(): void {
+    this.dirty = true;
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.writeNow(), 150);
+    this.saveTimer.unref?.();
+  }
+
+  /**
+   * Write now, atomically (jsonFile.writeJsonFile: tmp → fsync → rename), and
+   * report a failure instead of swallowing it — a disk that refuses writes is
+   * the user's data about to be lost, which is exactly the sort of thing the
+   * old `catch { /* non-fatal *\/ }` here hid.
+   */
+  private writeNow(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    try {
+      writeJsonFile(this.file, this.db, { mode: 0o600 });
+      this.dirty = false;
+      if (this.health.lastWriteError) this.health.lastWriteError = null;
+    } catch (err) {
+      this.health.lastWriteError = (err as Error).message;
+      console.error(`[soundwave] ⚠ could not save store.json: ${(err as Error).message}`);
+    }
+  }
+
+  /** Flush on shutdown (`index.ts`): the debounce is not a data-loss window. */
+  async flush(): Promise<void> {
+    if (this.dirty) {
+      console.log(`[soundwave] flushing store (${this.db.users.length} user(s)) …`);
+      this.writeNow();
+    }
+    // Today's backup should hold the last state we know to be good — refreshed
+    // here, at the end of a session, rather than only at the start of one.
+    // Deliberately not for a store that just failed to read ("lost": the copy
+    // already there is better than the empty one we are running on) or to write.
+    const sound = this.health.status === "ok" || this.health.status === "fresh" || this.health.status === "recovered";
+    if (sound && !this.health.lastWriteError) dailyBackup(this.file, 7, { refresh: true });
   }
 
   // ── users ────────────────────────────────────────────────────────────────
@@ -342,9 +469,7 @@ export class JsonStore implements DataStore {
     return this.db.projects.find((p) => p.id === id && p.userId === userId && !p.deletedAt) ?? null;
   }
   async listProjects(userId: string): Promise<StoredProject[]> {
-    return this.db.projects
-      .filter((p) => p.userId === userId && !p.deletedAt)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return this.db.projects.filter((p) => p.userId === userId && !p.deletedAt).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
   async updateProject(id: string, userId: string, patch: Partial<StoredProject>): Promise<StoredProject | null> {
     const p = this.db.projects.find((x) => x.id === id && x.userId === userId && !x.deletedAt);
@@ -453,7 +578,21 @@ export async function getStore(): Promise<DataStore> {
       await (p as any).prisma.$queryRaw`SELECT 1`;
       store = p;
     } catch (err) {
-      console.warn(`[soundwave] PostgreSQL at "${config.databaseUrl}" is unreachable. Falling back to local JSON store.`);
+      // A hosted deployment whose database is unreachable must NOT come up on an
+      // empty local file: the app would answer sign-ins against nothing, every
+      // existing account would look deleted, and a health check would call a
+      // broken deploy "up". Refuse to boot instead — unless someone set
+      // ALLOW_JSON_FALLBACK=1 on purpose (the demo/self-host path).
+      const message = `[soundwave] PostgreSQL at "${redactDsn(config.databaseUrl)}" is unreachable: ${(err as Error).message}`;
+      if (config.isProd && !config.allowJsonFallback) {
+        console.error(message);
+        throw new Error(
+          `${message}. Refusing to start on the local JSON store in production: existing accounts would appear to be gone. ` +
+            "Fix DATABASE_URL, or set ALLOW_JSON_FALLBACK=1 to accept an empty local store on purpose.",
+          { cause: err },
+        );
+      }
+      console.warn(`${message}. Falling back to the local JSON store.`);
       const s = new JsonStore();
       await s.init();
       store = s;
@@ -464,6 +603,42 @@ export async function getStore(): Promise<DataStore> {
     store = s;
   }
   return store;
+}
+
+/** A DSN with its password removed — for logs. */
+function redactDsn(dsn: string): string {
+  try {
+    const url = new URL(dsn);
+    if (url.password) url.password = "***";
+    return url.toString();
+  } catch {
+    return "postgres (unparseable DSN)";
+  }
+}
+
+/**
+ * What the active store can say about itself, for `/api/health` and for the
+ * log line at boot: which kind it is, and (the JSON one) whether it had to
+ * recover. A deployment that quietly degraded to a fallback store is a
+ * deployment to look at, so this is visible without reading the console.
+ */
+export function describeStore(): { kind: string; recovery?: JsonStoreHealth } {
+  if (!store) return { kind: "uninitialized" };
+  if (store instanceof JsonStore) return { kind: store.kind, recovery: store.describe() };
+  return { kind: store.kind };
+}
+
+/**
+ * Write everything to disk now. Called by the shutdown path in index.ts so a
+ * quit, a `docker compose stop` or a SIGTERM cannot lose the last mutation.
+ */
+export async function flushStore(): Promise<void> {
+  if (!store) return;
+  try {
+    await store.flush?.();
+  } catch (err) {
+    console.error(`[soundwave] store flush failed: ${(err as Error).message}`);
+  }
 }
 
 export function setStoreForTests(s: DataStore): void {

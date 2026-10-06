@@ -161,7 +161,6 @@ export function VoiceOverlay() {
     desktop?.hideOverlay();
   }, [capture, desktop]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   // The shortcut: tap = start, tap again = send. With hold-to-talk on, the
   // shell says hold-start when the keys go down and hold-end when they come up,
   // so releasing sends — but a quick tap still behaves like a tap (it keeps
@@ -253,7 +252,13 @@ export function VoiceOverlay() {
         : listening
           ? "I'm listening — try “make a short about black holes”."
           : `Press ${hotkeyLabel(hotkey)} to talk to Soundwave.`;
-  const orbState = listening ? "LISTENING" : phase === "transcribing" || stage === "thinking" ? "THINKING" : stage === "speaking" ? "SPEAKING" : "STANDBY";
+  const orbState = listening
+    ? "LISTENING"
+    : phase === "transcribing" || stage === "thinking"
+      ? "THINKING"
+      : stage === "speaking"
+        ? "SPEAKING"
+        : "STANDBY";
 
   return (
     <div className="fixed inset-0 flex items-end justify-center p-2.5 select-none">
@@ -284,7 +289,10 @@ export function VoiceOverlay() {
             {(phase === "transcribing" || stage === "thinking") && <Loader2 className="h-3 w-3 animate-spin text-cyan-300" />}
             {listening && (
               <span className="h-1 w-16 overflow-hidden rounded-full bg-white/10" aria-hidden>
-                <span className="block h-full rounded-full bg-emerald-400 transition-[width] duration-75" style={{ width: `${Math.round(level * 100)}%` }} />
+                <span
+                  className="block h-full rounded-full bg-emerald-400 transition-[width] duration-75"
+                  style={{ width: `${Math.round(level * 100)}%` }}
+                />
               </span>
             )}
           </div>
@@ -300,7 +308,11 @@ export function VoiceOverlay() {
               {holdHint ? `Release ${hotkeyLabel(hotkey)} to send` : `Pause to send · ${hotkeyLabel(hotkey)} sends now`}
             </p>
           )}
-          {voiceWarning && stage === "done" && <p className="mt-0.5 line-clamp-1 text-[10px] text-amber-300/90" title={voiceWarning}>{voiceWarning}</p>}
+          {voiceWarning && stage === "done" && (
+            <p className="mt-0.5 line-clamp-1 text-[10px] text-amber-300/90" title={voiceWarning}>
+              {voiceWarning}
+            </p>
+          )}
           {problem?.micSettings && (
             <button
               type="button"

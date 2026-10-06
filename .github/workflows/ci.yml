@@ -1,0 +1,177 @@
+# ── Fast checks on every pull request ───────────────────────────────────────
+# Until this file existed, NOTHING ran on a pull request: the only workflows
+# were "Release Desktop" (a 20–30 minute Windows build that runs on branch
+# pushes), the Android emulator job, and a weekly trends check. So the unit
+# tests only ran because a branch was pushed — and a PR from a fork, or a
+# change reviewed before it was pushed, had no checks at all. The Windows
+# release job was quietly acting as the test gate.
+#
+# This is the cheap gate: Linux, no packaging, no emulator, a few minutes. Add
+# it to the branch protection rules and make it required.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── Lint and format, first and fast ─────────────────────────────────
+      # Its own install because the linter lives at the root (there was no
+      # linter at all before this review). Run before the test suites so a
+      # broken import is reported in seconds rather than after a build.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install (lint tooling)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Prettier is gated on the files a pull request actually changes, not on
+      # the whole tree: the 552 files that predate the Prettier config are not
+      # reformatted in this change (a mechanical rewrite of everything would
+      # bury the review's fixes in an unreviewable diff). New and touched code
+      # is held to the config, and the backlog shrinks as files are edited.
+      - name: Check formatting of the changed files
+        run: |
+          set -euo pipefail
+          base="${{ github.base_ref }}"
+          if [ -n "$base" ]; then
+            git fetch --no-tags --depth=1 origin "$base"
+            range="origin/$base...HEAD"
+          else
+            range="HEAD~1...HEAD"
+          fi
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$range" -- \
+            '*.ts' '*.tsx' '*.js' '*.cjs' '*.mjs' '*.json' '*.yml' '*.yaml' '*.css' '*.html' || true)
+          if [ "\${#files[@]}" -eq 0 ]; then
+            echo "no changed files to check"
+            exit 0
+          fi
+          printf 'checking %d file(s)\n' "\${#files[@]}"
+          npx prettier --check "\${files[@]}"
+
+      - uses: actions/setup-node@v7
+        with:
+          # Must match .nvmrc and the "engines" field in every package.json.
+          # Node 20 reached end-of-life in April 2026 and was still the version
+          # building the release installers.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            frontend/package-lock.json
+            mobile/package-lock.json
+            desktop/package-lock.json
+
+      # ── The API: the largest surface, and the one that ships in the app ──
+      - name: Install (server)
+        working-directory: server
+        run: npm ci
+
+      - name: Typecheck (server)
+        working-directory: server
+        run: npm run typecheck
+
+      - name: Test (server)
+        working-directory: server
+        run: npm test
+
+      # ── The app's UI ─────────────────────────────────────────────────────
+      - name: Install (frontend)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck (frontend)
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Test (frontend)
+        working-directory: frontend
+        run: npm test
+
+      - name: Build (frontend)
+        working-directory: frontend
+        run: npm run build
+
+      # A bundle that grows past its budget fails the build, so nobody has to
+      # notice it in a lighthouse report six months from now.
+      - name: Bundle budget (frontend)
+        working-directory: frontend
+        run: npm run budget
+
+      # ── The phone app ────────────────────────────────────────────────────
+      - name: Install (mobile)
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck and test (mobile)
+        working-directory: mobile
+        run: |
+          npm run typecheck
+          npm test
+
+      # ── The Electron shell (pure-Node tests: no display needed) ──────────
+      - name: Install (desktop)
+        working-directory: desktop
+        run: npm ci
+
+      - name: Test (desktop)
+        working-directory: desktop
+        run: npm test
+
+  # ── A dependency advisory is a build failure, not a surprise ─────────────
+  # This is how the tree reached 20+ open advisories with a critical one
+  # shipping in the API (proxy-addr, via Express's own trust-proxy handling):
+  # nothing ever looked. Runtime dependencies only — a vulnerable test runner
+  # is a maintenance problem, a vulnerable server is the customer's problem.
+  advisories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Audit the shipping dependency trees
+        run: |
+          set -euo pipefail
+          for dir in server frontend; do
+            echo "::group::npm audit --omit=dev ($dir)"
+            (cd "$dir" && npm audit --omit=dev --audit-level=high)
+            echo "::endgroup::"
+          done
+
+  # ── The licences of what we bundle ───────────────────────────────────────
+  # scripts/license-audit.mjs is what keeps ffmpeg (GPLv3, with its source
+  # offer), whisper.cpp and the fonts legal in a product that is sold. It used
+  # to run only inside the Windows release job, i.e. after the code was merged.
+  licenses:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Audit bundled-binary licences
+        run: node scripts/license-audit.mjs

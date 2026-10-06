@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld("soundwaveDesktop", {
   onUpdate: (callback) => subscribe("soundwave:update", callback),
   checkForUpdate: () => ipcRenderer.invoke("soundwave:check-update"),
   installUpdate: () => ipcRenderer.invoke("soundwave:install-update"),
+  // Settings → Help: where the logs are, and a ready-to-paste diagnostics block.
+  openLogs: () => ipcRenderer.invoke("soundwave:open-logs"),
+  copyDiagnostics: () => ipcRenderer.invoke("soundwave:copy-diagnostics"),
   // "Hey Soundwave": the hidden wake page reports what whisper heard on this PC
   // and the shell decides whether the phrase was in it. The voice bar is told
   // when the phrase was heard with words after it.

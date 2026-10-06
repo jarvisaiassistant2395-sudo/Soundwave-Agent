@@ -35,7 +35,7 @@ import { writeShortScript } from "../lib/brain/script.js";
 import { wordCount } from "../lib/brain/prompt.js";
 import { DEFAULT_SECONDS as DEFAULT_SCRIPT_SECONDS, WORDS_PER_SECOND } from "../lib/brain/core/viral.js";
 import { planShortMedia } from "../lib/brain/shortMedia.js";
-import { storyboardSummary, type StoryboardSummary } from "../lib/brain/core/storyboard.js";
+import type { StoryboardSummary } from "../lib/brain/core/storyboard.js";
 import type { MediaInput } from "../lib/ffmpeg.js";
 
 // ── Scripts for Soundwave Agent ─────────────────────────────────────────────
@@ -59,10 +59,7 @@ export function generateScript(topic: string): string {
   return pickTemplate(detectNiche(cleaned).id, cleaned);
 }
 
-export function cuesFromTimings(
-  wordTimings: { word: string; start: number; end: number }[],
-  duration: number,
-): SubtitleCueInput[] {
+export function cuesFromTimings(wordTimings: { word: string; start: number; end: number }[], duration: number): SubtitleCueInput[] {
   if (wordTimings.length === 0) {
     return [{ start: 0, end: Math.max(duration, 1), text: "" }];
   }
@@ -108,6 +105,7 @@ export async function synthesizeNarration(
       throw new Error(
         `Couldn't record the voiceover with the on-this-PC voice "${localVoiceLabel(voice)}" — ${(err as Error).message}. ` +
           "Start the local voice service (voiceclone/) or pick a Soundwave voice.",
+        { cause: err },
       );
     }
   }
@@ -121,6 +119,7 @@ export async function synthesizeNarration(
     throw new Error(
       `Couldn't record the voiceover with the Soundwave voice "${voiceDisplayName(selectedVoice)}" — ` +
         `${(err as Error).message}. Check the internet connection and generate the short again.`,
+      { cause: err },
     );
   }
 }
@@ -285,7 +284,10 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
     }
     jobSettings = { ...jobSettings, script, scriptSource, ...scriptMeta };
     const trendChecked = typeof scriptMeta.scriptTrendsAt === "string" ? ", written to the latest Shorts trends" : "";
-    await reportProgress(22, `Script ready (${wordCount(script)} words ≈ ${Math.round(wordCount(script) / WORDS_PER_SECOND)}s${trendChecked}). Preparing neural narrator...`);
+    await reportProgress(
+      22,
+      `Script ready (${wordCount(script)} words ≈ ${Math.round(wordCount(script) / WORDS_PER_SECOND)}s${trendChecked}). Preparing neural narrator...`,
+    );
 
     // 2. Voiceover Synthesis (24% -> 40%).
     stage = "voice";
@@ -416,7 +418,7 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       outputPath: outPath,
       onProgress: async (ffmpegPct) => {
         // Map FFmpeg 0..100% to overall 58..96%
-        const overall = Math.min(96, Math.max(58, Math.round(58 + (ffmpegPct * 0.38))));
+        const overall = Math.min(96, Math.max(58, Math.round(58 + ffmpegPct * 0.38)));
         const stepDesc = `Rendering ${dims.width}×${dims.height} at 60fps (${Math.round(ffmpegPct)}%)...`;
         await reportProgress(overall, stepDesc);
       },
@@ -447,7 +449,11 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
       try {
         const target = channel ? `“${channel.name}”` : "YouTube Shorts";
         await reportProgress(98, `Uploading to ${target}...`);
-        const rawTitle = script.split("\n")[0]?.replace(/^[#\s*]+/, "").slice(0, 75) || `Short #${Math.floor(Math.random() * 1000)}`;
+        const rawTitle =
+          script
+            .split("\n")[0]
+            ?.replace(/^[#\s*]+/, "")
+            .slice(0, 75) || `Short #${Math.floor(Math.random() * 1000)}`;
         const pubTitle = rawTitle.endsWith(".") ? rawTitle.slice(0, -1) : rawTitle;
         const privacy = params.youtubePrivacy || channel?.privacy || ytConfig.defaultPrivacy || "public";
         const tags = params.youtubeTags || ytConfig.defaultTags || ["shorts", "viral"];
@@ -539,11 +545,10 @@ export async function buildShortVideo(params: BuildShortOptions): Promise<BuildS
   } catch (err: any) {
     let failure: Error = err instanceof Error ? err : new Error(String(err ?? "Short generation failed"));
     const errText = failure.message || "Short generation failed";
-    if (
-      stage === "render" &&
-      (err?.code === "ENOENT" || errText.includes("ENOENT") || errText.includes("spawn ffmpeg"))
-    ) {
-      failure = new Error("FFmpeg not found on system. Please run 'winget install ffmpeg' in PowerShell or launch via 'start_windows.bat'.");
+    if (stage === "render" && (err?.code === "ENOENT" || errText.includes("ENOENT") || errText.includes("spawn ffmpeg"))) {
+      failure = new Error(
+        "FFmpeg not found on system. Please run 'winget install ffmpeg' in PowerShell or launch via 'start_windows.bat'.",
+      );
     }
     emitJob(jobId, { status: "FAILED", error: failure.message, background: jobSettings.background });
     try {

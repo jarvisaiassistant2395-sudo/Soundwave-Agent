@@ -151,12 +151,16 @@ export function withSentencePauses(escaped: string): string {
 }
 
 function escapeXml(text: string): string {
-  return text
-    // Control characters the service rejects.
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return (
+    text
+      // Control characters the service rejects. Finding them is the point, so
+      // the rule that discourages control characters in a pattern is muted here.
+      // eslint-disable-next-line no-control-regex -- sanitising input on purpose
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+  );
 }
 
 /**
@@ -176,7 +180,10 @@ export function formatNaturalSpeechPacing(text: string): string {
     .replace(/\betc\./gi, "and so on")
     .replace(/\bvs\.?\b/gi, "versus")
     // "Settings → Brain" style labels, bullets and em-dashes become pauses.
-    .replace(/^\s*[•·▪●︎-]\s+/gm, "")
+    // The variation selector U+FE0E is written as an escape and as its own
+    // alternative: inside a class it combines with the character before it,
+    // which is exactly what no-misleading-character-class warns about.
+    .replace(/^\s*(?:[•·▪●-]|\uFE0E)+\s+/gm, "")
     .replace(/\s*[—–]\s*/g, ", ")
     .replace(/\s+/g, " ")
     .replace(/(\d+)\.\s+/g, "$1: ")
@@ -476,7 +483,9 @@ function synthesizeChunk(
     ws.on("close", (code, reason) => {
       if (settled) return;
       const why = reason?.length ? `: ${reason.toString()}` : "";
-      fail(new EdgeTtsError(opened ? "protocol" : "network", `Microsoft's voice service closed the connection early (code ${code}${why}).`));
+      fail(
+        new EdgeTtsError(opened ? "protocol" : "network", `Microsoft's voice service closed the connection early (code ${code}${why}).`),
+      );
     });
   });
 }

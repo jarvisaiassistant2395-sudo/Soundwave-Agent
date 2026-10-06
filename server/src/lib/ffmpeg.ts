@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { config, resolveFfmpegPath } from "../config.js";
+import { resolveFfmpegPath } from "../config.js";
 import { captionFontDir, captionFontFamily, smallFontFamily } from "./captionFont.js";
 
 // ── FFmpeg export pipeline ──────────────────────────────────────────────────
@@ -165,18 +165,20 @@ function assTime(seconds: number): string {
 }
 
 function escAss(text: string): string {
-  return text
-    .replace(/\r/g, "")
-    .replace(/\n/g, "\\N")
-    .replace(/\{/g, "｛")
-    .replace(/\}/g, "｝");
+  return text.replace(/\r/g, "").replace(/\n/g, "\\N").replace(/\{/g, "｛").replace(/\}/g, "｝");
 }
 
 function alignmentFor(h: SubtitleStyleInput["hAlign"], v: SubtitleStyleInput["vAlign"]): number {
   const map: Record<string, number> = {
-    "bottom-left": 1, "bottom-center": 2, "bottom-right": 3,
-    "middle-left": 4, "middle-center": 5, "middle-right": 6,
-    "top-left": 7, "top-center": 8, "top-right": 9,
+    "bottom-left": 1,
+    "bottom-center": 2,
+    "bottom-right": 3,
+    "middle-left": 4,
+    "middle-center": 5,
+    "middle-right": 6,
+    "top-left": 7,
+    "top-center": 8,
+    "top-right": 9,
   };
   return map[`${v ?? "bottom"}-${h ?? "center"}`] ?? 2;
 }
@@ -190,27 +192,28 @@ export function buildAss(
   cards: CardInput[] = [],
 ): string {
   // Scale font appropriately: for vertical 9:16 videos, scale against 720 reference width
-  const scale = height > width ? (width / 720) : Math.min(width / 1280, height / 720);
+  const scale = height > width ? width / 720 : Math.min(width / 1280, height / 720);
   const fontSize = Math.round((style.fontSize ?? 54) * scale);
   const outline = style.strokeEnabled !== false ? Math.max(3, Math.round((style.strokeWidth ?? 4) * scale)) : 0;
-  const shadow = style.shadowEnabled !== false
-    ? Math.max(1, Math.round(Math.max(Math.abs(style.shadowX ?? 0), Math.abs(style.shadowY ?? 0), (style.shadowBlur ?? 2) / 2) * scale))
-    : 0;
+  const shadow =
+    style.shadowEnabled !== false
+      ? Math.max(1, Math.round(Math.max(Math.abs(style.shadowX ?? 0), Math.abs(style.shadowY ?? 0), (style.shadowBlur ?? 2) / 2) * scale))
+      : 0;
   const spacing = Math.round((style.letterSpacing ?? 0) * scale);
   const margin = Math.round((style.margin ?? 40) * scale);
   const primary = hexToAss(style.color ?? "#FFFFFF", style.textOpacity ?? 100);
   const outlineColor = hexToAss(style.strokeColor ?? "#000000", 100);
   const backColor = hexToAss("#000000", 60);
 
-    // The caption face: what the caller asked for, else the font we ship
-    // (assets/fonts, Inter) — never a font that only some machines have.
-    const fontFace = (style.fontFamily || captionFontFamily()).replace(/,/g, "").trim() || "DejaVu Sans";
-    // The style's own weight was being dropped on the floor: every caption was
-    // written with Bold=0, so a "800" style rendered as regular. The shipped
-    // ExtraBold family carries its weight in its name, so this flag only bites
-    // for fonts named the ordinary way — which is exactly when it should.
-    const bold = (style.fontWeight ?? 800) >= 600 ? 1 : 0;
-    const header = [
+  // The caption face: what the caller asked for, else the font we ship
+  // (assets/fonts, Inter) — never a font that only some machines have.
+  const fontFace = (style.fontFamily || captionFontFamily()).replace(/,/g, "").trim() || "DejaVu Sans";
+  // The style's own weight was being dropped on the floor: every caption was
+  // written with Bold=0, so a "800" style rendered as regular. The shipped
+  // ExtraBold family carries its weight in its name, so this flag only bites
+  // for fonts named the ordinary way — which is exactly when it should.
+  const bold = (style.fontWeight ?? 800) >= 600 ? 1 : 0;
+  const header = [
     "[Script Info]",
     "ScriptType: v4.00+",
     `PlayResX: ${width}`,
@@ -258,9 +261,7 @@ export function buildAss(
           : `{\\fad(120,140)}`;
     const accent = card.accent && card.kind === "stat" ? `\\c${assInlineColor(card.accent)}` : "";
     const styled = `{${accent}${anim.slice(1)}`;
-    header.push(
-      `Dialogue: 1,${assTime(card.start)},${assTime(card.end)},${styleForCard[card.kind]},,0,0,0,,${styled}${text}`,
-    );
+    header.push(`Dialogue: 1,${assTime(card.start)},${assTime(card.end)},${styleForCard[card.kind]},,0,0,0,,${styled}${text}`);
   }
 
   const animIn = style.animIn ?? "fade";
@@ -274,15 +275,21 @@ export function buildAss(
     if (!cue.text.trim()) continue;
     const dur = Math.max(0.05, cue.end - cue.start);
     const x =
-      style.customX != null ? (style.customX / 100) * width
-      : style.hAlign === "left" ? margin
-      : style.hAlign === "right" ? width - margin
-      : width / 2;
+      style.customX != null
+        ? (style.customX / 100) * width
+        : style.hAlign === "left"
+          ? margin
+          : style.hAlign === "right"
+            ? width - margin
+            : width / 2;
     const y =
-      style.customY != null ? (style.customY / 100) * height
-      : style.vAlign === "top" ? margin
-      : style.vAlign === "middle" ? height / 2
-      : height - margin;
+      style.customY != null
+        ? (style.customY / 100) * height
+        : style.vAlign === "top"
+          ? margin
+          : style.vAlign === "middle"
+            ? height / 2
+            : height - margin;
 
     let tags = "";
     if (fadIn || fadOut) tags += `\\fad(${fadIn},${fadOut})`;
@@ -349,9 +356,7 @@ export function probeMedia(filePath: string): Promise<ProbeResult> {
     child.on("error", reject);
     child.on("close", (code) => {
       const durMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
-      const duration = durMatch
-        ? parseInt(durMatch[1]!) * 3600 + parseInt(durMatch[2]!) * 60 + parseFloat(durMatch[3]!)
-        : 0;
+      const duration = durMatch ? parseInt(durMatch[1]!) * 3600 + parseInt(durMatch[2]!) * 60 + parseFloat(durMatch[3]!) : 0;
       const vidMatch = stderr.match(/(\d{2,5})x(\d{2,5})/);
       const hasVideo = /Video:/.test(stderr);
       const hasAudio = /Audio:/.test(stderr);
@@ -420,7 +425,12 @@ export function ms(seconds: number): number {
 function hasMedia(media: ExportParams["media"]): boolean {
   if (!media) return false;
   return Boolean(
-    media.images?.length || media.sounds?.length || media.music || media.cards?.length || media.flashes?.length || (media.motion && media.motion.kind !== "none"),
+    media.images?.length ||
+    media.sounds?.length ||
+    media.music ||
+    media.cards?.length ||
+    media.flashes?.length ||
+    (media.motion && media.motion.kind !== "none"),
   );
 }
 
@@ -573,9 +583,7 @@ export function buildFfmpegArgs(params: ExportParams, ctx: FfmpegArgContext): st
   }
   const mixInputs: string[] = hasMix ? ["voice"] : [];
   sounds.forEach((sound, i) => {
-    parts.push(
-      `[${soundBase + i}:a]${fmt},volume=${clamp(sound.gain ?? 0.6, 0, 4).toFixed(2)},adelay=${ms(sound.at)}:all=1[sfx${i}]`,
-    );
+    parts.push(`[${soundBase + i}:a]${fmt},volume=${clamp(sound.gain ?? 0.6, 0, 4).toFixed(2)},adelay=${ms(sound.at)}:all=1[sfx${i}]`);
     mixInputs.push(`sfx${i}`);
   });
   if (music) {
@@ -591,7 +599,9 @@ export function buildFfmpegArgs(params: ExportParams, ctx: FfmpegArgContext): st
   }
   if (hasMix) {
     const afterMix = afParts.length ? `,${afParts.join(",")}` : "";
-    parts.push(`${mixInputs.map((m) => `[${m}]`).join("")}amix=inputs=${mixInputs.length}:normalize=0:dropout_transition=0${afterMix}[aout]`);
+    parts.push(
+      `${mixInputs.map((m) => `[${m}]`).join("")}amix=inputs=${mixInputs.length}:normalize=0:dropout_transition=0${afterMix}[aout]`,
+    );
   }
 
   args.push("-filter_complex", parts.join(";"));
@@ -609,7 +619,22 @@ function pushCodecs(args: string[], format: ExportSettings["format"], quality: E
   } else {
     const crf = quality === "low" ? 36 : quality === "medium" ? 31 : 26;
     const cpu = quality === "high" ? 2 : 4;
-    args.push("-c:v", "libvpx-vp9", "-crf", String(crf), "-b:v", "0", "-cpu-used", String(cpu), "-row-mt", "1", "-c:a", "libopus", "-b:a", "160k");
+    args.push(
+      "-c:v",
+      "libvpx-vp9",
+      "-crf",
+      String(crf),
+      "-b:v",
+      "0",
+      "-cpu-used",
+      String(cpu),
+      "-row-mt",
+      "1",
+      "-c:a",
+      "libopus",
+      "-b:a",
+      "160k",
+    );
   }
 }
 
@@ -621,7 +646,18 @@ export function runFfmpegExport(params: ExportParams): Promise<void> {
     // Write the ASS file to a safe temp location. It carries the captions and,
     // when there is a storyboard, its cards (hook, stat, photo labels, follow).
     const assPath = path.join(path.dirname(outputPath), `${path.basename(outputPath, path.extname(outputPath))}.ass`);
-    fs.writeFileSync(assPath, buildAss(params.subtitles, params.subtitleStyle, settings.resolution.width, settings.resolution.height, settings.watermark, params.media?.cards ?? []), "utf8");
+    fs.writeFileSync(
+      assPath,
+      buildAss(
+        params.subtitles,
+        params.subtitleStyle,
+        settings.resolution.width,
+        settings.resolution.height,
+        settings.watermark,
+        params.media?.cards ?? [],
+      ),
+      "utf8",
+    );
 
     const args = buildFfmpegArgs(params, { assPath, fontDir: captionFontDir() });
 
@@ -633,7 +669,8 @@ export function runFfmpegExport(params: ExportParams): Promise<void> {
       const txt = d.toString();
       const dm = txt.match(/out_time_ms=(\d+)/);
       if (!duration) {
-        duration = settings.duration && settings.duration > 0 ? settings.duration : params.subtitles.reduce((m, c) => Math.max(m, c.end), 0) || 10;
+        duration =
+          settings.duration && settings.duration > 0 ? settings.duration : params.subtitles.reduce((m, c) => Math.max(m, c.end), 0) || 10;
       }
       if (dm) {
         const ms = parseInt(dm[1]!, 10) / 1000;
@@ -645,13 +682,17 @@ export function runFfmpegExport(params: ExportParams): Promise<void> {
     child.on("error", (e) => {
       try {
         fs.unlinkSync(assPath);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       reject(e);
     });
     child.on("close", (code) => {
       try {
         fs.unlinkSync(assPath);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       if (code === 0) {
         onProgress?.(100);
         resolve();

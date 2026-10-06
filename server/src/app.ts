@@ -7,7 +7,11 @@ import { config } from "./config.js";
 import { generalLimiter, securityHeaders } from "./lib/security.js";
 import { connectPage, finishYouTubeConnect, isYouTubeCallback } from "./lib/youtubeOAuth.js";
 import { finishGmailConnect, gmailConnectPage, isGmailCallback } from "./lib/gmail.js";
-import { errorHandler, notFoundHandler } from "./middleware/error.js";
+import { errorHandler, notFoundHandler, requestIdMiddleware } from "./middleware/error.js";
+import { requestLogger } from "./middleware/logging.js";
+import { describeStore } from "./lib/store.js";
+import { resolveFfmpegPath } from "./config.js";
+import { existsSync } from "node:fs";
 import authRoutes from "./routes/auth.js";
 import voiceRoutes from "./routes/voices.js";
 import ttsRoutes from "./routes/tts.js";
@@ -31,13 +35,36 @@ import { clipsRoutes } from "./routes/clips.js";
 import { watchRoutes } from "./routes/watch.js";
 import companionRoutes from "./routes/companion.js";
 import brainRoutes from "./routes/brain.js";
+import backupRoutes from "./routes/backup.js";
 import memoryRoutes from "./routes/memory.js";
 import morningRoutes from "./routes/morning.js";
 
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
-  app.set("trust proxy", 1);
+
+  // Proxy trust decides what `req.ip` means, and `req.ip` is what every rate
+  // limit and the sign-in throttle are keyed on (lib/security.ts). Trusting a
+  // hop that isn't there lets a caller invent their own address in
+  // `X-Forwarded-For` and get a fresh bucket per request, so the default is to
+  // trust NOTHING and the deployment says otherwise explicitly:
+  //   TRUST_PROXY=1        one proxy in front (the docker-compose Caddy/nginx)
+  //   TRUST_PROXY=loopback a reverse proxy on the same machine
+  //   TRUST_PROXY=false    (default) nothing — use the socket's own address
+  if (config.trustProxy === false) {
+    app.set("trust proxy", false);
+  } else {
+    app.set("trust proxy", config.trustProxy);
+  }
+
+  // Every request gets an id, and every response and error body carries it
+  // (middleware/error.ts builds its messages from it). It was defined but never
+  // mounted, so `requestId` was always `undefined` in the API's error bodies —
+  // a 500 a customer reported could not be tied to a line in the log at all.
+  app.use(requestIdMiddleware);
+  // …and the failures and the slow calls land in the log with that id, so the
+  // id a person can read off the app actually finds something (lib/log.ts).
+  app.use(requestLogger);
 
   // CORS — restrict to configured origins in production; permissive in dev.
   app.use(
@@ -61,7 +88,10 @@ export function createApp() {
       finishGmailConnect(query)
         .then((result) => {
           res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'");
-          res.status(result.ok ? 200 : 400).type("html").send(gmailConnectPage(result));
+          res
+            .status(result.ok ? 200 : 400)
+            .type("html")
+            .send(gmailConnectPage(result));
         })
         .catch(next);
       return;
@@ -70,19 +100,55 @@ export function createApp() {
     finishYouTubeConnect(query)
       .then((result) => {
         res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'");
-        res.status(result.ok ? 200 : 400).type("html").send(connectPage(result));
+        res
+          .status(result.ok ? 200 : 400)
+          .type("html")
+          .send(connectPage(result));
       })
       .catch(next);
   });
   // Stripe signs the exact bytes it sends, so its webhook needs the raw body —
   // registered before the JSON parser, which would consume it.
   app.use("/api/v1/billing/webhook", express.raw({ type: "application/json", limit: "1mb" }));
+  // A restore upload is the zip itself, and it can be large — the JSON parser
+  // must not see it first. 2 GB is the same ceiling lib/backup.ts enforces.
+  app.use("/api/v1/backup/restore", express.raw({ type: "application/zip", limit: "2048mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
   app.use("/api/v1", generalLimiter);
 
-  // Health.
+  // Health: is this process alive at all? (A load balancer's liveness probe.)
   app.get("/api/health", (_req, res) => res.json({ ok: true, service: "soundwave-ai", time: new Date().toISOString() }));
+
+  // Readiness: can it actually serve? This is the one that should be the
+  // container's HEALTHCHECK and the monitor's alert. It says which store is
+  // live — a hosted deployment that quietly came up on the JSON fallback (or on
+  // an empty store after a recovery) is broken in a way `/api/health` cannot
+  // see — and whether the video pipeline has its FFmpeg.
+  app.get("/api/ready", async (_req, res) => {
+    const store = describeStore();
+    const ffmpeg = existsSync(resolveFfmpegPath());
+    // "fresh" (a first run) is healthy. "lost" — unreadable with no usable
+    // backup — is not, and neither is a store that cannot be written to.
+    const degraded = store.recovery?.status === "lost" || Boolean(store.recovery?.lastWriteError);
+    const ready = store.kind !== "uninitialized" && !degraded;
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      service: "soundwave-ai",
+      time: new Date().toISOString(),
+      store: store.kind,
+      storeRecovery: store.recovery ?? null,
+      ffmpeg,
+      // Explains a 503 without anyone having to read the source.
+      detail: ready
+        ? undefined
+        : store.kind === "uninitialized"
+          ? "The data store has not finished starting."
+          : (store.recovery?.lastWriteError ?? "The data store could not be read and no backup was usable."),
+      // Where the unreadable file was kept, so it can be recovered by hand.
+      quarantine: store.recovery?.quarantine ?? undefined,
+    });
+  });
 
   // API routes.
   app.use("/api/v1/auth", authRoutes);
@@ -118,6 +184,7 @@ export function createApp() {
   app.use("/api/v1/brain", brainRoutes);
   // The file-chat tab: drop in a file, talk to Gemini (chats, notebooks, files).
   app.use("/api/v1/gemini", geminiRoutes);
+  app.use("/api/v1/backup", backupRoutes);
   app.use("/api/v1/memory", memoryRoutes);
   app.use("/api/v1/morning", morningRoutes);
 

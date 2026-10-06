@@ -92,13 +92,13 @@ function DesktopBridge() {
     const desktop = getDesktop();
     if (!desktop) return;
     const offNavigate = desktop.onNavigate((route) => {
-      if (typeof route === "string" && route.startsWith("/") && !route.startsWith("//")) navigate(route);
+      if (typeof route === "string" && route.startsWith("/") && !route.startsWith("//")) void navigate(route);
     });
     const offVoice = desktop.onVoiceCommand((command) => {
       if (pathRef.current.startsWith("/agent")) {
         window.dispatchEvent(new CustomEvent(VOICE_COMMAND_EVENT, { detail: command }));
       } else if (command === "toggle" || command === "start") {
-        navigate("/agent?listen=1");
+        void navigate("/agent?listen=1");
       }
     });
     return () => {

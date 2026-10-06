@@ -1,0 +1,26 @@
+{
+  "name": "soundwave-agent-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lint/format tooling for the Soundwave workspace. The four shipped packages (server, frontend, mobile, desktop) keep their own dependencies; this file exists so ESLint and Prettier have one home and `npm run lint` covers every package at once.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "format:changed": "prettier --write"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1"
+  }
+}

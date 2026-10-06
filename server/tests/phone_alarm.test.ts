@@ -11,7 +11,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 process.env.DESKTOP_APP = "1";
 
 const { config } = await import("../src/config.js");
-const { JsonStore, setStoreForTests } = await import("../src/lib/store.js");
+// Imported for its side effects (the store the companion's tools read).
+await import("../src/lib/store.js");
 const service = await import("../src/lib/companion/service.js");
 const conversation = await import("../src/lib/conversation.js");
 const { toolsFor } = await import("../src/lib/brain/tools.js");

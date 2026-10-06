@@ -1,12 +1,10 @@
 import { Router } from "express";
 import { resolveJobVideoFile } from "../lib/jobFiles.js";
 import { EventEmitter } from "node:events";
-import fs from "node:fs";
 import path from "node:path";
 import { optionalAuth } from "../middleware/auth.js";
 import { ApiError } from "../middleware/error.js";
 import { getStore } from "../lib/store.js";
-import { config } from "../config.js";
 
 // Rendered videos: status, live progress and download for the shorts the
 // agent makes. The agent is the only thing in the app that renders video, so

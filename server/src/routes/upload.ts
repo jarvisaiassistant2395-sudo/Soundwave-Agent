@@ -4,12 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { z } from "zod";
-import { requireAuth, optionalAuth } from "../middleware/auth.js";
+import { optionalAuth } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { ApiError } from "../middleware/error.js";
 import { uploadLimiter } from "../lib/security.js";
 import { getStore } from "../lib/store.js";
-import { PLANS } from "../lib/plans.js";
 import { importYouTubeLink, YouTubeImportError } from "../lib/youtubeImport.js";
 import { config } from "../config.js";
 

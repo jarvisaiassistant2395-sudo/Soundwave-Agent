@@ -92,7 +92,7 @@ async function fail(message) {
   const page = pageLogTail();
   let visible = "";
   try {
-    visible = String(await mainPage?.evaluate(() => document.body?.innerText ?? "") ?? "")
+    visible = String((await mainPage?.evaluate(() => document.body?.innerText ?? "")) ?? "")
       .replace(/\s+/g, " ")
       .slice(0, 300);
   } catch {
@@ -107,7 +107,8 @@ async function fail(message) {
       (visible ? ` | On screen: “${visible}”` : ""),
   );
   try {
-    for (const [i, page] of (app?.windows() ?? []).entries()) await page.screenshot({ path: path.join(shotsDir, `failure-${i}.png`) }).catch(() => {});
+    for (const [i, page] of (app?.windows() ?? []).entries())
+      await page.screenshot({ path: path.join(shotsDir, `failure-${i}.png`) }).catch(() => {});
   } catch {
     /* best effort */
   }
@@ -156,9 +157,29 @@ if (!fs.existsSync(sample)) await fail(`no ${sample} (CI downloads whisper.cpp's
 const ffmpeg = path.join(desktopDir, "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
 const micFile = path.join(desktopDir, "e2e-mic.wav");
 try {
-  execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-y", "-i", sample, "-af", "apad=pad_dur=4", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", micFile], {
-    windowsHide: true,
-  });
+  execFileSync(
+    ffmpeg,
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      sample,
+      "-af",
+      "apad=pad_dur=4",
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-c:a",
+      "pcm_s16le",
+      micFile,
+    ],
+    {
+      windowsHide: true,
+    },
+  );
 } catch (err) {
   await fail(`couldn't prepare the fake microphone recording with ${ffmpeg}: ${err.message}`);
 }
@@ -173,15 +194,37 @@ try {
 // the moment the picker names (0–13 s), and `-t` alone cuts it there.
 const clipSource = path.join(desktopDir, "e2e-clip-source.mp4");
 try {
-  execFileSync(ffmpeg, [
-    "-hide_banner", "-loglevel", "error", "-y",
-    "-f", "lavfi", "-i", "color=c=0x1A1A2E:s=640x360:r=30",
-    "-stream_loop", "2", "-i", sample,
-    "-t", "24",
-    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "128k",
-    clipSource,
-  ], { windowsHide: true });
+  execFileSync(
+    ffmpeg,
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=0x1A1A2E:s=640x360:r=30",
+      "-stream_loop",
+      "2",
+      "-i",
+      sample,
+      "-t",
+      "24",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      clipSource,
+    ],
+    { windowsHide: true },
+  );
 } catch (err) {
   await fail(`couldn't prepare the test video for the clips test with ${ffmpeg}: ${err.message}`);
 }
@@ -234,7 +277,11 @@ app.process().stderr?.on("data", (d) => {
 
 const shell = () => app.evaluate(() => globalThis.__soundwaveShell.state());
 const voiceTurns = (page) =>
-  page.evaluate(() => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).map((m) => m.text));
+  page.evaluate(() =>
+    JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]")
+      .filter((m) => m.viaVoice)
+      .map((m) => m.text),
+  );
 
 try {
   // ── 1. Startup: Command Center, tray, shortcut, bridge ────────────────────
@@ -260,8 +307,14 @@ try {
   // home route and shows a splash while it asks the server who is signed in, so
   // the URL reads /agent for a moment before the gate sends it to /welcome.
   const firstScreen = await Promise.race([
-    micButton.waitFor({ state: "visible", timeout: 90_000 }).then(() => "linked").catch(() => null),
-    googleButton.waitFor({ state: "visible", timeout: 90_000 }).then(() => "welcome").catch(() => null),
+    micButton
+      .waitFor({ state: "visible", timeout: 90_000 })
+      .then(() => "linked")
+      .catch(() => null),
+    googleButton
+      .waitFor({ state: "visible", timeout: 90_000 })
+      .then(() => "welcome")
+      .catch(() => null),
   ]);
   if (firstScreen === null) await fail("neither the welcome screen nor the Command Center appeared");
   if (firstScreen === "welcome") {
@@ -276,7 +329,9 @@ try {
         });
       });
       await main.locator('textarea[placeholder^="Paste the client_secret"]').fill(
-        JSON.stringify({ installed: { client_id: "e2e.apps.googleusercontent.com", client_secret: "e2e-secret", redirect_uris: ["http://localhost"] } }),
+        JSON.stringify({
+          installed: { client_id: "e2e.apps.googleusercontent.com", client_secret: "e2e-secret", redirect_uris: ["http://localhost"] },
+        }),
       );
       await main.getByRole("button", { name: /Use this client/i }).click();
       const status = await saved;
@@ -286,7 +341,8 @@ try {
     // with; read it off the wire, then play the browser.
     const started = new Promise((resolve) => {
       main.on("response", (res) => {
-        if (res.url().includes("/auth/google/start") && res.request().method() === "POST") void res.json().then(resolve, () => resolve(null));
+        if (res.url().includes("/auth/google/start") && res.request().method() === "POST")
+          void res.json().then(resolve, () => resolve(null));
       });
     });
     await googleButton.click();
@@ -302,12 +358,23 @@ try {
     // exercised for real later (Settings → Brain, Settings → YouTube, voice).
     const setupSkip = main.locator('[data-testid="setup-skip"]');
     const afterSignIn = await Promise.race([
-      micButton.waitFor({ state: "visible", timeout: 120_000 }).then(() => "agent").catch(() => null),
-      setupSkip.waitFor({ state: "visible", timeout: 120_000 }).then(() => "setup").catch(() => null),
+      micButton
+        .waitFor({ state: "visible", timeout: 120_000 })
+        .then(() => "agent")
+        .catch(() => null),
+      setupSkip
+        .waitFor({ state: "visible", timeout: 120_000 })
+        .then(() => "setup")
+        .catch(() => null),
     ]);
     if (afterSignIn === null) await fail("signed in, but neither the Command Center nor the setup wizard appeared");
     if (afterSignIn === "setup") {
-      const heading = (await main.locator("h1").first().textContent().catch(() => "")) ?? "";
+      const heading =
+        (await main
+          .locator("h1")
+          .first()
+          .textContent()
+          .catch(() => "")) ?? "";
       annotate(
         "notice",
         "Desktop E2E: first-run setup",
@@ -331,7 +398,8 @@ try {
   const state = await shell();
   if (!state.tray) await fail("no tray icon");
   ok("tray icon is up");
-  if (!state.hotkey.hotkeyEnabled || !state.hotkey.hotkeyRegistered) await fail(`voice shortcut not registered: ${state.hotkey.hotkeyError ?? "disabled"}`);
+  if (!state.hotkey.hotkeyEnabled || !state.hotkey.hotkeyRegistered)
+    await fail(`voice shortcut not registered: ${state.hotkey.hotkeyError ?? "disabled"}`);
   ok(`voice shortcut ${state.hotkey.hotkeyLabel} is registered system-wide`);
 
   const bridge = await main.evaluate(async () => {
@@ -347,7 +415,8 @@ try {
     };
   });
   if (!bridge) await fail("window.soundwaveDesktop (preload bridge) is missing in the page");
-  if (!bridge.wakeStatus || !bridge.pushToTalkStatus) await fail(`desktop bridge status is incomplete (wake ${bridge.wakeStatus}, push-to-talk ${bridge.pushToTalkStatus})`);
+  if (!bridge.wakeStatus || !bridge.pushToTalkStatus)
+    await fail(`desktop bridge status is incomplete (wake ${bridge.wakeStatus}, push-to-talk ${bridge.pushToTalkStatus})`);
   ok(`desktop bridge works (app ${bridge.version}, close-to-tray ${bridge.closeToTray}, ${bridge.choices} shortcut choices)`);
 
   // ── 1b. The sidebar's minimize button (rail, remembered) ─────────────────
@@ -392,7 +461,9 @@ try {
     toggles: document.querySelectorAll('[data-testid="sidebar-toggle"]').length,
   }));
   if (frames.sidebars !== 1 || frames.toggles !== 1) {
-    await fail(`the app frame is on screen ${frames.sidebars}× with ${frames.toggles} sidebar toggle(s) — it should be exactly once (a page rendering its own frame nests a second sidebar over the real one)`);
+    await fail(
+      `the app frame is on screen ${frames.sidebars}× with ${frames.toggles} sidebar toggle(s) — it should be exactly once (a page rendering its own frame nests a second sidebar over the real one)`,
+    );
   }
   // Visible click when the layout shows the button; the same handler when the
   // CI screen is too narrow for the desktop breakpoint.
@@ -417,7 +488,11 @@ try {
       };
     });
   await clickToggle();
-  await main.waitForFunction(() => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "true", null, { timeout: 10_000 });
+  await main.waitForFunction(
+    () => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "true",
+    null,
+    { timeout: 10_000 },
+  );
   await sleep(400); // the width transition
   const narrow = await sidebar();
   if (desktopLayout) {
@@ -456,24 +531,33 @@ try {
           .slice(0, 5),
       )
       .catch(() => []);
-    await fail(`the window did not come back after a reload: ${String(err.message).split("\n")[0]}${pending.length ? ` — still waiting for ${pending.join(", ")}` : ""}`);
+    await fail(
+      `the window did not come back after a reload: ${String(err.message).split("\n")[0]}${pending.length ? ` — still waiting for ${pending.join(", ")}` : ""}`,
+    );
   }
   // "attached", not "visible": below the desktop breakpoint the aside is in the
   // DOM but deliberately hidden, and this run still checks its state.
   await main.waitForSelector('[data-testid="desktop-sidebar"]', { state: "attached", timeout: 60_000 });
-  await main.waitForFunction(() => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "true", null, { timeout: 15_000 });
+  await main.waitForFunction(
+    () => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "true",
+    null,
+    { timeout: 15_000 },
+  );
   ok("the minimized sidebar is still minimized after a reload");
 
   // Expand it again — the rest of this run works with the full sidebar.
   await clickToggle();
-  await main.waitForFunction(() => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "false", null, { timeout: 10_000 });
+  await main.waitForFunction(
+    () => document.querySelector('[data-testid="desktop-sidebar"]')?.getAttribute("data-collapsed") === "false",
+    null,
+    { timeout: 10_000 },
+  );
   await sleep(400);
   const back = await sidebar();
   if (desktopLayout) {
     if (!(back.width >= 200 && back.width <= 280 && back.showsLabels)) {
       await fail(`the sidebar didn't come back (${back.width}px, labels ${back.showsLabels})`);
-    }
-    else ok(`expanding puts the full sidebar back (${back.width}px, labels visible)`);
+    } else ok(`expanding puts the full sidebar back (${back.width}px, labels visible)`);
   } else {
     // Below the breakpoint the labels aren't painted at all (the phone-sized
     // drawer is what shows them), so the state attribute above is the check.
@@ -500,14 +584,18 @@ try {
   if (!(await setVoiceOnServer("en-US-AvaMultilingualNeural"))) await fail("couldn't set a voice on the PC's conversation");
   try {
     await main.waitForFunction(() => localStorage.getItem("soundwave_voice") === "en-US-AvaMultilingualNeural", null, { timeout: 15_000 });
-    ok(`a voice set on the PC's conversation is adopted by the window (${previousVoice} → Ava) — the agent's set_voice reaches the speaker`);
+    ok(
+      `a voice set on the PC's conversation is adopted by the window (${previousVoice} → Ava) — the agent's set_voice reaches the speaker`,
+    );
   } catch {
     await fail(`the window kept the voice ${await voiceNow()} after the PC's conversation changed to Ava`);
   }
   // Back to what it was, so the rest of the run speaks in the usual voice.
   if (previousVoice) {
     await setVoiceOnServer(previousVoice);
-    await main.waitForFunction((v) => localStorage.getItem("soundwave_voice") === v, previousVoice, { timeout: 15_000 }).catch(() => undefined);
+    await main
+      .waitForFunction((v) => localStorage.getItem("soundwave_voice") === v, previousVoice, { timeout: 15_000 })
+      .catch(() => undefined);
   }
 
   const engine = await main.evaluate(() => fetch("/api/v1/agent/transcribe/status").then((r) => r.json()));
@@ -545,7 +633,11 @@ try {
       // Name what the PC's speech engine says about itself — its last error and
       // when it last transcribed — so a failure here is a finding, not a hang.
       const engine = await main
-        .evaluate(() => fetch("/api/v1/agent/transcribe/status").then((r) => r.json()).catch(() => null))
+        .evaluate(() =>
+          fetch("/api/v1/agent/transcribe/status")
+            .then((r) => r.json())
+            .catch(() => null),
+        )
         .catch(() => null);
       annotate(
         "error",
@@ -586,16 +678,23 @@ try {
   ok("the shortcut shows the voice bar and it listens (app in the background)");
   await overlay.screenshot({ path: path.join(shotsDir, "4-voice-bar-listening.png") });
 
-  await main.waitForFunction((n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n, before, {
-    timeout: 120_000,
-    polling: 500,
-  });
+  await main.waitForFunction(
+    (n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n,
+    before,
+    {
+      timeout: 120_000,
+      polling: 500,
+    },
+  );
   const barHeard = (await voiceTurns(main)).at(-1);
   if (!EXPECT.test(barHeard ?? "")) await fail(`the voice bar heard "${barHeard}"`);
   ok(`voice bar → whisper.cpp → agent, and the turn is in the Command Center's conversation: "${barHeard}"`);
-  await overlay.waitForFunction(() => !/listening|transcribing|thinking/i.test(document.body.innerText), null, { timeout: 60_000, polling: 500 }).catch(() => {});
+  await overlay
+    .waitForFunction(() => !/listening|transcribing|thinking/i.test(document.body.innerText), null, { timeout: 60_000, polling: 500 })
+    .catch(() => {});
   // It tucks itself away a few seconds after answering — screenshot only if it's still up.
-  if ((await shell()).overlayVisible) await overlay.screenshot({ path: path.join(shotsDir, "5-voice-bar-reply.png"), timeout: 10_000 }).catch(() => {});
+  if ((await shell()).overlayVisible)
+    await overlay.screenshot({ path: path.join(shotsDir, "5-voice-bar-reply.png"), timeout: 10_000 }).catch(() => {});
   const barText = (await overlay.evaluate(() => document.body.innerText)).replace(/\s+/g, " ").trim();
   annotate("notice", "Desktop E2E: voice bar", `Heard "${barHeard}". Voice bar now shows: ${barText.slice(0, 200)}`);
 
@@ -612,7 +711,9 @@ try {
   await main.waitForSelector('[data-testid="pairing-qr"] svg, [data-testid="no-network"]', { timeout: 30_000 });
   const phone = await main.evaluate(async () => (await fetch("/api/v1/companion")).json());
   if (!phone.listening) await fail(`Settings → Phone: phone access is on but the listener didn't open (${phone.error})`);
-  await main.screenshot({ path: path.join(shotsDir, "6-settings-phone.png"), timeout: 15_000 }).catch(() => console.log("[e2e] (Settings → Phone screenshot skipped)"));
+  await main
+    .screenshot({ path: path.join(shotsDir, "6-settings-phone.png"), timeout: 15_000 })
+    .catch(() => console.log("[e2e] (Settings → Phone screenshot skipped)"));
   ok(`Settings → Phone: listening on port ${phone.port}, pairing code ${phone.pairing?.code ?? "(this PC has no network address)"}`);
   annotate(
     "notice",
@@ -636,7 +737,9 @@ try {
   const tested = (await main.textContent('[data-testid="brain-test-result"]').catch(() => "")) ?? "";
   if (!/answered/.test(tested)) await fail(`Settings → Brain: the key test didn't pass ("${tested.trim()}")`);
   const hint = (await main.textContent('[data-testid="brain-key-hint"]'))?.trim();
-  await main.screenshot({ path: path.join(shotsDir, "7-settings-brain.png"), timeout: 15_000 }).catch(() => console.log("[e2e] (Settings → Brain screenshot skipped)"));
+  await main
+    .screenshot({ path: path.join(shotsDir, "7-settings-brain.png"), timeout: 15_000 })
+    .catch(() => console.log("[e2e] (Settings → Brain screenshot skipped)"));
   ok(`Settings → Brain: key saved (${hint}) and tested — ${tested.trim()}`);
 
   await open(main, `${appBase}/agent`);
@@ -672,10 +775,15 @@ try {
   await main.waitForFunction((t) => document.body.innerText.includes(t), FAKE_HELLO, { timeout: 45_000 });
   const asked = fakeGemini.seen.filter((r) => r.url?.endsWith(":generateContent")).at(-1);
   const lastTurn = asked?.body?.contents?.at(-1)?.parts?.[0]?.text;
-  if (lastTurn !== question || asked?.key !== FAKE_KEY) await fail(`Gemini got "${lastTurn}" (key ${asked?.key === FAKE_KEY ? "ok" : "wrong"})`);
+  if (lastTurn !== question || asked?.key !== FAKE_KEY)
+    await fail(`Gemini got "${lastTurn}" (key ${asked?.key === FAKE_KEY ? "ok" : "wrong"})`);
   await main.screenshot({ path: path.join(shotsDir, "8-command-center-gemini.png"), timeout: 15_000 }).catch(() => {});
   ok(`Command Center: "${pill}" pill; a typed message went to Gemini and its answer is in the chat`);
-  annotate("notice", "Desktop E2E: agent brain", `Settings → Brain saved the key (${hint}) and its test passed; the Command Center shows "${pill}" and the chat was answered by Gemini (fake, on loopback).`);
+  annotate(
+    "notice",
+    "Desktop E2E: agent brain",
+    `Settings → Brain saved the key (${hint}) and its test passed; the Command Center shows "${pill}" and the chat was answered by Gemini (fake, on loopback).`,
+  );
 
   // ── 3c+. The daily briefing (1.5.0): due → written (topics researched) → spoken when the Command Center opens ──
   at("daily briefing");
@@ -687,7 +795,11 @@ try {
       fetch("/api/v1/morning", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: [], city: "Kruševac", briefing: { topics: ["the latest news about open-source, free AI tools"], time: t, auto: true } }),
+        body: JSON.stringify({
+          items: [],
+          city: "Kruševac",
+          briefing: { topics: ["the latest news about open-source, free AI tools"], time: t, auto: true },
+        }),
       }),
     dueAt,
   );
@@ -714,7 +826,9 @@ try {
   // uses). Neither half is the app grading itself.
   const wroteFromResearch = fakeGemini.seen.some((r) => /Ollama 1\.0 shipped/.test(JSON.stringify(r.body ?? "")));
   if (!researched.length || !wroteFromResearch) {
-    const models = fakeGemini.seen.filter((r) => /:generateContent$/.test(r.url ?? "")).map((r) => (r.url ?? "").replace(/^.*\/models\//, ""));
+    const models = fakeGemini.seen
+      .filter((r) => /:generateContent$/.test(r.url ?? ""))
+      .map((r) => (r.url ?? "").replace(/^.*\/models\//, ""));
     await fail(
       `daily briefing: the topic wasn't researched with Google Search and written from it (search calls: ${JSON.stringify(models.slice(-6))}; a briefing written from the found lines: ${wroteFromResearch ? "yes" : "no"})`,
     );
@@ -725,28 +839,51 @@ try {
     if (!heardOn) await new Promise((r) => setTimeout(r, 500));
   }
   await main.screenshot({ path: path.join(shotsDir, "8b-daily-briefing.png"), timeout: 15_000 }).catch(() => {});
-  if (heardOn === "pc") ok("daily briefing: written when due (the topic researched with Google Search), shown and spoken when the Command Center opened");
-  else annotate("warning", "Desktop E2E", `daily briefing: written and shown, but it wasn't marked heard here (window focus in CI?) — heard: ${heardOn}`);
+  if (heardOn === "pc")
+    ok("daily briefing: written when due (the topic researched with Google Search), shown and spoken when the Command Center opened");
+  else
+    annotate(
+      "warning",
+      "Desktop E2E",
+      `daily briefing: written and shown, but it wasn't marked heard here (window focus in CI?) — heard: ${heardOn}`,
+    );
 
   // ── 3d. Morning Setup, the Memory tab and Connect YouTube (1.4.0) ─────────
   at("Morning Setup / Memory / YouTube tab");
   // If the chip doesn't get a briefing written, say *what* happened instead of
   // dying on a bare 60 s timeout: the old version waited in silence, so a
   // failure here read as "page.waitForFunction: Timeout 60000ms exceeded".
-  const writersBefore = fakeGemini.seen.filter((r) => /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).length;
-  const writersNow = () => fakeGemini.seen.filter((r) => /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).length;
+  const writersBefore = fakeGemini.seen.filter((r) =>
+    /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? ""),
+  ).length;
+  const writersNow = () =>
+    fakeGemini.seen.filter((r) => /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).length;
   const lastChat = () =>
     main
       .evaluate(() => {
         const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
-        return list.slice(-3).map((m) => `${m.sender}: ${String(m.text ?? "").replace(/\s+/g, " ").slice(0, 140)}`).join(" | ") || "(the chat is empty)";
+        return (
+          list
+            .slice(-3)
+            .map(
+              (m) =>
+                `${m.sender}: ${String(m.text ?? "")
+                  .replace(/\s+/g, " ")
+                  .slice(0, 140)}`,
+            )
+            .join(" | ") || "(the chat is empty)"
+        );
       })
       .catch(() => "(couldn't read the chat)");
   const lastCalls = () =>
     fakeGemini.seen
       .filter((r) => r.url?.endsWith(":generateContent"))
       .slice(-3)
-      .map((r) => (r.body?.systemInstruction?.parts?.[0]?.text ?? r.body?.contents?.at(-1)?.parts?.[0]?.text ?? "?").replace(/\s+/g, " ").slice(0, 90))
+      .map((r) =>
+        (r.body?.systemInstruction?.parts?.[0]?.text ?? r.body?.contents?.at(-1)?.parts?.[0]?.text ?? "?")
+          .replace(/\s+/g, " ")
+          .slice(0, 90),
+      )
       .join(" ∥ ") || "(no Gemini calls at all)";
   await main.click('[data-testid="morning-chip"]');
   for (let i = 0; i < 120; i++) {
@@ -754,16 +891,25 @@ try {
     await new Promise((r) => setTimeout(r, 500));
   }
   if (writersNow() <= writersBefore) {
-    await fail(`Morning Setup: the chip was pressed but Gemini was never asked to write the briefing. Last chat: ${await lastChat()}. Last Gemini calls: ${await lastCalls()}`);
+    await fail(
+      `Morning Setup: the chip was pressed but Gemini was never asked to write the briefing. Last chat: ${await lastChat()}. Last Gemini calls: ${await lastCalls()}`,
+    );
   }
   try {
     await main.waitForFunction((t) => document.body.innerText.includes(t), FAKE_MORNING, { timeout: 60_000 });
   } catch (err) {
     await fail(`Morning Setup: the briefing was written but never showed in the chat (${err.message}). Last chat: ${await lastChat()}`);
   }
-  const briefing = fakeGemini.seen.filter((r) => r.url?.endsWith(":generateContent") && /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? "")).at(-1);
+  const briefing = fakeGemini.seen
+    .filter(
+      (r) =>
+        r.url?.endsWith(":generateContent") &&
+        /Write the user's Morning Setup briefing/.test(r.body?.systemInstruction?.parts?.[0]?.text ?? ""),
+    )
+    .at(-1);
   const facts = briefing?.body?.contents?.[0]?.parts?.[0]?.text ?? "";
-  if (!/Weather: In Kruševac it's 14°C/.test(facts)) await fail(`Morning Setup: the briefing wasn't written from the weather facts: ${facts.slice(0, 300)}`);
+  if (!/Weather: In Kruševac it's 14°C/.test(facts))
+    await fail(`Morning Setup: the briefing wasn't written from the weather facts: ${facts.slice(0, 300)}`);
   ok("Morning Setup: the chip ran it, and Gemini wrote the briefing from real facts (weather from Open-Meteo's stand-in)");
 
   // (A toast — e.g. the reply being read aloud — may sit over the gear: click it directly.)
@@ -773,7 +919,8 @@ try {
   await main.press('[data-testid="memory-input"]', "Enter");
   await main.waitForSelector('[data-testid="memory-note"]', { timeout: 15_000 });
   const memoryNow = await main.evaluate(async () => (await fetch("/api/v1/memory")).json());
-  if (!memoryNow.notes?.some((n) => /space facts/.test(n.text))) await fail(`Memory tab: the note isn't in the agent's memory (${JSON.stringify(memoryNow).slice(0, 200)})`);
+  if (!memoryNow.notes?.some((n) => /space facts/.test(n.text)))
+    await fail(`Memory tab: the note isn't in the agent's memory (${JSON.stringify(memoryNow).slice(0, 200)})`);
   await main.screenshot({ path: path.join(shotsDir, "9-memory-tab.png"), timeout: 15_000 }).catch(() => {});
   const youtubeTab = '[data-testid="youtube-tab"]';
   await main.waitForSelector(youtubeTab, { state: "visible", timeout: 15_000 });
@@ -786,8 +933,10 @@ try {
   const oneClickPanel = await main.$('[data-testid="yt-oneclick"]');
   const manualPanel = await main.$('[data-testid="yt-manual"]');
   if (!ytMode.connected) {
-    if (ytMode.oneClick && !oneClickPanel) await fail(`YouTube: the API says one-click but the panel doesn't show the one-press block (${JSON.stringify(ytMode)})`);
-    if (!ytMode.oneClick && !manualPanel) await fail(`YouTube: no built-in client, but the panel doesn't show the own-client path (${JSON.stringify(ytMode)})`);
+    if (ytMode.oneClick && !oneClickPanel)
+      await fail(`YouTube: the API says one-click but the panel doesn't show the one-press block (${JSON.stringify(ytMode)})`);
+    if (!ytMode.oneClick && !manualPanel)
+      await fail(`YouTube: no built-in client, but the panel doesn't show the own-client path (${JSON.stringify(ytMode)})`);
   }
   await main.screenshot({ path: path.join(shotsDir, "10-youtube-tab.png"), timeout: 15_000 }).catch(() => {});
   await main.keyboard.press("Escape");
@@ -822,7 +971,10 @@ try {
           const el = document.querySelector(AGENT_COMPOSER);
           const r = el ? el.getBoundingClientRect() : null;
           const mid = r
-            ? document.elementFromPoint(Math.min(Math.max(r.x + r.width / 2, 0), innerWidth - 1), Math.min(Math.max(r.y + r.height / 2, 0), innerHeight - 1))
+            ? document.elementFromPoint(
+                Math.min(Math.max(r.x + r.width / 2, 0), innerWidth - 1),
+                Math.min(Math.max(r.y + r.height / 2, 0), innerHeight - 1),
+              )
             : null;
           return {
             url: location.href,
@@ -836,7 +988,9 @@ try {
           };
         })
         .catch((e) => ({ error: e.message }));
-      throw new Error(`the Command Center's message box isn't usable: ${JSON.stringify(state)} (${String(err.message).split("\n")[0]})`);
+      throw new Error(`the Command Center's message box isn't usable: ${JSON.stringify(state)} (${String(err.message).split("\n")[0]})`, {
+        cause: err,
+      });
     }
   };
   const watchUrl = "https://www.youtube.com/watch?v=iG9CE55wbtY"; // a TED talk with human-made English subtitles
@@ -846,7 +1000,10 @@ try {
       main
         .evaluate(() => {
           const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
-          return list.slice(-3).map((m) => `${m.sender}: ${String(m.text ?? "")}`).join(" | ");
+          return list
+            .slice(-3)
+            .map((m) => `${m.sender}: ${String(m.text ?? "")}`)
+            .join(" | ");
         })
         .catch(() => "");
     let videoRead = "";
@@ -855,7 +1012,11 @@ try {
       const seen = await eyesSeen();
       if (/READ_VEOK/.test(seen)) videoRead = seen;
       else if (/couldn't read that video/i.test(seen)) {
-        annotate("warning", "Desktop E2E: agent eyes", `Reading a real YouTube video didn't work this run (YouTube bot check or network): ${seen.slice(-300)}`);
+        annotate(
+          "warning",
+          "Desktop E2E: agent eyes",
+          `Reading a real YouTube video didn't work this run (YouTube bot check or network): ${seen.slice(-300)}`,
+        );
         break;
       }
     }
@@ -970,11 +1131,14 @@ try {
   }
   const report = (await main.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
   if (!report.includes(clipText)) await fail(`Ghost Operator: the read-back step didn't show the copied text: ${report.slice(-400)}`);
-  if (!/⏭ Mute the sound/.test(report) || !/volume/.test(report)) await fail(`Ghost Operator: the step it can't do wasn't skipped with its reason: ${report.slice(-400)}`);
+  if (!/⏭ Mute the sound/.test(report) || !/volume/.test(report))
+    await fail(`Ghost Operator: the step it can't do wasn't skipped with its reason: ${report.slice(-400)}`);
   const onClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
   if (onClipboard !== clipText) await fail(`Ghost Operator: the clipboard holds "${onClipboard}" instead of "${clipText}"`);
   await main.screenshot({ path: path.join(shotsDir, "11-macro-run.png"), timeout: 15_000 }).catch(() => {});
-  ok("Ghost Operator: a saved macro ran from the Workflow panel — the clipboard really copied (verified in Electron), the read-back step saw it, and the volume step was skipped with the reason");
+  ok(
+    "Ghost Operator: a saved macro ran from the Workflow panel — the clipboard really copied (verified in Electron), the read-back step saw it, and the volume step was skipped with the reason",
+  );
   annotate(
     "notice",
     "Desktop E2E: Ghost Operator",
@@ -1001,7 +1165,8 @@ try {
     };
   });
   if (!clipsCard) await fail('the "Shorts from a video" card is missing from the Command Center');
-  else if (!clipsCard.hasInput || !clipsCard.hasCount || !clipsCard.hasButton) await fail(`the "Shorts from a video" card is incomplete: ${JSON.stringify(clipsCard)}`);
+  else if (!clipsCard.hasInput || !clipsCard.hasCount || !clipsCard.hasButton)
+    await fail(`the "Shorts from a video" card is incomplete: ${JSON.stringify(clipsCard)}`);
   else ok(`the Command Center shows the "Shorts from a video" card (${clipsCard.offered})`);
   const clipsOffered = await main.evaluate(async () => {
     const res = await fetch("/api/v1/clips");
@@ -1023,15 +1188,19 @@ try {
     };
   });
   if (!watchCard) await fail('the "Watching creators" card is missing from the Command Center');
-  else if (!watchCard.hasInput || !watchCard.hasAdd || !watchCard.hasInfo) await fail(`the "Watching creators" card is incomplete: ${JSON.stringify(watchCard)}`);
-  else ok(`the Command Center shows the "Watching creators" card (${watchCard.empty ? "nothing watched yet, as on a fresh install" : "with channels already watched"})`);
+  else if (!watchCard.hasInput || !watchCard.hasAdd || !watchCard.hasInfo)
+    await fail(`the "Watching creators" card is incomplete: ${JSON.stringify(watchCard)}`);
+  else
+    ok(
+      `the Command Center shows the "Watching creators" card (${watchCard.empty ? "nothing watched yet, as on a fresh install" : "with channels already watched"})`,
+    );
 
   await main.click('[data-testid="watch-info"]');
   const infoOpen = await main
     .waitForFunction(() => !!document.querySelector('[data-testid="watch-info-text"]'), null, { timeout: 5000 })
     .then(() => true)
     .catch(() => false);
-  if (!infoOpen) await fail('the “i” on the watching card doesn\'t explain the feature');
+  if (!infoOpen) await fail("the “i” on the watching card doesn't explain the feature");
   else {
     const infoText = await main.evaluate(() => document.querySelector('[data-testid="watch-info-text"]')?.textContent ?? "");
     if (!/every ~5 minutes/.test(infoText)) await fail(`the explanation doesn't say how often it checks: “${infoText.slice(0, 160)}”`);
@@ -1062,7 +1231,9 @@ try {
   });
   if (watchList.available !== true) await fail(`the watch endpoint doesn't offer the card here: ${JSON.stringify(watchList)}`);
   if (watchesBefore >= 0 && (watchList.watches ?? []).length !== watchesBefore) {
-    await fail(`a refused handle changed the watch list (${watchesBefore} → ${(watchList.watches ?? []).length}): ${JSON.stringify(watchList.watches).slice(0, 300)}`);
+    await fail(
+      `a refused handle changed the watch list (${watchesBefore} → ${(watchList.watches ?? []).length}): ${JSON.stringify(watchList.watches).slice(0, 300)}`,
+    );
   }
   await main.fill(AGENT_COMPOSER, `cut 1 clip out of this video: ${clipSource}`);
   await main.press(AGENT_COMPOSER, "Enter");
@@ -1072,7 +1243,17 @@ try {
     main
       .evaluate(() => {
         const list = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]");
-        return list.slice(-4).map((m) => `${m.sender}: ${String(m.text ?? "").replace(/\s+/g, " ").slice(0, 120)}`).join(" | ") || "(the chat is empty)";
+        return (
+          list
+            .slice(-4)
+            .map(
+              (m) =>
+                `${m.sender}: ${String(m.text ?? "")
+                  .replace(/\s+/g, " ")
+                  .slice(0, 120)}`,
+            )
+            .join(" | ") || "(the chat is empty)"
+        );
       })
       .catch(() => "(couldn't read the chat)");
   try {
@@ -1092,7 +1273,8 @@ try {
     const m = /Clip 1 of 1[^\n]*/.exec(document.body.innerText);
     return m ? m[0] : "";
   });
-  if (!/CI clip/.test(clipLine)) annotate("warning", "Desktop E2E", `the clip was made from the loudest-window fallback instead of the picker's answer: “${clipLine}”`);
+  if (!/CI clip/.test(clipLine))
+    annotate("warning", "Desktop E2E", `the clip was made from the loudest-window fallback instead of the picker's answer: “${clipLine}”`);
   else ok(`the agent's picker picked the moment: “${clipLine.slice(0, 120)}”`);
   // Watch it the way a person does: the chat plays the rendered file in the
   // message (the phone has a "Watch" button for this; the desktop shows the
@@ -1150,7 +1332,9 @@ try {
   if (!wake.enabled) await fail("the wake word starts enabled, but the shell says it is off");
   if (!wake.running) await fail(`the wake listener isn't running (state ${wake.state}: ${wake.detail ?? "no detail"})`);
   if (wake.heard < 2) {
-    await fail(`the wake listener transcribed nothing in 90 s while the fake microphone was talking (state ${wake.state}: ${wake.detail ?? "no detail"})`);
+    await fail(
+      `the wake listener transcribed nothing in 90 s while the fake microphone was talking (state ${wake.state}: ${wake.detail ?? "no detail"})`,
+    );
   }
   if (wake.lastHit) await fail(`ordinary speech woke it: ${wake.lastHit}`);
   ok(`the wake listener transcribed ${wake.heard} utterances of ordinary speech on this PC and woke on none of them`);
@@ -1169,14 +1353,20 @@ try {
   await sleep(500);
   const wakeShell = await shell();
   if (!wakeShell.overlayVisible) await fail(`the wake phrase didn't open the voice bar (state ${JSON.stringify(wakeShell.wake)}).`);
-  let wakeOverlay = app.windows().find((p) => p.url().includes("/overlay")) ?? null;
+  const wakeOverlay = app.windows().find((p) => p.url().includes("/overlay")) ?? null;
   try {
-    await main.waitForFunction((n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n, wakeTurns, {
-      timeout: 90_000,
-      polling: 500,
-    });
+    await main.waitForFunction(
+      (n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n,
+      wakeTurns,
+      {
+        timeout: 90_000,
+        polling: 500,
+      },
+    );
   } catch {
-    await fail(`the wake phrase never reached the agent (bar said: ${wakeOverlay ? (await wakeOverlay.evaluate(() => document.body.innerText)).replace(/\s+/g, " ").slice(0, 200) : "no bar"})`);
+    await fail(
+      `the wake phrase never reached the agent (bar said: ${wakeOverlay ? (await wakeOverlay.evaluate(() => document.body.innerText)).replace(/\s+/g, " ").slice(0, 200) : "no bar"})`,
+    );
   }
   const wakeHeardTurn = (await voiceTurns(main)).at(-1) ?? "";
   if (!/what can you do/i.test(wakeHeardTurn)) await fail(`the wake command reached the agent as "${wakeHeardTurn}"`);
@@ -1202,9 +1392,13 @@ try {
   // the thing being proved (and the push-to-talk capture ignores the silence —
   // it stops when the keys are let go, not when the person pauses).
   const pttHoldMs = 15_500; // one full loop of the fake microphone — see below
-  const holder = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", holdShortcutScript(pttHoldMs)], {
-    windowsHide: true,
-  });
+  const holder = spawn(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", holdShortcutScript(pttHoldMs)],
+    {
+      windowsHide: true,
+    },
+  );
   // Listen for the exit *before* the key checks: PowerShell can fail instantly
   // (a locked-down machine without user32 access), and a missed event would hang
   // the whole run instead of saying what went wrong.
@@ -1219,7 +1413,9 @@ try {
   }
   if (!sawDown) {
     const code = await Promise.race([holderDone, sleep(10_000).then(() => "still running")]);
-    await fail(`the key watcher never saw Ctrl+Shift+Space go down (a real OS key hold); PowerShell said (${code}): ${held.trim().slice(-300) || "nothing"}`);
+    await fail(
+      `the key watcher never saw Ctrl+Shift+Space go down (a real OS key hold); PowerShell said (${code}): ${held.trim().slice(-300) || "nothing"}`,
+    );
   }
   ok("holding the shortcut made the key watcher report the chord down");
   const holderCode = await Promise.race([holderDone, sleep(30_000).then(() => "timed out")]);
@@ -1234,12 +1430,16 @@ try {
   }
   if (afterRelease.pushToTalkStatus.down) await fail("the key watcher still thinks the keys are held after the release");
   try {
-    await main.waitForFunction((n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n, pttBefore, {
-      timeout: 150_000,
-      polling: 500,
-    });
+    await main.waitForFunction(
+      (n) => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length > n,
+      pttBefore,
+      {
+        timeout: 150_000,
+        polling: 500,
+      },
+    );
   } catch {
-    await fail(`releasing the held shortcut sent nothing (chat has ${((await voiceTurns(main)).length) - pttBefore} new voice turn(s))`);
+    await fail(`releasing the held shortcut sent nothing (chat has ${(await voiceTurns(main)).length - pttBefore} new voice turn(s))`);
   }
   const pttTurn = (await voiceTurns(main)).at(-1) ?? "";
   if (!EXPECT.test(pttTurn)) await fail(`push-to-talk sent "${pttTurn}" — expected what the microphone was playing`);
@@ -1301,26 +1501,51 @@ try {
   // happens), this stage says so and skips — it never pretends.
   let wakeAudio = null;
   try {
-    const spoken = await main.evaluate(
-      async (text) => {
-        const res = await fetch(`/api/v1/agent/speak/stream?voice=${encodeURIComponent("en-US-AvaMultilingualNeural")}&text=${encodeURIComponent(text)}`);
-        if (!res.ok) return { error: `HTTP ${res.status}` };
-        const buf = await res.arrayBuffer();
-        return { bytes: Array.from(new Uint8Array(buf)), type: res.headers.get("content-type") };
-      },
-      "Hey Soundwave. What can you do?",
-    );
+    const spoken = await main.evaluate(async (text) => {
+      const res = await fetch(
+        `/api/v1/agent/speak/stream?voice=${encodeURIComponent("en-US-AvaMultilingualNeural")}&text=${encodeURIComponent(text)}`,
+      );
+      if (!res.ok) return { error: `HTTP ${res.status}` };
+      const buf = await res.arrayBuffer();
+      return { bytes: Array.from(new Uint8Array(buf)), type: res.headers.get("content-type") };
+    }, "Hey Soundwave. What can you do?");
     if (!spoken?.bytes?.length) throw new Error(spoken?.error ?? "the voice service returned no audio");
     const mp3 = path.join(desktopDir, "e2e-wake.mp3");
     fs.writeFileSync(mp3, Buffer.from(spoken.bytes));
     const wav = path.join(desktopDir, "e2e-wake.wav");
-    execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-y", "-i", mp3, "-af", "apad=pad_dur=3.5", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], {
-      windowsHide: true,
-    });
+    execFileSync(
+      ffmpeg,
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        mp3,
+        "-af",
+        "apad=pad_dur=3.5",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-c:a",
+        "pcm_s16le",
+        wav,
+      ],
+      {
+        windowsHide: true,
+      },
+    );
     wakeAudio = wav;
-    ok(`recorded "Hey Soundwave. What can you do?" with the app's own voice (${Math.round(spoken.bytes.length / 1024)} KB MP3 → fake microphone)`);
+    ok(
+      `recorded "Hey Soundwave. What can you do?" with the app's own voice (${Math.round(spoken.bytes.length / 1024)} KB MP3 → fake microphone)`,
+    );
   } catch (err) {
-    annotate("warning", "Desktop E2E: wake word audio", `the wake phrase couldn't be recorded this run (${err.message}) — the real-audio wake test is skipped, not failed.`);
+    annotate(
+      "warning",
+      "Desktop E2E: wake word audio",
+      `the wake phrase couldn't be recorded this run (${err.message}) — the real-audio wake test is skipped, not failed.`,
+    );
   }
 
   await app.close();
@@ -1355,7 +1580,9 @@ try {
     await main2.waitForURL(/\/agent/, { timeout: 120_000 });
     // Nobody touches anything: the microphone is playing the wake phrase and the
     // listener has to notice by itself.
-    const turnsBefore = await main2.evaluate(() => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length);
+    const turnsBefore = await main2.evaluate(
+      () => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).length,
+    );
     let woke = null;
     const wakeAudioDeadline = Date.now() + 120_000;
     while (Date.now() < wakeAudioDeadline) {
@@ -1386,11 +1613,18 @@ try {
         { timeout: 90_000, polling: 500 },
       );
     } catch {
-      const said = await main2.evaluate(() => JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).map((m) => m.text).slice(-2));
+      const said = await main2.evaluate(() =>
+        JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]")
+          .filter((m) => m.viaVoice)
+          .map((m) => m.text)
+          .slice(-2),
+      );
       await fail(`the wake command never reached the agent (chat's last voice turns: ${JSON.stringify(said)})`);
     }
     const wokeTurn = await main2.evaluate(() => {
-      const turns = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]").filter((m) => m.viaVoice).map((m) => m.text);
+      const turns = JSON.parse(localStorage.getItem("soundwave_agent_chat_history") || "[]")
+        .filter((m) => m.viaVoice)
+        .map((m) => m.text);
       return turns.at(-1) ?? "";
     });
     ok(`hands free: saying "Hey Soundwave, what can you do?" reached the agent: "${wokeTurn}"`);

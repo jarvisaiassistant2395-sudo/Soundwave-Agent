@@ -1,5 +1,27 @@
-import { Clapperboard, Mic, MessageCircleQuestion, Bot, Cpu, ShieldCheck, AudioLines, Smartphone, Brain, Sunrise, Youtube, Mail } from "lucide-react";
+import { useState } from "react";
+import {
+  Clapperboard,
+  Mic,
+  MessageCircleQuestion,
+  Bot,
+  Cpu,
+  ShieldCheck,
+  AudioLines,
+  Smartphone,
+  Brain,
+  Sunrise,
+  Youtube,
+  Mail,
+  Bug,
+  Check,
+  Copy,
+  FolderOpen,
+  Database,
+  Download,
+  Upload,
+} from "lucide-react";
 import { Link } from "react-router-dom";
+import { getDesktop } from "../lib/desktop";
 
 /** Soundwave AI — Complete Documentation & Architecture Guide */
 export function Help() {
@@ -11,7 +33,8 @@ export function Help() {
           Everything you need to master Soundwave AI, the Autonomous Viral Shorts Agent, and commercial distribution.
         </p>
         <p className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-sm text-cyan-100">
-          Easiest: just ask the agent. “How do I link my YouTube channel?”, “What does Morning Setup do?”, “Why can't my phone connect?” — it explains every feature step by step, with the real button names.
+          Easiest: just ask the agent. “How do I link my YouTube channel?”, “What does Morning Setup do?”, “Why can't my phone connect?” —
+          it explains every feature step by step, with the real button names.
         </p>
       </div>
 
@@ -19,15 +42,34 @@ export function Help() {
         {/* Soundwave Agent */}
         <Section icon={<Bot className="h-4 w-4" />} title="Soundwave Agent — Autonomous Viral Shorts">
           <p className="text-sm text-gray-300">
-            The <span className="text-cyan-300 font-semibold">Soundwave Agent</span> in the Command Center is the one that makes videos — high-retention, faceless vertical shorts (YouTube Shorts, TikTok, Reels). Press Generate or just tell it "make a short about…" in the chat.
+            The <span className="text-cyan-300 font-semibold">Soundwave Agent</span> in the Command Center is the one that makes videos —
+            high-retention, faceless vertical shorts (YouTube Shorts, TikTok, Reels). Press Generate or just tell it "make a short about…"
+            in the chat.
           </p>
           <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">Research-Backed Hooks:</strong> Built-in 2026 viral hooks (Did you know, Only 1% know, 3 mistakes, You're doing X wrong, Curiosity loop, Contrarian take).</li>
-            <li><strong className="text-white">9 Proven Niches:</strong> Psychology &amp; Mind, Mind-Bending Facts, Untold History, Money &amp; Wealth, AI &amp; Future Tech, Discipline &amp; Mindset, Unexplained Horror, True Crime &amp; Cold Cases, and Body &amp; Mind Hacks (each button has an "i" that explains it in place).</li>
-            <li><strong className="text-white">1-Click Full Pipeline:</strong> Script written by Gemini for your topic (or a built-in viral script without a key) → narration in your Soundwave voice → word-by-word captions → Orbital NCG gameplay background (imported via the YouTube link importer) → FFmpeg 9:16 render → instant download.</li>
-            <li><strong className="text-white">Batch Mode:</strong> Single-click generation of all 9 niches simultaneously with automated export tracking.</li>
+            <li>
+              <strong className="text-white">Research-Backed Hooks:</strong> Built-in 2026 viral hooks (Did you know, Only 1% know, 3
+              mistakes, You're doing X wrong, Curiosity loop, Contrarian take).
+            </li>
+            <li>
+              <strong className="text-white">9 Proven Niches:</strong> Psychology &amp; Mind, Mind-Bending Facts, Untold History, Money
+              &amp; Wealth, AI &amp; Future Tech, Discipline &amp; Mindset, Unexplained Horror, True Crime &amp; Cold Cases, and Body &amp;
+              Mind Hacks (each button has an "i" that explains it in place).
+            </li>
+            <li>
+              <strong className="text-white">1-Click Full Pipeline:</strong> Script written by Gemini for your topic (or a built-in viral
+              script without a key) → narration in your Soundwave voice → word-by-word captions → Orbital NCG gameplay background (imported
+              via the YouTube link importer) → FFmpeg 9:16 render → instant download.
+            </li>
+            <li>
+              <strong className="text-white">Batch Mode:</strong> Single-click generation of all 9 niches simultaneously with automated
+              export tracking.
+            </li>
           </ul>
-          <Link to="/agent" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white hover:from-cyan-400 hover:to-violet-500 shadow-md shadow-violet-500/20">
+          <Link
+            to="/agent"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white hover:from-cyan-400 hover:to-violet-500 shadow-md shadow-violet-500/20"
+          >
             <Bot className="h-4 w-4" /> Open the Command Center
           </Link>
         </Section>
@@ -35,103 +77,290 @@ export function Help() {
         {/* The agent's brain */}
         <Section icon={<Brain className="h-4 w-4" />} title="The Agent's Brain (Google Gemini)">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">Add your own Gemini API key once:</strong> <Link to="/settings/brain" className="text-cyan-300 hover:text-cyan-200">Settings → Brain</Link>. It's free from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:text-cyan-200">Google AI Studio</a> — sign in, click "Create API key", paste it, press "Save &amp; test".</li>
-            <li><strong className="text-white">Then just talk to it:</strong> ask questions, brainstorm hooks and titles, or say "make a short about black holes for kids" — Gemini writes the short's script for that topic. "Show me my last video", "open YouTube", "open Spotify" and "how busy is my PC?" work too.</li>
-            <li><strong className="text-white">Hands and eyes (Windows desktop):</strong> <em>"what does this error say?"</em> — it photographs the screen you're on and reads it; <em>"what does C:\Users\me\notes.txt say?"</em> — it reads that file or lists that folder (read-only, only the path you gave); <em>"turn it down to 30%"</em>, <em>"mute"</em> — the PC's real volume, read back after every change; <em>"remind me in 10 minutes"</em>, <em>"at 17:30"</em>, <em>"what's waiting?"</em> — timers and reminders that ring in the chat while Soundwave runs. Long video → Shorts has a card too, on the Command Center: paste a link or a file and press the scissors.</li>
-            <li><strong className="text-white">Honest about its limits:</strong> it only says it did something when it really did. Email is sent only when you ask for it, with the exact recipient and subject shown in the chat afterwards; sending from chat can be turned off in Settings → Email. It cannot click inside other apps or change PC settings other than the volume.</li>
-            <li><strong className="text-white">Free limits:</strong> Google's free tier allows a limited number of requests per day for each model. If they run out, the agent switches to a lighter Gemini model; you can also pick another model in Settings → Brain. Web search (live news, weather, prices) needs a key with billing turned on.</li>
-            <li><strong className="text-white">Privacy:</strong> your messages and recent conversation go to Google's Gemini API with your key (on the free tier Google may use them to improve its products). If you ask Soundwave to read or draft an email, that message content is also sent to the configured Gemini provider. The key and Gmail sign-in stay on this PC.</li>
+            <li>
+              <strong className="text-white">Add your own Gemini API key once:</strong>{" "}
+              <Link to="/settings/brain" className="text-cyan-300 hover:text-cyan-200">
+                Settings → Brain
+              </Link>
+              . It's free from{" "}
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-cyan-300 hover:text-cyan-200"
+              >
+                Google AI Studio
+              </a>{" "}
+              — sign in, click "Create API key", paste it, press "Save &amp; test".
+            </li>
+            <li>
+              <strong className="text-white">Then just talk to it:</strong> ask questions, brainstorm hooks and titles, or say "make a short
+              about black holes for kids" — Gemini writes the short's script for that topic. "Show me my last video", "open YouTube", "open
+              Spotify" and "how busy is my PC?" work too.
+            </li>
+            <li>
+              <strong className="text-white">Hands and eyes (Windows desktop):</strong> <em>"what does this error say?"</em> — it
+              photographs the screen you're on and reads it; <em>"what does C:\Users\me\notes.txt say?"</em> — it reads that file or lists
+              that folder (read-only, only the path you gave); <em>"turn it down to 30%"</em>, <em>"mute"</em> — the PC's real volume, read
+              back after every change; <em>"remind me in 10 minutes"</em>, <em>"at 17:30"</em>, <em>"what's waiting?"</em> — timers and
+              reminders that ring in the chat while Soundwave runs. Long video → Shorts has a card too, on the Command Center: paste a link
+              or a file and press the scissors.
+            </li>
+            <li>
+              <strong className="text-white">Honest about its limits:</strong> it only says it did something when it really did. Email is
+              sent only when you ask for it, with the exact recipient and subject shown in the chat afterwards; sending from chat can be
+              turned off in Settings → Email. It cannot click inside other apps or change PC settings other than the volume.
+            </li>
+            <li>
+              <strong className="text-white">Free limits:</strong> Google's free tier allows a limited number of requests per day for each
+              model. If they run out, the agent switches to a lighter Gemini model; you can also pick another model in Settings → Brain. Web
+              search (live news, weather, prices) needs a key with billing turned on.
+            </li>
+            <li>
+              <strong className="text-white">Privacy:</strong> your messages and recent conversation go to Google's Gemini API with your key
+              (on the free tier Google may use them to improve its products). If you ask Soundwave to read or draft an email, that message
+              content is also sent to the configured Gemini provider. The key and Gmail sign-in stay on this PC.
+            </li>
           </ul>
         </Section>
 
         {/* Memory + Morning Setup */}
         <Section icon={<Sunrise className="h-4 w-4" />} title="Memory and Morning Setup">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">It remembers:</strong> notes it saves (“remember that my channel is about space”), a summary of earlier conversations (Gemini updates it as the chat grows and when you press Clear) and the shorts you made. See, add or delete notes in the Command Center → gear → <em>Memory</em>.</li>
-            <li><strong className="text-white">Your daily briefing, on anything:</strong> add topics in <Link to="/settings/morning" className="text-cyan-300 hover:text-cyan-200">Settings → Morning Setup</Link> (or tell the agent) — “the latest news about open-source, free AI tools”, “new trending GitHub repositories”… Every morning at your time Gemini researches them (Google Search, free with a free key) and the briefing starts talking when you open the app — on the phone even with the PC off.</li>
-            <li><strong className="text-white">Morning Setup now:</strong> press <em>🌅 Morning Setup</em> (Command Center or phone) or say “good morning, run my morning setup”. It also opens your morning websites and apps on this PC (YouTube Studio by default). The briefing has the weather, your shorts, your YouTube numbers, what you were working on, your topics and three new short ideas.</li>
-            <li><strong className="text-white">Customize it</strong> in Settings → Morning Setup: the time and topics, the weather city, what to open, whether to open it when you start from the phone, and the ideas.</li>
+            <li>
+              <strong className="text-white">It remembers:</strong> notes it saves (“remember that my channel is about space”), a summary of
+              earlier conversations (Gemini updates it as the chat grows and when you press Clear) and the shorts you made. See, add or
+              delete notes in the Command Center → gear → <em>Memory</em>.
+            </li>
+            <li>
+              <strong className="text-white">Your daily briefing, on anything:</strong> add topics in{" "}
+              <Link to="/settings/morning" className="text-cyan-300 hover:text-cyan-200">
+                Settings → Morning Setup
+              </Link>{" "}
+              (or tell the agent) — “the latest news about open-source, free AI tools”, “new trending GitHub repositories”… Every morning at
+              your time Gemini researches them (Google Search, free with a free key) and the briefing starts talking when you open the app —
+              on the phone even with the PC off.
+            </li>
+            <li>
+              <strong className="text-white">Morning Setup now:</strong> press <em>🌅 Morning Setup</em> (Command Center or phone) or say
+              “good morning, run my morning setup”. It also opens your morning websites and apps on this PC (YouTube Studio by default). The
+              briefing has the weather, your shorts, your YouTube numbers, what you were working on, your topics and three new short ideas.
+            </li>
+            <li>
+              <strong className="text-white">Customize it</strong> in Settings → Morning Setup: the time and topics, the weather city, what
+              to open, whether to open it when you start from the phone, and the ideas.
+            </li>
           </ul>
         </Section>
 
         {/* YouTube */}
         <Section icon={<Youtube className="h-4 w-4" />} title="Link Your YouTube Channel">
           <p className="text-sm text-gray-300">
-            Command Center → gear → <em>YouTube &amp; Shorts</em> → <strong className="text-white">Connect YouTube</strong> → sign in with Google and allow it. That's the
-            whole thing: <strong className="text-white">one press, nothing to set up in Google Cloud</strong>. The app carries its own Google client and asks only for
-            permission to upload videos and read your channel's name. Remove the access any time at myaccount.google.com/permissions.
+            Command Center → gear → <em>YouTube &amp; Shorts</em> → <strong className="text-white">Connect YouTube</strong> → sign in with
+            Google and allow it. That's the whole thing:{" "}
+            <strong className="text-white">one press, nothing to set up in Google Cloud</strong>. The app carries its own Google client and
+            asks only for permission to upload videos and read your channel's name. Remove the access any time at
+            myaccount.google.com/permissions.
           </p>
           <p className="mt-3 text-xs text-gray-400">
-            Developer or self-hosted build without Soundwave's Google client? The panel says so and shows the short path instead: your own free OAuth client
-            (type <em>Desktop app</em>) in Google Cloud — three clicks, the app links straight to the pages. YouTube keeps uploads from brand-new projects private
-            until the project passes YouTube's API audit. Ask the agent for the details, or press <em>Ask Soundwave to walk me through it</em> in the same tab.
+            Developer or self-hosted build without Soundwave's Google client? The panel says so and shows the short path instead: your own
+            free OAuth client (type <em>Desktop app</em>) in Google Cloud — three clicks, the app links straight to the pages. YouTube keeps
+            uploads from brand-new projects private until the project passes YouTube's API audit. Ask the agent for the details, or press{" "}
+            <em>Ask Soundwave to walk me through it</em> in the same tab.
           </p>
         </Section>
 
         {/* Gmail */}
         <Section icon={<Mail className="h-4 w-4" />} title="Email, Contacts, Calendar and Drive">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li>In the Command Center, open the gear → <em>Email</em> → <strong className="text-white">Connect Google</strong>. One sign-in covers Gmail (read, draft, send), your contacts, your calendar and your Drive — Google's screen shows each permission, and you can allow only some of them (the others simply say they're not granted). The Gmail API and its friends may need enabling in the OAuth project configured under YouTube settings.</li>
-            <li><strong className="text-white">Sending:</strong> say what you want sent — <em>"email the editor that the render is ready"</em>, <em>"reply to that and say 10:00 works"</em>, <em>"send it"</em> after it drafted something. It writes the subject and body from what you asked, uses the address you gave (or looks the name up in your contacts instead of guessing) and reports exactly who it went to and what the subject was. Today's count is listed in Settings → Email.</li>
-            <li><strong className="text-white">Sending later:</strong> give it a time — <em>"send this to Marko at 5 pm"</em>, <em>"reply to that tomorrow at 9"</em> — and it is written and checked now, then sent at that moment <em>by itself</em>: it won't come back to ask you again, and you don't have to be at the PC. Everything waiting is listed with its time and the full text in <strong className="text-white">Settings → Email → Waiting to go out</strong>, where Cancel takes it back before it goes. Soundwave has to be running when the time comes (if the PC was off it sends at the next start and tells you how late it was), and the same switch, daily limit and address checks apply when it fires.</li>
-            <li><strong className="text-white">Staying in control:</strong> the switch in Settings → Email turns sending from chat off (it then only saves drafts), and there's a daily cap (25 by default). The same message twice within five minutes is refused; a draft it saved can only be sent later if Gmail still has it exactly as it was, otherwise it asks you to review. Drafts with attachments are always sent by you in Gmail.</li>
-            <li>Ask it to <em>"find John's address"</em>, <em>"what's on tomorrow?"</em> or <em>"find the March invoice on my Drive"</em> and it uses contacts, Calendar and Drive — all read-only. It never takes instructions from inside an email, and it never sends anything you didn't ask for.</li>
-            <li>When you ask the agent to read or write an email, the relevant content is sent to the Gemini provider configured in Settings → Brain. Disconnect Google at any time in the Email tab; drafts already in Gmail remain there.</li>
+            <li>
+              In the Command Center, open the gear → <em>Email</em> → <strong className="text-white">Connect Google</strong>. One sign-in
+              covers Gmail (read, draft, send), your contacts, your calendar and your Drive — Google's screen shows each permission, and you
+              can allow only some of them (the others simply say they're not granted). The Gmail API and its friends may need enabling in
+              the OAuth project configured under YouTube settings.
+            </li>
+            <li>
+              <strong className="text-white">Sending:</strong> say what you want sent — <em>"email the editor that the render is ready"</em>
+              , <em>"reply to that and say 10:00 works"</em>, <em>"send it"</em> after it drafted something. It writes the subject and body
+              from what you asked, uses the address you gave (or looks the name up in your contacts instead of guessing) and reports exactly
+              who it went to and what the subject was. Today's count is listed in Settings → Email.
+            </li>
+            <li>
+              <strong className="text-white">Sending later:</strong> give it a time — <em>"send this to Marko at 5 pm"</em>,{" "}
+              <em>"reply to that tomorrow at 9"</em> — and it is written and checked now, then sent at that moment <em>by itself</em>: it
+              won't come back to ask you again, and you don't have to be at the PC. Everything waiting is listed with its time and the full
+              text in <strong className="text-white">Settings → Email → Waiting to go out</strong>, where Cancel takes it back before it
+              goes. Soundwave has to be running when the time comes (if the PC was off it sends at the next start and tells you how late it
+              was), and the same switch, daily limit and address checks apply when it fires.
+            </li>
+            <li>
+              <strong className="text-white">Staying in control:</strong> the switch in Settings → Email turns sending from chat off (it
+              then only saves drafts), and there's a daily cap (25 by default). The same message twice within five minutes is refused; a
+              draft it saved can only be sent later if Gmail still has it exactly as it was, otherwise it asks you to review. Drafts with
+              attachments are always sent by you in Gmail.
+            </li>
+            <li>
+              Ask it to <em>"find John's address"</em>, <em>"what's on tomorrow?"</em> or <em>"find the March invoice on my Drive"</em> and
+              it uses contacts, Calendar and Drive — all read-only. It never takes instructions from inside an email, and it never sends
+              anything you didn't ask for.
+            </li>
+            <li>
+              When you ask the agent to read or write an email, the relevant content is sent to the Gemini provider configured in Settings →
+              Brain. Disconnect Google at any time in the Email tab; drafts already in Gmail remain there.
+            </li>
           </ul>
         </Section>
 
         {/* How the agent renders */}
         <Section icon={<Clapperboard className="h-4 w-4" />} title="How the Agent Renders a Short">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">TikTok Subtitle Styling:</strong> Auto-synced word cues rendered in bold Montserrat 800 with high-contrast violet backgrounds (#8B5CF6) and dynamic center scaling.</li>
-            <li><strong className="text-white">Fresh Orbital NCG Backgrounds:</strong> For every short the agent picks a video from youtube.com/@OrbitalNCG it has never used before, pastes its link into the YouTube link importer, and imports just the gameplay the short needs.</li>
-            <li><strong className="text-white">Server-Side FFmpeg Engine:</strong> Professional H.264 rendering in 720p or 1080p 60fps vertical format (9:16), fit-to-voice audio duration, and seamless looping.</li>
+            <li>
+              <strong className="text-white">TikTok Subtitle Styling:</strong> Auto-synced word cues rendered in bold Montserrat 800 with
+              high-contrast violet backgrounds (#8B5CF6) and dynamic center scaling.
+            </li>
+            <li>
+              <strong className="text-white">Fresh Orbital NCG Backgrounds:</strong> For every short the agent picks a video from
+              youtube.com/@OrbitalNCG it has never used before, pastes its link into the YouTube link importer, and imports just the
+              gameplay the short needs.
+            </li>
+            <li>
+              <strong className="text-white">Server-Side FFmpeg Engine:</strong> Professional H.264 rendering in 720p or 1080p 60fps
+              vertical format (9:16), fit-to-voice audio duration, and seamless looping.
+            </li>
           </ul>
         </Section>
 
         {/* Talking to the agent */}
         <Section icon={<AudioLines className="h-4 w-4" />} title="Talk to Soundwave (Voice Input)">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">Tap the mic and talk:</strong> in the Command Center, tap the microphone (or the orb) and say what you'd type — "make a short about black holes". It sends by itself when you pause; tap again to send sooner. <strong className="text-white">Hold</strong> the mic instead for push-to-talk.</li>
-            <li><strong className="text-white">From any app (desktop):</strong> press <kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-xs">Ctrl+Shift+Space</kbd> — a small voice bar appears above the taskbar, listens, and answers out loud. Your words and the reply also land in the Command Center's conversation.</li>
-            <li><strong className="text-white">Private by design:</strong> speech is recognized on your PC by whisper.cpp with a bundled English model — no account, no API key, and your voice is never uploaded. (Replies are still spoken with Microsoft's online Soundwave voices.)</li>
-            <li><strong className="text-white">Tray & notifications (desktop):</strong> closing the window keeps Soundwave in the system tray, so the shortcut keeps working and shorts keep rendering; a Windows notification tells you when a short is ready. Quit from the tray icon.</li>
-            <li><strong className="text-white">Options:</strong> <Link to="/settings/voice" className="text-cyan-300 hover:text-cyan-200">Settings → Voice &amp; Desktop</Link> — test the microphone, change the shortcut, start with Windows, sound cues, notifications.</li>
-            <li><strong className="text-white">Microphone blocked?</strong> On Windows: Settings → Privacy &amp; security → Microphone → turn on "Microphone access" and "Let desktop apps access your microphone".</li>
+            <li>
+              <strong className="text-white">Tap the mic and talk:</strong> in the Command Center, tap the microphone (or the orb) and say
+              what you'd type — "make a short about black holes". It sends by itself when you pause; tap again to send sooner.{" "}
+              <strong className="text-white">Hold</strong> the mic instead for push-to-talk.
+            </li>
+            <li>
+              <strong className="text-white">From any app (desktop):</strong> press{" "}
+              <kbd className="rounded bg-gray-800 px-1.5 py-0.5 text-xs">Ctrl+Shift+Space</kbd> — a small voice bar appears above the
+              taskbar, listens, and answers out loud. Your words and the reply also land in the Command Center's conversation.
+            </li>
+            <li>
+              <strong className="text-white">Private by design:</strong> speech is recognized on your PC by whisper.cpp with a bundled
+              English model — no account, no API key, and your voice is never uploaded. (Replies are still spoken with Microsoft's online
+              Soundwave voices.)
+            </li>
+            <li>
+              <strong className="text-white">Tray & notifications (desktop):</strong> closing the window keeps Soundwave in the system tray,
+              so the shortcut keeps working and shorts keep rendering; a Windows notification tells you when a short is ready. Quit from the
+              tray icon.
+            </li>
+            <li>
+              <strong className="text-white">Options:</strong>{" "}
+              <Link to="/settings/voice" className="text-cyan-300 hover:text-cyan-200">
+                Settings → Voice &amp; Desktop
+              </Link>{" "}
+              — test the microphone, change the shortcut, start with Windows, sound cues, notifications.
+            </li>
+            <li>
+              <strong className="text-white">Microphone blocked?</strong> On Windows: Settings → Privacy &amp; security → Microphone → turn
+              on "Microphone access" and "Let desktop apps access your microphone".
+            </li>
           </ul>
         </Section>
 
         {/* Phone companion */}
         <Section icon={<Smartphone className="h-4 w-4" />} title="Use It From Your Phone">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">The Soundwave phone app (Android)</strong> is a remote for the agent on this PC: type or talk, start shorts, watch them when they're done. It's the same conversation as the Command Center — messages from the phone are marked <em>YOU (PHONE)</em>.</li>
-            <li><strong className="text-white">Pair once:</strong> <Link to="/settings/phone" className="text-cyan-300 hover:text-cyan-200">Settings → Phone</Link> → turn on "Let my phone connect", then tap <em>Scan QR code</em> in the app. No camera? Choose <em>Enter code</em> and type the address and code shown under the QR code.</li>
-            <li><strong className="text-white">Same brain:</strong> the phone is answered by the agent on this PC, with your Gemini key from <Link to="/settings/brain" className="text-cyan-300 hover:text-cyan-200">Settings → Brain</Link> — nothing to set up on the phone. Web pages and apps it opens appear on this PC.</li>
-            <li><strong className="text-white">The full agent while Soundwave AI runs here</strong> (the tray counts) and the phone is on the same Wi-Fi. If Windows asks whether Soundwave AI may use your network, allow it for private networks.</li>
-            <li><strong className="text-white">PC off? It keeps chatting:</strong> with “Chat from the phone when this PC is off” on (<Link to="/settings/phone" className="text-cyan-300 hover:text-cyan-200">Settings → Phone</Link>), the phone talks to Gemini directly, with your conversation and the agent's memory — and everything goes back to this PC when it's reachable. Shorts, videos and PC actions wait for the PC.</li>
-            <li><strong className="text-white">Private:</strong> the phone talks straight to this PC, end-to-end encrypted with a key set up from the QR code — nothing goes through the internet. Remove a phone any time in Settings → Phone.</li>
+            <li>
+              <strong className="text-white">The Soundwave phone app (Android)</strong> is a remote for the agent on this PC: type or talk,
+              start shorts, watch them when they're done. It's the same conversation as the Command Center — messages from the phone are
+              marked <em>YOU (PHONE)</em>.
+            </li>
+            <li>
+              <strong className="text-white">Pair once:</strong>{" "}
+              <Link to="/settings/phone" className="text-cyan-300 hover:text-cyan-200">
+                Settings → Phone
+              </Link>{" "}
+              → turn on "Let my phone connect", then tap <em>Scan QR code</em> in the app. No camera? Choose <em>Enter code</em> and type
+              the address and code shown under the QR code.
+            </li>
+            <li>
+              <strong className="text-white">Same brain:</strong> the phone is answered by the agent on this PC, with your Gemini key from{" "}
+              <Link to="/settings/brain" className="text-cyan-300 hover:text-cyan-200">
+                Settings → Brain
+              </Link>{" "}
+              — nothing to set up on the phone. Web pages and apps it opens appear on this PC.
+            </li>
+            <li>
+              <strong className="text-white">The full agent while Soundwave AI runs here</strong> (the tray counts) and the phone is on the
+              same Wi-Fi. If Windows asks whether Soundwave AI may use your network, allow it for private networks.
+            </li>
+            <li>
+              <strong className="text-white">PC off? It keeps chatting:</strong> with “Chat from the phone when this PC is off” on (
+              <Link to="/settings/phone" className="text-cyan-300 hover:text-cyan-200">
+                Settings → Phone
+              </Link>
+              ), the phone talks to Gemini directly, with your conversation and the agent's memory — and everything goes back to this PC
+              when it's reachable. Shorts, videos and PC actions wait for the PC.
+            </li>
+            <li>
+              <strong className="text-white">Private:</strong> the phone talks straight to this PC, end-to-end encrypted with a key set up
+              from the QR code — nothing goes through the internet. Remove a phone any time in Settings → Phone.
+            </li>
           </ul>
         </Section>
 
         {/* The agent's voice */}
         <Section icon={<Mic className="h-4 w-4" />} title="The Agent's Voice">
           <ul className="list-disc space-y-1.5 pl-5 text-sm text-gray-300">
-            <li><strong className="text-white">Choose one voice for replies and shorts:</strong> pick it in the Command Center, Voice Library or Settings. Andrew, Brian, Emma and Ava are the newer Soundwave voices; Guy, Christopher, Ryan, Jenny, Ana and Sonia remain available.</li>
-            <li><strong className="text-white">On-device narration and cloning:</strong> packaged Windows desktop downloads the Kokoro narration assets and the 728 MiB MOSS CPU cloning model automatically on first use, then starts them invisibly with Soundwave. Initial setup needs internet and at least 3 GB free before the package/model install (exact total downloads have not yet been measured on Windows); progress, cancellation, retry and repair are available in the same session. Once ready, narration and cloning run locally and can work offline. MOSS does not list Serbian among its supported languages.</li>
-            <li><strong className="text-white">Clone only with permission:</strong> before creating a voice, confirm that you own it or have the speaker's explicit permission. MOSS accepts 3–10 seconds of reference speech; optional Chatterbox sidecars accept 3–60 seconds.</li>
-            <li><strong className="text-white">Starts talking right away:</strong> Soundwave-voice replies are streamed while they're synthesized, so there's no wait for the whole answer.</li>
-            <li><strong className="text-white">Clear fallback behavior:</strong> Microsoft voices need the internet; Kokoro narration and MOSS cloning run on this PC after setup. If the selected engine is unavailable, the app explains why instead of silently changing the voice.</li>
+            <li>
+              <strong className="text-white">Choose one voice for replies and shorts:</strong> pick it in the Command Center, Voice Library
+              or Settings. Andrew, Brian, Emma and Ava are the newer Soundwave voices; Guy, Christopher, Ryan, Jenny, Ana and Sonia remain
+              available.
+            </li>
+            <li>
+              <strong className="text-white">On-device narration and cloning:</strong> packaged Windows desktop downloads the Kokoro
+              narration assets and the 728 MiB MOSS CPU cloning model automatically on first use, then starts them invisibly with Soundwave.
+              Initial setup needs internet and at least 3 GB free before the package/model install (exact total downloads have not yet been
+              measured on Windows); progress, cancellation, retry and repair are available in the same session. Once ready, narration and
+              cloning run locally and can work offline. MOSS does not list Serbian among its supported languages.
+            </li>
+            <li>
+              <strong className="text-white">Clone only with permission:</strong> before creating a voice, confirm that you own it or have
+              the speaker's explicit permission. MOSS accepts 3–10 seconds of reference speech; optional Chatterbox sidecars accept 3–60
+              seconds.
+            </li>
+            <li>
+              <strong className="text-white">Starts talking right away:</strong> Soundwave-voice replies are streamed while they're
+              synthesized, so there's no wait for the whole answer.
+            </li>
+            <li>
+              <strong className="text-white">Clear fallback behavior:</strong> Microsoft voices need the internet; Kokoro narration and MOSS
+              cloning run on this PC after setup. If the selected engine is unavailable, the app explains why instead of silently changing
+              the voice.
+            </li>
           </ul>
         </Section>
 
         {/* Standalone Desktop Agent */}
         <Section icon={<Cpu className="h-4 w-4" />} title="Standalone Desktop Runner (Python)">
           <div className="text-sm text-gray-300 space-y-2">
-            <p>The <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs">soundwave-agent/</code> package allows Soundwave AI to run as an independent, local desktop assistant on Windows, macOS, or Linux without any browser overhead.</p>
+            <p>
+              The <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs">soundwave-agent/</code> package allows Soundwave AI to run as
+              an independent, local desktop assistant on Windows, macOS, or Linux without any browser overhead.
+            </p>
             <ul className="list-disc space-y-1 pl-5 text-xs text-gray-400">
-              <li><strong className="text-white">Soundwave Reactive HUD:</strong> Clean, futuristic audio visualizer that pulses to speech and rendering tasks — no weird 3D face avatar.</li>
-              <li><strong className="text-white">CLI & GUI:</strong> Run <code className="text-cyan-300">python soundwave-agent/main.py --batch</code> for one-line viral content generation.</li>
-              <li><strong className="text-white">Direct REST API:</strong> Communicates directly with the Soundwave backend to automate rendering and downloads.</li>
+              <li>
+                <strong className="text-white">Soundwave Reactive HUD:</strong> Clean, futuristic audio visualizer that pulses to speech and
+                rendering tasks — no weird 3D face avatar.
+              </li>
+              <li>
+                <strong className="text-white">CLI & GUI:</strong> Run{" "}
+                <code className="text-cyan-300">python soundwave-agent/main.py --batch</code> for one-line viral content generation.
+              </li>
+              <li>
+                <strong className="text-white">Direct REST API:</strong> Communicates directly with the Soundwave backend to automate
+                rendering and downloads.
+              </li>
             </ul>
           </div>
         </Section>
@@ -139,14 +368,217 @@ export function Help() {
         {/* Commercial Licensing */}
         <Section icon={<ShieldCheck className="h-4 w-4" />} title="Commercial Rights & Clean IP">
           <p className="text-sm text-gray-300 leading-relaxed">
-            Soundwave AI is built entirely from original code, permissively licensed under the <strong className="text-white">MIT Commercial License</strong>. There is zero proprietary code, zero borrowed assets, and zero third-party dependencies from other creator repositories. You own full commercial rights to sell, package, redistribute, and monetize Soundwave AI and the videos it produces.
+            Soundwave AI is built entirely from original code, permissively licensed under the{" "}
+            <strong className="text-white">MIT Commercial License</strong>. There is zero proprietary code, zero borrowed assets, and zero
+            third-party dependencies from other creator repositories. You own full commercial rights to sell, package, redistribute, and
+            monetize Soundwave AI and the videos it produces.
           </p>
+        </Section>
+
+        {/* Something went wrong — the logs exist, and this is how to get them */}
+        <Section icon={<Bug className="h-4 w-4" />} title="Something Went Wrong?">
+          <Troubleshooting />
+        </Section>
+
+        <Section icon={<Database className="h-4 w-4" />} title="Your Data">
+          <DataSafety />
         </Section>
 
         <p className="flex items-center gap-2 text-xs text-gray-500">
           <MessageCircleQuestion className="h-4 w-4" /> Soundwave AI Suite · All Rights Reserved · Commercial Version 2.0
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "Something went wrong?" — where the logs are, and a diagnostics block to send.
+ *
+ * A packaged Windows app has no console, so before this existed a problem left
+ * nothing behind that anyone could look at: the person had a description, and
+ * support had nothing. The shell keeps a log file (desktop/src/diagnostics.cjs)
+ * and the server writes into the same folder (server/src/lib/log.ts); these two
+ * buttons are how they leave the machine.
+ */
+function Troubleshooting() {
+  const desktop = getDesktop();
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (!desktop) {
+    return (
+      <p className="text-sm text-gray-300">
+        Running in a browser. If a short fails, the reason is shown on its card in the Command Center — and the server in your terminal
+        prints the detail (set <code className="rounded bg-gray-800 px-1.5 py-0.5 text-xs">SOUNDWAVE_LOG_DIR</code> to keep a file).
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3 text-sm text-gray-300">
+      <p>
+        The desktop app writes everything it does to a log file — what failed, why, and which version it happened on. Nothing else is sent
+        anywhere; these buttons are how it leaves this PC.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void desktop.openLogs()}
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:border-cyan-400/50 hover:text-white"
+        >
+          <FolderOpen className="h-4 w-4" /> Open the log folder
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const text = await desktop.copyDiagnostics();
+              if (text) {
+                await navigator.clipboard.writeText(text).catch(() => {});
+                setCopied(true);
+                setTimeout(() => setCopied(false), 4000);
+              }
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:border-cyan-400/50 hover:text-white disabled:opacity-50"
+        >
+          {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+          {copied ? "Copied — paste it in your message" : busy ? "Collecting…" : "Copy diagnostics"}
+        </button>
+      </div>
+      <p className="text-xs text-gray-500">
+        Diagnostics are versions, settings, the API's own status and the last few hundred log lines, with anything that looks like a key or
+        a token removed. Your files, your emails and your videos are never included.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * "Your Data" — take it out, put it back.
+ *
+ * Everything Soundwave remembers lives in one folder on this PC (memory, drafts,
+ * the posting schedule, the channels being watched, the brand kit). Before this
+ * existed, the only copy was that folder: a failed drive or a bad upgrade meant
+ * starting again, and there was nothing to move to a new PC with.
+ *
+ * The export never contains a key or a token — the server strips them on the way
+ * out and says how many it took — so the zip is safe to keep in a cloud folder.
+ */
+function DataSafety() {
+  const [busy, setBusy] = useState<"export" | "restore" | null>(null);
+  const [message, setMessage] = useState("");
+  const [problem, setProblem] = useState("");
+
+  const exportNow = async () => {
+    setBusy("export");
+    setProblem("");
+    setMessage("");
+    try {
+      const res = await fetch("/api/v1/backup/export");
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      const blob = await res.blob();
+      const redacted = Number(res.headers.get("X-Soundwave-Redacted") ?? "0");
+      const name = `soundwave-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke on the next tick: revoking immediately can cancel the download
+      // in some browsers before it has read the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setMessage(
+        `Saved ${name} (${Math.max(1, Math.round(blob.size / 1024))} KB).${
+          redacted ? ` ${redacted} saved secret${redacted === 1 ? "" : "s"} were left out.` : ""
+        }`,
+      );
+    } catch (err) {
+      setProblem(`Couldn't export: ${(err as Error).message}.`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const restoreNow = async (file: File) => {
+    const sure = window.confirm(
+      `Restore from "${file.name}"?\n\nYour current data is moved aside first (nothing is deleted), but Soundwave has to restart to load the backup.`,
+    );
+    if (!sure) return;
+    setBusy("restore");
+    setProblem("");
+    setMessage("");
+    try {
+      const res = await fetch("/api/v1/backup/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/zip" },
+        body: file,
+      });
+      const body = (await res.json().catch(() => ({}))) as { restored?: number; note?: string; error?: { message?: string } };
+      if (!res.ok) throw new Error(body.error?.message ?? `the server answered ${res.status}`);
+      setMessage(`${body.restored ?? 0} files restored. ${body.note ?? "Restart Soundwave to load them."}`);
+    } catch (err) {
+      setProblem(`Couldn't restore: ${(err as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3 text-sm text-gray-300">
+      <p>
+        Everything Soundwave remembers — your memory and chats, drafts, the posting schedule, the channels it watches, your brand kit —
+        lives in one folder on this PC. You can take a copy of it, and put it back.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void exportNow()}
+          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:border-cyan-400/50 hover:text-white disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" /> {busy === "export" ? "Packing…" : "Export my data"}
+        </button>
+
+        <label
+          className={`inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-gray-200 hover:border-cyan-400/50 hover:text-white ${
+            busy !== null ? "opacity-50" : "cursor-pointer"
+          }`}
+        >
+          <Upload className="h-4 w-4" /> {busy === "restore" ? "Restoring…" : "Restore from a backup"}
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            className="hidden"
+            disabled={busy !== null}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void restoreNow(file);
+            }}
+          />
+        </label>
+      </div>
+
+      {message && (
+        <p className="flex items-start gap-2 text-xs text-emerald-300">
+          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {message}
+        </p>
+      )}
+      {problem && <p className="text-xs text-red-300">{problem}</p>}
+
+      <p className="text-xs text-gray-500">
+        The export leaves out anything that looks like a password, key or token — it says how many — so the zip is safe to keep in a cloud
+        folder or send to yourself. You re-enter those after restoring. A restore moves your current data into a{" "}
+        <code className="rounded bg-gray-800 px-1 py-0.5">restored-from-…</code> folder inside the data directory rather than deleting it.
+      </p>
     </div>
   );
 }

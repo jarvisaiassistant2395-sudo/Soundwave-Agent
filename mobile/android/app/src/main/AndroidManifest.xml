@@ -5,6 +5,12 @@
       Soundwave phone companion.
       * usesCleartextTraffic: the PC answers on http://<its LAN address>:47800 — every
         request and answer is AES-256-GCM encrypted inside (see mobile/src/lib/protocol.ts).
+        Android's network security config can list hosts but cannot express "the
+        private ranges", so the platform cannot narrow this to the LAN. The app
+        therefore enforces the rule itself: `isPrivateAddress()` (protocol.ts)
+        refuses plain http to anything that is not loopback, link-local or
+        RFC1918, so a pairing link pointing at a public address is rejected
+        before any request is made.
       * No backups: the pairing key stays on this phone.
     -->
     <application

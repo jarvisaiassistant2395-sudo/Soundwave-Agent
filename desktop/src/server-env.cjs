@@ -100,7 +100,9 @@ function prepareYtDlp({ binDir, userDataDir }) {
  * bad local copy can never break a working shipped one.
  */
 function loadYouTubeClient(appRoot, userDataDir = null) {
-  const places = [userDataDir && path.join(userDataDir, "youtube-client.json"), path.join(appRoot, "config", "youtube-client.json")].filter(Boolean);
+  const places = [userDataDir && path.join(userDataDir, "youtube-client.json"), path.join(appRoot, "config", "youtube-client.json")].filter(
+    Boolean,
+  );
   for (const file of places) {
     try {
       const raw = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -175,6 +177,11 @@ async function applyServerEnv({ appRoot, binDir, userDataDir, autoUpdateYtDlp = 
     // personal build has no billing routes at all and runs everything
     // unlocked, whatever the stored plan says.
     SOUNDWAVE_EDITION: edition.id,
+    // The log file (server lib/log.ts). A Windows GUI app has no console, so
+    // without this every message the server logs — a failed export, a Gemini
+    // key rejection, a database that would not load — goes nowhere at all and
+    // "it stopped working" is unanswerable. Settings → Help opens this folder.
+    SOUNDWAVE_LOG_DIR: path.join(userDataDir, "logs"),
   };
   // …and its own records should say the truth too. An explicit value from the
   // environment (a developer, a test) still wins.

@@ -46,9 +46,7 @@ const workspaceNav: NavItem[] = [
 ];
 
 // The agent is the only thing in the app that makes videos.
-const createNav: NavItem[] = [
-  { to: "/agent?tab=generator", label: "Generate Short", icon: <Sparkles className="h-4 w-4" /> },
-];
+const createNav: NavItem[] = [{ to: "/agent?tab=generator", label: "Generate Short", icon: <Sparkles className="h-4 w-4" /> }];
 
 const manageNav: NavItem[] = [
   { to: "/agent?tab=activity", label: "Activity", icon: <Activity className="h-4 w-4" /> },
@@ -103,14 +101,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       await signOut();
     } catch {}
-    navigate("/agent");
+    void navigate("/agent");
     toast.info("Signed out", "You have been signed out of Soundwave AI.");
   };
 
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!search.trim()) return;
-    navigate(`/projects?q=${encodeURIComponent(search.trim())}`);
+    void navigate(`/projects?q=${encodeURIComponent(search.trim())}`);
   };
 
   // Compute clean breadcrumbs
@@ -136,7 +134,11 @@ export function AppShell({ children }: { children: ReactNode }) {
    * nothing else — the same buttons, reachable, with the labels as tooltips.
    */
   const renderSidebar = (rail: boolean) => (
-    <div className="flex h-full flex-col bg-[#08080A] text-gray-300 select-none" data-testid="sidebar" data-collapsed={rail ? "true" : "false"}>
+    <div
+      className="flex h-full flex-col bg-[#08080A] text-gray-300 select-none"
+      data-testid="sidebar"
+      data-collapsed={rail ? "true" : "false"}
+    >
       {/* Workspace Brand Switcher */}
       <div className={cn("flex h-14 items-center border-b border-white/[0.06]", rail ? "justify-center px-1" : "justify-between px-3.5")}>
         <NavLink to="/agent" className="flex items-center gap-2.5 group" title="Soundwave AI — Command Center">
@@ -204,14 +206,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Grouped Navigation */}
       <nav className={cn("flex-1 overflow-y-auto py-3 space-y-4", rail ? "px-2" : "px-2.5")} aria-label="Main navigation">
-        {([
-          ["Workspace", workspaceNav],
-          ["Create", createNav],
-          ["Manage", manageNav],
-        ] as Array<[string, NavItem[]]>).map(([title, items]) => (
+        {(
+          [
+            ["Workspace", workspaceNav],
+            ["Create", createNav],
+            ["Manage", manageNav],
+          ] as Array<[string, NavItem[]]>
+        ).map(([title, items]) => (
           <div key={title}>
             {!rail && (
-              <div className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase" data-testid={`sidebar-group-${title.toLowerCase()}`}>
+              <div
+                className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-gray-400 uppercase"
+                data-testid={`sidebar-group-${title.toLowerCase()}`}
+              >
                 {title}
               </div>
             )}
@@ -257,7 +264,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               rail && "justify-center",
             )}
           >
-            <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white", avatarColorClass(profile.color))}>
+            <span
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white",
+                avatarColorClass(profile.color),
+              )}
+            >
               {initials(displayName)}
             </span>
             {!rail && (
@@ -282,7 +294,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               }
               items={[
                 { key: "profile", label: "Profile", icon: <CircleUserRound className="h-4 w-4" />, onClick: () => navigate("/profile") },
-                { key: "billing", label: "Plan & Billing", icon: <CreditCard className="h-4 w-4" />, onClick: () => navigate("/settings/billing") },
+                {
+                  key: "billing",
+                  label: "Plan & Billing",
+                  icon: <CreditCard className="h-4 w-4" />,
+                  onClick: () => navigate("/settings/billing"),
+                },
                 { key: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" />, onClick: () => navigate("/settings") },
                 ...(user
                   ? [{ key: "logout", label: "Sign out", icon: <LogOut className="h-4 w-4" />, danger: true, onClick: handleSignOut }]
@@ -339,7 +356,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       </AnimatePresence>
 
       {/* Main column */}
-      <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-60", isCommandCenter && "lg:min-h-0")}>
+      <div
+        className={cn(
+          "flex flex-1 flex-col transition-[padding] duration-200",
+          collapsed ? "lg:pl-16" : "lg:pl-60",
+          isCommandCenter && "lg:min-h-0",
+        )}
+      >
         {/* Header Bar */}
         <header className="sticky top-0 z-10 h-14 shrink-0 border-b border-white/[0.06] bg-[#000000]/90 backdrop-blur-md">
           <div className="flex h-full items-center justify-between px-4 sm:px-6">
@@ -389,7 +412,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             "flex-1 w-full mx-auto",
             isCommandCenter
               ? "max-w-none px-2 sm:px-4 py-3 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden lg:[&>*]:flex-1"
-              : "max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
+              : "max-w-7xl px-4 py-6 sm:px-6 lg:px-8",
           )}
         >
           {children}
@@ -402,9 +425,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 function SidebarNavLink({ item, rail = false }: { item: NavItem; rail?: boolean }) {
   const location = useLocation();
   const currentPathWithSearch = location.pathname + location.search;
-  const isMatch = item.to.includes("?")
-    ? currentPathWithSearch === item.to
-    : location.pathname === item.to;
+  const isMatch = item.to.includes("?") ? currentPathWithSearch === item.to : location.pathname === item.to;
 
   return (
     <NavLink
@@ -413,9 +434,7 @@ function SidebarNavLink({ item, rail = false }: { item: NavItem; rail?: boolean 
       className={cn(
         "flex items-center rounded-lg py-1.5 text-xs font-medium transition-colors",
         rail ? "justify-center px-0" : "justify-between px-2.5",
-        isMatch
-          ? "bg-white/[0.08] text-white"
-          : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200",
+        isMatch ? "bg-white/[0.08] text-white" : "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200",
       )}
       // The rail hides the labels: the name has to be findable another way.
       title={rail ? item.label : undefined}
@@ -427,9 +446,7 @@ function SidebarNavLink({ item, rail = false }: { item: NavItem; rail?: boolean 
         {!rail && <span className="truncate">{item.label}</span>}
       </div>
       {!rail && item.badge && (
-        <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400">
-          {item.badge}
-        </span>
+        <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400">{item.badge}</span>
       )}
     </NavLink>
   );

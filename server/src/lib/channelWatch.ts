@@ -13,13 +13,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { config } from "../config.js";
+import { writeJsonFile } from "./jsonFile.js";
 import { appendToConversation } from "./conversation.js";
 import { chatTime, newMessageId } from "./chatMessages.js";
 import { listChannelVideos, type YtChannelVideo } from "./ytdlp.js";
 import { clipsBusy, startClipsJob } from "./videoClips.js";
 import {
   CHECK_INTERVAL_MS,
-  DEFAULT_WATCH_CLIPS,
   LISTING_LIMIT,
   MAX_QUEUE_ATTEMPTS,
   MAX_WATCHES,
@@ -85,8 +85,7 @@ function load(): WatchState {
 
 function save(state: WatchState): void {
   try {
-    fs.mkdirSync(path.dirname(fileFor()), { recursive: true });
-    fs.writeFileSync(fileFor(), JSON.stringify(state, null, 2), "utf8");
+    writeJsonFile(fileFor(), state);
   } catch (err) {
     console.warn(`[watch] could not save: ${(err as Error).message}`);
   }
@@ -197,9 +196,7 @@ export function removeWatchById(id: string): boolean {
  * doesn't need the scheduler's blessing — the queue and the render pipeline are
  * the same ones a new upload goes through.
  */
-export async function clipLatestNow(
-  id: string,
-): Promise<{ ok: boolean; title?: string; started?: boolean; reason?: string }> {
+export async function clipLatestNow(id: string): Promise<{ ok: boolean; title?: string; started?: boolean; reason?: string }> {
   const state = load();
   const watch = state.watches.find((w) => w.id === id);
   if (!watch) return { ok: false, reason: "That channel isn't being watched any more." };
@@ -256,7 +253,7 @@ export async function addWatch(opts: AddWatchOptions): Promise<ChannelWatch> {
   const ref = parseChannelInput(opts.channel ?? "");
   if (!ref) {
     throw new Error(
-      "That isn't a channel I can watch — give me the channel's link or its @handle, e.g. \"@MrBeast\" or \"youtube.com/@MrBeast\".",
+      'That isn\'t a channel I can watch — give me the channel\'s link or its @handle, e.g. "@MrBeast" or "youtube.com/@MrBeast".',
     );
   }
   const state = load();

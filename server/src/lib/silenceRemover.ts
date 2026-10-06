@@ -64,10 +64,7 @@ export interface AutoEditOptions {
 /**
  * Detect silence intervals in an audio/video file using FFmpeg's silencedetect filter.
  */
-export async function detectSilenceIntervals(
-  filePath: string,
-  options: SilenceDetectOptions = {}
-): Promise<SilenceAnalysisResult> {
+export async function detectSilenceIntervals(filePath: string, options: SilenceDetectOptions = {}): Promise<SilenceAnalysisResult> {
   const probe = await probeMedia(filePath);
   const totalDuration = Math.max(0.1, probe.duration);
 
@@ -92,11 +89,7 @@ export async function detectSilenceIntervals(
   const padding = options.paddingSec ?? 0.15;
 
   const ffmpeg = resolveFfmpegPath();
-  const args = [
-    "-i", filePath,
-    "-af", `silencedetect=noise=${noise}dB:d=${minDur}`,
-    "-f", "null", "-",
-  ];
+  const args = ["-i", filePath, "-af", `silencedetect=noise=${noise}dB:d=${minDur}`, "-f", "null", "-"];
 
   const rawSilences: Array<{ start: number; end: number }> = [];
 
@@ -329,15 +322,11 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
     });
 
     if (hasAudio) {
-      filterLines.push(
-        `${concatPads.join("")}concat=n=${numSegments}:v=1:a=1[vcut][acut];`
-      );
+      filterLines.push(`${concatPads.join("")}concat=n=${numSegments}:v=1:a=1[vcut][acut];`);
       activeVideoTag = "vcut";
       activeAudioTag = "acut";
     } else {
-      filterLines.push(
-        `${concatPads.join("")}concat=n=${numSegments}:v=1:a=0[vcut];`
-      );
+      filterLines.push(`${concatPads.join("")}concat=n=${numSegments}:v=1:a=0[vcut];`);
       activeVideoTag = "vcut";
     }
   } else if (hasAudio) {
@@ -373,22 +362,16 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
   let finalVideoTag = activeVideoTag;
 
   if (backdrop !== "none" || aspect !== "16:9") {
-    // Generate backdrop color
-    let bgColor = "0x0B1120"; // Cyber slate default
-    if (backdrop === "gradient_purple") bgColor = "0x180B26";
-    if (backdrop === "midnight") bgColor = "0x05070E";
+    // (The backdrop colour is chosen once, below, where the lavfi canvas is
+    // actually built — this block used to duplicate it into a dead variable.)
 
     // Scaled screen size inside backdrop canvas
     const margin = paddingPct / 100;
     const availW = Math.round(targetW * (1 - margin * 2));
     const availH = Math.round(targetH * (1 - margin * 2));
 
-    filterLines.push(
-      `[${activeVideoTag}]${zoomFilter}scale=${availW}:${availH}:force_original_aspect_ratio=decrease[screen_scaled];`
-    );
-    filterLines.push(
-      `[1:v][screen_scaled]overlay=(W-w)/2:(H-h)/2[framed];`
-    );
+    filterLines.push(`[${activeVideoTag}]${zoomFilter}scale=${availW}:${availH}:force_original_aspect_ratio=decrease[screen_scaled];`);
+    filterLines.push(`[1:v][screen_scaled]overlay=(W-w)/2:(H-h)/2[framed];`);
     finalVideoTag = "framed";
   } else if (zoomFilter) {
     filterLines.push(`[${activeVideoTag}]${zoomFilter.slice(0, -1)}[zoomed];`);
@@ -430,12 +413,7 @@ export async function autoEditVideo(options: AutoEditOptions): Promise<void> {
     if (hasAudio) args.push("-map", "0:a");
   }
 
-  args.push(
-    "-c:v", "libx264",
-    "-preset", framing.quality === "high" ? "medium" : "veryfast",
-    "-crf", "20",
-    "-pix_fmt", "yuv420p"
-  );
+  args.push("-c:v", "libx264", "-preset", framing.quality === "high" ? "medium" : "veryfast", "-crf", "20", "-pix_fmt", "yuv420p");
 
   if (hasAudio) {
     args.push("-c:a", "aac", "-b:a", "192k");

@@ -1,0 +1,20 @@
+Soundwave AI — proprietary software
+Copyright (c) 2026 Soundwave AI. All rights reserved.
+
+This repository and everything in it (the desktop application, the API, the
+Command Center UI, the phone companion, the on-device and server-side tooling,
+and this documentation) is proprietary and confidential.
+
+You may not copy, modify, distribute, sublicense, sell, host, or use any part of
+it without a written licence from the copyright holder. No licence is granted by
+possession of the source, by access to this repository, or by any build of it.
+
+"Soundwave", "Soundwave AI" and the Soundwave logo are trademarks of the
+copyright holder. Third-party components are used under their own licences —
+see THIRD-PARTY-NOTICES.txt for the texts and scripts/license-audit.mjs for the
+list, which includes the source offer that the bundled ffmpeg build (GPLv3)
+requires.
+
+If you are reading this because you found a copy somewhere other than the
+official distribution, it is not licensed to you. Report it to
+security@soundwave.ai — thank you.

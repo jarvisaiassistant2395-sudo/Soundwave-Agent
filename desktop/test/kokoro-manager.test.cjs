@@ -59,7 +59,10 @@ test("the Python download honors a cancellation signal without leaving a partial
   const controller = new AbortController();
   controller.abort();
   try {
-    await assert.rejects(downloadHttps(PYTHON_INSTALLER_URL, destination, { maxBytes: 64 * 1024 * 1024, signal: controller.signal }), /cancelled/i);
+    await assert.rejects(
+      downloadHttps(PYTHON_INSTALLER_URL, destination, { maxBytes: 64 * 1024 * 1024, signal: controller.signal }),
+      /cancelled/i,
+    );
     assert.equal(fs.existsSync(destination), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -89,18 +92,26 @@ test("a recovered pip retry in the log is not reported as no internet", () => {
     "Traceback (most recent call last):",
     "ModuleNotFoundError: No module named 'kokoro'",
   ].join("\n");
-  const message = describeSetupFailure(new Error("python.exe exited with code 1."), log, "C:\\Users\\me\\AppData\\Roaming\\Soundwave AI\\kokoro\\kokoro.log");
+  const message = describeSetupFailure(
+    new Error("python.exe exited with code 1."),
+    log,
+    "C:\\Users\\me\\AppData\\Roaming\\Soundwave AI\\kokoro\\kokoro.log",
+  );
   assert.doesNotMatch(message, /internet|couldn't download/i);
   assert.match(message, /No module named 'kokoro'/);
   assert.match(message, /kokoro\.log/);
 });
 
 test("antivirus or proxy certificate interception is named, not blamed on the connection", () => {
-  const log = "requests.exceptions.SSLError: HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /hexgrad/Kokoro-82M (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate')))";
+  const log =
+    "requests.exceptions.SSLError: HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /hexgrad/Kokoro-82M (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate')))";
   const message = describeSetupFailure(new Error("Kokoro service exited (1)."), log);
   assert.match(message, /huggingface\.co/);
   assert.match(message, /antivirus|proxy/i);
-  assert.match(describeSetupFailure(new Error("self-signed certificate in certificate chain (https://huggingface.co)")), /secure connection was blocked/);
+  assert.match(
+    describeSetupFailure(new Error("self-signed certificate in certificate chain (https://huggingface.co)")),
+    /secure connection was blocked/,
+  );
 });
 
 test("a step that ran too long says so", () => {
@@ -150,7 +161,9 @@ test("a full disk still publishes an actionable setup status when the atomic tem
       resourcesDir: path.join(dir, "resources"),
       userDataDir: path.join(dir, "user-data"),
       getFreePort: async () => 48125,
-      spawnProcess: () => { throw new Error("setup must not start before manager.start()"); },
+      spawnProcess: () => {
+        throw new Error("setup must not start before manager.start()");
+      },
     });
     let simulatedFullDisk = false;
     fs.writeFileSync = function (filePath, ...args) {
@@ -185,7 +198,8 @@ test("cancelling model setup terminates the sidecar and preserves a cancelled st
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"])
+      fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -248,7 +262,8 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(pythonExe), { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"])
+      fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(pythonExe, "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -300,7 +315,12 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
           } else {
             fs.writeFileSync(
               options.env.KOKORO_SETUP_PROGRESS_FILE,
-              JSON.stringify({ phase: "loading-model", message: "Caching voice pack 14 of 28.", progress: 50, progressLabel: "Voice packs (14/28)" }),
+              JSON.stringify({
+                phase: "loading-model",
+                message: "Caching voice pack 14 of 28.",
+                progress: 50,
+                progressLabel: "Voice packs (14/28)",
+              }),
             );
           }
         } else {
@@ -352,7 +372,12 @@ test("cancelled and failed Kokoro setup can be repaired in-session with cached f
           offlineFlags.push(options.env.HF_HUB_OFFLINE);
           fs.writeFileSync(
             options.env.KOKORO_SETUP_PROGRESS_FILE,
-            JSON.stringify({ phase: "loading-model", message: "Using the verified offline cache.", progress: 100, progressLabel: "Offline cache" }),
+            JSON.stringify({
+              phase: "loading-model",
+              message: "Using the verified offline cache.",
+              progress: 100,
+              progressLabel: "Offline cache",
+            }),
           );
         } else {
           setImmediate(() => {
@@ -444,7 +469,8 @@ test("Kokoro voices become ready even when the cloning model can't be prepared, 
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"])
+      fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
@@ -454,7 +480,10 @@ test("Kokoro voices become ready even when the cloning model can't be prepared, 
       const mossEnabled = mossOffForRunningService === "0";
       return {
         ok: true,
-        json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: mossEnabled, loaded: mossEnabled } } }),
+        json: async () => ({
+          ok: true,
+          engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: mossEnabled, loaded: mossEnabled } },
+        }),
       };
     };
 
@@ -500,7 +529,8 @@ test("Kokoro voices become ready even when the cloning model can't be prepared, 
 
     cloneAssetsFail = false;
     assert.equal(await manager.retrySetup(), true);
-    for (let i = 0; i < 100 && (manager.state().phase !== "ready" || manager.state().cloneError); i++) await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 100 && (manager.state().phase !== "ready" || manager.state().cloneError); i++)
+      await new Promise((r) => setTimeout(r, 50));
     assert.equal(manager.state().phase, "ready");
     assert.equal(manager.state().cloneError, undefined);
     assert.equal(manager.state().message, "On-device narration and voice cloning are ready.");
@@ -523,13 +553,20 @@ test("a cloning model that fails to load is reported without blocking Kokoro", a
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"])
+      fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
     global.fetch = async () => ({
       ok: true,
-      json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: false, error: "The voice-cloning model couldn't load: onnxruntime DLL load failed" } } }),
+      json: async () => ({
+        ok: true,
+        engines: {
+          kokoro: { enabled: true, loaded: true },
+          moss: { enabled: true, loaded: false, error: "The voice-cloning model couldn't load: onnxruntime DLL load failed" },
+        },
+      }),
     });
     manager = await createManagedKokoro({
       ...packagedWindows,
@@ -544,7 +581,11 @@ test("a cloning model that fails to load is reported without blocking Kokoro", a
         child.signalCode = null;
         child.kill = () => true;
         child.unref = () => {};
-        if (!args.includes("uvicorn")) setImmediate(() => { child.exitCode = 0; child.emit("exit", 0, null); });
+        if (!args.includes("uvicorn"))
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
         return child;
       },
     });
@@ -570,10 +611,14 @@ test("package installs pass pip's retry settings through the environment, never 
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"])
+      fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
-    global.fetch = async () => ({ ok: true, json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }) });
+    global.fetch = async () => ({
+      ok: true,
+      json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }),
+    });
     manager = await createManagedKokoro({
       ...packagedWindows,
       resourcesDir,
@@ -588,7 +633,11 @@ test("package installs pass pip's retry settings through the environment, never 
         child.signalCode = null;
         child.kill = () => true;
         child.unref = () => {};
-        if (!args.includes("uvicorn")) setImmediate(() => { child.exitCode = 0; child.emit("exit", 0, null); });
+        if (!args.includes("uvicorn"))
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
         return child;
       },
     });
@@ -625,13 +674,18 @@ test("a failed setup retries by itself", async () => {
     fs.mkdirSync(resourcesDir, { recursive: true });
     fs.mkdirSync(path.dirname(venvPython), { recursive: true });
     fs.mkdirSync(path.join(runtimeDir, "python"), { recursive: true });
-    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"]) fs.writeFileSync(path.join(resourcesDir, file), "# test");
+    for (const file of ["server.py", "kokoro_engine.py", "moss_engine.py", "preflight.py", "requirements-kokoro.txt"])
+      fs.writeFileSync(path.join(resourcesDir, file), "# test");
     fs.writeFileSync(path.join(runtimeDir, "python", "python.exe"), "test runtime");
     fs.writeFileSync(venvPython, "test venv");
     fs.writeFileSync(path.join(runtimeDir, "install.json"), JSON.stringify({ revision: SETUP_REVISION, python: PYTHON_VERSION }));
-    global.fetch = async () => (services >= 2
-      ? { ok: true, json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }) }
-      : { ok: false, status: 503 });
+    global.fetch = async () =>
+      services >= 2
+        ? {
+            ok: true,
+            json: async () => ({ ok: true, engines: { kokoro: { enabled: true, loaded: true }, moss: { enabled: true, loaded: true } } }),
+          }
+        : { ok: false, status: 503 };
     manager = await createManagedKokoro({
       ...packagedWindows,
       resourcesDir,
@@ -647,8 +701,16 @@ test("a failed setup retries by itself", async () => {
         child.unref = () => {};
         if (args.includes("uvicorn")) {
           services++;
-          if (services === 1) setImmediate(() => { child.exitCode = 1; child.emit("exit", 1, null); });
-        } else setImmediate(() => { child.exitCode = 0; child.emit("exit", 0, null); });
+          if (services === 1)
+            setImmediate(() => {
+              child.exitCode = 1;
+              child.emit("exit", 1, null);
+            });
+        } else
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
         return child;
       },
     });
@@ -685,14 +747,20 @@ test("the managed requirements declare every package the --no-deps Kokoro instal
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
   // loguru: declared by kokoro itself; the one that was missing.
-  assert.ok(packages.some((p) => /^loguru\b/.test(p)), "loguru must be in requirements-kokoro.txt");
+  assert.ok(
+    packages.some((p) => /^loguru\b/.test(p)),
+    "loguru must be in requirements-kokoro.txt",
+  );
   // attrs: imported by kokoro/custom_stft.py (via istftnet, via model.py) and
   // declared by *nothing*, so only this file can bring it in.
-  assert.ok(packages.some((p) => /^attrs\b/.test(p)), "attrs must be in requirements-kokoro.txt");
+  assert.ok(
+    packages.some((p) => /^attrs\b/.test(p)),
+    "attrs must be in requirements-kokoro.txt",
+  );
   // The pieces kokoro.model / misaki.en import and pip will not bring in.
   for (const name of ["misaki", "transformers", "huggingface-hub", "spacy", "numpy"]) {
     assert.ok(
-      packages.some((p) => p.replace(/[\[<>=!~].*$/, "").trim() === name),
+      packages.some((p) => p.replace(/[<>=!~].*$/, "").trim() === name),
       `${name} must be in requirements-kokoro.txt`,
     );
   }
@@ -704,7 +772,19 @@ test("the managed requirements declare every package the --no-deps Kokoro instal
 
 test("the preflight checks the packages the service imports, including loguru, and ships with the app", () => {
   const preflight = fs.readFileSync(path.join(voicecloneDir, "preflight.py"), "utf8");
-  for (const name of ["loguru", "misaki", "torch", "torchaudio", "onnxruntime", "sentencepiece", "truststore", "attr", "addict", "regex", "safetensors"]) {
+  for (const name of [
+    "loguru",
+    "misaki",
+    "torch",
+    "torchaudio",
+    "onnxruntime",
+    "sentencepiece",
+    "truststore",
+    "attr",
+    "addict",
+    "regex",
+    "safetensors",
+  ]) {
     assert.ok(preflight.includes(`"${name}"`), `preflight.py must require ${name}`);
   }
   // And it must walk the engines' own files: a package installed with
@@ -722,7 +802,8 @@ test("the preflight checks the packages the service imports, including loguru, a
 });
 
 test("describeSetupFailure names the missing package and says it repairs itself", () => {
-  const log = "Traceback (most recent call last):\n  File \"kokoro/model.py\", line 1, in <module>\n    from loguru import logger\nModuleNotFoundError: No module named 'loguru'";
+  const log =
+    "Traceback (most recent call last):\n  File \"kokoro/model.py\", line 1, in <module>\n    from loguru import logger\nModuleNotFoundError: No module named 'loguru'";
   const message = describeSetupFailure(new Error("python.exe exited with code 1."), log);
   assert.match(message, /No module named 'loguru'/);
   assert.match(message, /repair/i);
@@ -744,8 +825,10 @@ test("describeSetupFailure names the package the preflight reported (the attrs c
 test("describeSetupFailure explains the missing pronunciation model", () => {
   // en_core_web_sm is not a pip package: misaki downloads it from inside the
   // service when it is absent, so the setup must fail loudly instead.
-  const preflightLog = "missing-model: en_core_web_sm (not on PyPI — `python -m spacy download en_core_web_sm`)\npreflight failed: 0 missing module(s), 1 missing spaCy model(s)";
-  const guardLog = "RuntimeError: misaki's spaCy model 'en_core_web_sm' is not installed, and fetching it from inside the service is what used to fail without a message.";
+  const preflightLog =
+    "missing-model: en_core_web_sm (not on PyPI — `python -m spacy download en_core_web_sm`)\npreflight failed: 0 missing module(s), 1 missing spaCy model(s)";
+  const guardLog =
+    "RuntimeError: misaki's spaCy model 'en_core_web_sm' is not installed, and fetching it from inside the service is what used to fail without a message.";
   for (const log of [preflightLog, guardLog]) {
     const message = describeSetupFailure(new Error("python.exe exited with code 1."), log);
     assert.match(message, /en_core_web_sm/);

@@ -33,11 +33,8 @@ interface FakeHost {
   clipboard: string;
   notifications: Array<{ title: string; body: string }>;
 }
-let host: FakeHost | null = null;
-
 function installFakeDesktopHost(): FakeHost {
   const fake: FakeHost = { opened: [], clipboard: "", notifications: [] };
-  host = fake;
   (globalThis as Record<string, unknown>).__soundwaveDesktopHost = {
     openExternal: (url: string) => {
       fake.opened.push(url);
@@ -60,17 +57,28 @@ afterEach(() => {
   clearReminders();
   resetConversationForTests();
   delete (globalThis as Record<string, unknown>).__soundwaveDesktopHost;
-  host = null;
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
 // A folder with known contents, for the real file scan (created by that test).
 let tempDir = "";
 
-const ctx: GhostContext = { userId: "local-user", desktop: false, platform: process.platform, voice: "en-US-GuyNeural", resolution: "720p" };
+const ctx: GhostContext = {
+  userId: "local-user",
+  desktop: false,
+  platform: process.platform,
+  voice: "en-US-GuyNeural",
+  resolution: "720p",
+};
 const desktopCtx: GhostContext = { ...ctx, desktop: true };
 
-const step = (action: string, params: Record<string, unknown> = {}, description = action): MacroStep => ({ id: "step-1", action, params, description, delayMs: 0 });
+const step = (action: string, params: Record<string, unknown> = {}, description = action): MacroStep => ({
+  id: "step-1",
+  action,
+  params,
+  description,
+  delayMs: 0,
+});
 const workflow = (steps: MacroStep[]): MacroWorkflow => ({
   id: "adhoc_test",
   name: "Test workflow",
@@ -275,7 +283,10 @@ describe("Ghost Operator API", () => {
   });
 
   it("reports skipped steps without failing the whole workflow", async () => {
-    const report = await executeWorkflow(workflow([step("system_monitor", {}, "Read the PC"), step("computer_settings", { setting: "mute" }, "Mute")]), ctx);
+    const report = await executeWorkflow(
+      workflow([step("system_monitor", {}, "Read the PC"), step("computer_settings", { setting: "mute" }, "Mute")]),
+      ctx,
+    );
     expect(report.allSuccess).toBe(true);
     expect(report.stepResults.map((s) => s.status)).toEqual(["SUCCESS", "SKIPPED"]);
     expect(report.summary).toMatch(/1 of 2 steps ran/);

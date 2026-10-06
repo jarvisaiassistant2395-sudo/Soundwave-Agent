@@ -35,7 +35,15 @@ import {
   type MemoryStore,
 } from "../../../server/src/lib/brain/core/memory";
 import { PHONE_ALARM_DECLARATION } from "../../../server/src/lib/brain/core/alarm";
-import { fetchWeather, localDay, memoryDigest, morningNow, morningRequest, templateBriefing, type MorningFacts } from "../../../server/src/lib/brain/core/morning";
+import {
+  fetchWeather,
+  localDay,
+  memoryDigest,
+  morningNow,
+  morningRequest,
+  templateBriefing,
+  type MorningFacts,
+} from "../../../server/src/lib/brain/core/morning";
 import { researchTopics, type FetchText } from "../../../server/src/lib/brain/core/research";
 
 export type { BriefingPlan, FetchText, MemoryOp, MemorySnapshot, MemoryNote };
@@ -71,7 +79,15 @@ function bind(kit: PhoneKit): Generate {
 export function effectiveMemory(snapshot: MemorySnapshot | null, ops: MemoryOp[]): MemoryForPrompt | null {
   if (!snapshot) {
     return ops.length
-      ? { notes: applyMemoryOps([], ops), briefing: applyBriefingOps(DEFAULT_BRIEFING, ops), summary: null, shorts: null, youtube: null, lastMorningAt: null, takenAt: Date.now() }
+      ? {
+          notes: applyMemoryOps([], ops),
+          briefing: applyBriefingOps(DEFAULT_BRIEFING, ops),
+          summary: null,
+          shorts: null,
+          youtube: null,
+          lastMorningAt: null,
+          takenAt: Date.now(),
+        }
       : null;
   }
   const { rev: _rev, ...rest } = snapshot;
@@ -141,7 +157,11 @@ export async function offlineReply(o: {
       return plan;
     },
   };
-  const tools = [guideTool<{ memory: MemoryStore }>(), ...memoryTools<{ memory: MemoryStore }>(), alarmTool<{ memory: MemoryStore; alarm?: OfflineToolRunner }>()];
+  const tools = [
+    guideTool<{ memory: MemoryStore }>(),
+    ...memoryTools<{ memory: MemoryStore }>(),
+    alarmTool<{ memory: MemoryStore; alarm?: OfflineToolRunner }>(),
+  ];
   try {
     const result = await runTurn({
       apiKey: o.kit.apiKey,
@@ -168,7 +188,12 @@ export async function offlineReply(o: {
       signal: o.signal,
     });
     let text = plainReply(result.text);
-    if (!text) text = wasBlocked(result.finish) ? "Sorry, I can't help with that one." : result.acted ? "Done." : "Sorry — Gemini didn't give me an answer that time. Try asking again.";
+    if (!text)
+      text = wasBlocked(result.finish)
+        ? "Sorry, I can't help with that one."
+        : result.acted
+          ? "Done."
+          : "Sorry — Gemini didn't give me an answer that time. Try asking again.";
     return { text: text + sourcesLine(result.grounding), model: result.model };
   } catch (err) {
     if (err instanceof GeminiError) return { text: describeGeminiError(err, o.kit.model, { device: "phone" }), model: null, failed: true };
@@ -198,7 +223,11 @@ export async function offlineMorning(o: {
   let weather: MorningFacts["weather"] = null;
   let weatherNote: string | undefined;
   const weatherJob = o.kit.weather.city
-    ? fetchWeather(o.kit.weather.city, { geocodingUrl: o.kit.weather.geocodingUrl, forecastUrl: o.kit.weather.forecastUrl, signal: o.signal }).then(
+    ? fetchWeather(o.kit.weather.city, {
+        geocodingUrl: o.kit.weather.geocodingUrl,
+        forecastUrl: o.kit.weather.forecastUrl,
+        signal: o.signal,
+      }).then(
         (w) => void (weather = w),
         (err) => void (weatherNote = `the weather for “${o.kit.weather.city}” isn't available: ${(err as Error).message}`),
       )
@@ -238,11 +267,20 @@ export async function offlineMorning(o: {
   };
   const briefingDate = localDay(now);
   const research = topics
-    .map((t) => `${t.topic}: ${t.via === "search" ? "Google Search" : t.via === "feeds" ? "GitHub, Hacker News, Google News" : `not researched${t.note ? ` (${t.note})` : ""}`}`)
+    .map(
+      (t) =>
+        `${t.topic}: ${t.via === "search" ? "Google Search" : t.via === "feeds" ? "GitHub, Hacker News, Google News" : `not researched${t.note ? ` (${t.note})` : ""}`}`,
+    )
     .join("\n");
   try {
     const mode = { persona: personaById(o.kit.persona ?? undefined).id, address: o.kit.personaAddress ?? null };
-    const resp = await bind(o.kit)({ apiKey: o.kit.apiKey, model: o.kit.model, request: morningRequest(facts, o.kit.model, mode), signal: o.signal, timeoutMs: 30_000 });
+    const resp = await bind(o.kit)({
+      apiKey: o.kit.apiKey,
+      model: o.kit.model,
+      request: morningRequest(facts, o.kit.model, mode),
+      signal: o.signal,
+      timeoutMs: 30_000,
+    });
     const text = plainReply(visibleText(resp.candidates?.[0]?.content?.parts));
     if (text) return { text, model: o.kit.model, briefingDate, research, ...(weatherNote ? { weatherNote } : {}) };
   } catch {
@@ -263,10 +301,15 @@ function base64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-const TRANSCRIBE = "Transcribe this voice message word for word, in the language it's spoken in. Return only the words that were said — no quotes, labels or descriptions. If nobody speaks, return nothing.";
+const TRANSCRIBE =
+  "Transcribe this voice message word for word, in the language it's spoken in. Return only the words that were said — no quotes, labels or descriptions. If nobody speaks, return nothing.";
 
 /** Voice input while the PC is off: Gemini writes down what was said. */
-export async function transcribeOffline(o: { kit: PhoneKit; wav: Uint8Array; signal?: AbortSignal }): Promise<{ text: string; noSpeech: boolean }> {
+export async function transcribeOffline(o: {
+  kit: PhoneKit;
+  wav: Uint8Array;
+  signal?: AbortSignal;
+}): Promise<{ text: string; noSpeech: boolean }> {
   try {
     const resp = await bind(o.kit)({
       apiKey: o.kit.apiKey,
@@ -283,7 +326,9 @@ export async function transcribeOffline(o: { kit: PhoneKit; wav: Uint8Array; sig
       .trim();
     return { text, noSpeech: !text };
   } catch (err) {
-    if (err instanceof GeminiError) throw new Error(describeGeminiError(err, o.kit.model, { device: "phone" }));
+    if (err instanceof GeminiError) {
+      throw new Error(describeGeminiError(err, o.kit.model, { device: "phone" }), { cause: err });
+    }
     throw err;
   }
 }

@@ -120,6 +120,30 @@ export const config = {
   // deployments never expose it.
   companionAvailable: env.COMPANION === "1",
   companionPort: int("COMPANION_PORT", 47800),
+  // Whether a hosted (production) server may come up on the local JSON store
+  // when DATABASE_URL was set but Postgres is unreachable. Off by default: an
+  // empty fallback store makes every existing account look deleted, and a
+  // health check would still call the deploy "up" (lib/store.ts getStore).
+  allowJsonFallback: env.ALLOW_JSON_FALLBACK === "1",
+  // Where the log file goes (lib/log.ts). The desktop shell points this at
+  // `%APPDATA%\Soundwave AI\logs`; a hosted server leaves it unset and logs to
+  // stdout for the platform to collect. SOUNDWAVE_LOG_FILE names one file
+  // exactly; SOUNDWAVE_LOG_DIR keeps a dated file per day.
+  logFile: str("SOUNDWAVE_LOG_FILE", ""),
+  logDir: str("SOUNDWAVE_LOG_DIR", ""),
+  // What Express may trust when it works out `req.ip` from `X-Forwarded-For`.
+  // `false` (the default) trusts nothing: a request that arrives with a forged
+  // header cannot pretend to be a different client, which is what the rate
+  // limits and the sign-in throttle are keyed on. Set it to `1` (one proxy) or
+  // `loopback` (a reverse proxy on this machine) when something really is in
+  // front — docker-compose's Caddy/nginx, or a hosted load balancer.
+  trustProxy: ((): false | number | "loopback" | string => {
+    const raw = str("TRUST_PROXY", "").trim().toLowerCase();
+    if (!raw || raw === "false" || raw === "0" || raw === "none") return false;
+    if (raw === "loopback") return "loopback";
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : raw;
+  })(),
   // Extra addresses to put in the pairing code, comma-separated: a DNS/VPN
   // name for this PC, or a full https:// origin that forwards to the phone
   // listener. Detected network addresses are always included.
@@ -215,8 +239,9 @@ export function validateConfig(): void {
   // exception: it has no billing, so nothing is being given away.
   if (config.isProd && !personalEdition && config.defaultSignupPlan !== "FREE") {
     console.error(
-      "[soundwave] ⚠⚠⚠  DEFAULT_SIGNUP_PLAN=" + config.defaultSignupPlan +
-      " — new accounts get a paid plan for free. This should NEVER be set in production; remove it before publishing.",
+      "[soundwave] ⚠⚠⚠  DEFAULT_SIGNUP_PLAN=" +
+        config.defaultSignupPlan +
+        " — new accounts get a paid plan for free. This should NEVER be set in production; remove it before publishing.",
     );
   }
 }
@@ -252,7 +277,7 @@ export function resolveFfmpegPath(): string {
       path.join(localAppData, "Microsoft", "WinGet", "Links", "ffmpeg.exe"),
       path.join(userProfile, "AppData", "Local", "Microsoft", "WinGet", "Links", "ffmpeg.exe"),
       path.join(userProfile, "Downloads", "ffmpeg", "bin", "ffmpeg.exe"),
-      path.join(userProfile, "Downloads", "ffmpeg.exe")
+      path.join(userProfile, "Downloads", "ffmpeg.exe"),
     );
 
     // Auto-scan WinGet Packages directory for Gyan / Essentials build
@@ -263,10 +288,7 @@ export function resolveFfmpegPath(): string {
           const dirs = fs.readdirSync(wingetPkgs);
           for (const d of dirs) {
             if (d.toLowerCase().includes("ffmpeg")) {
-              candidates.push(
-                path.join(wingetPkgs, d, "ffmpeg.exe"),
-                path.join(wingetPkgs, d, "bin", "ffmpeg.exe")
-              );
+              candidates.push(path.join(wingetPkgs, d, "ffmpeg.exe"), path.join(wingetPkgs, d, "bin", "ffmpeg.exe"));
               try {
                 const subdirs = fs.readdirSync(path.join(wingetPkgs, d));
                 for (const sub of subdirs) {
@@ -279,11 +301,7 @@ export function resolveFfmpegPath(): string {
       } catch {}
     }
   } else {
-    candidates.push(
-      "/usr/local/bin/ffmpeg",
-      "/usr/bin/ffmpeg",
-      "/bin/ffmpeg"
-    );
+    candidates.push("/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg", "/bin/ffmpeg");
   }
 
   for (const c of candidates) {

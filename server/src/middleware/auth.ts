@@ -1,4 +1,4 @@
-import type { NextFunction, Request, RequestHandler, Response } from "express";
+import type { Request, RequestHandler, Response } from "express";
 import { config } from "../config.js";
 import { ApiError } from "./error.js";
 import {
@@ -87,7 +87,9 @@ async function tryRefresh(req: Request, res: Response): Promise<StoredUser | nul
   // Rotate: delete old session, issue a new one + fresh tokens (a permanent
   // session stays permanent).
   await store.deleteSession(session.id);
-  const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", session.deviceInfo, { permanent: session.expiresAt === null });
+  const bundle = await createUserSession(store, user.id, req.ip ?? "unknown", session.deviceInfo, {
+    permanent: session.expiresAt === null,
+  });
   setAuthCookies(res, signAccessToken(user.id), bundle.refreshToken, randomToken(16));
   return user;
 }

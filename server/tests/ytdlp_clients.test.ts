@@ -161,14 +161,20 @@ describe("yt-dlp player clients", () => {
   });
 
   it("does not retry errors that belong to the video or the connection", async () => {
-    fake.reply = () => ({ code: 1, stderr: "ERROR: [youtube] Ey5YXBINl2Q: Private video. Sign in if you've been granted access to this video\n" });
+    fake.reply = () => ({
+      code: 1,
+      stderr: "ERROR: [youtube] Ey5YXBINl2Q: Private video. Sign in if you've been granted access to this video\n",
+    });
     const priv = await rejection(fetchMetadata(URL_));
     expect(priv.code).toBe("YT_UNAVAILABLE");
     expect(isVideoSpecificYtError(priv)).toBe(true);
     expect(fake.calls).toHaveLength(1);
 
     fake.calls.length = 0;
-    fake.reply = () => ({ code: 1, stderr: "ERROR: [youtube] Ey5YXBINl2Q: Unable to download webpage: TLS/SSL connection has been closed (EOF)\n" });
+    fake.reply = () => ({
+      code: 1,
+      stderr: "ERROR: [youtube] Ey5YXBINl2Q: Unable to download webpage: TLS/SSL connection has been closed (EOF)\n",
+    });
     expect((await rejection(fetchMetadata(URL_))).code).toBe("YT_NETWORK");
     expect(fake.calls).toHaveLength(1);
   });
@@ -217,7 +223,11 @@ describe("yt-dlp player clients", () => {
   it("never forces a player client for the channel listing", async () => {
     fake.reply = () => ({
       code: 0,
-      stdout: JSON.stringify({ channel: "Orbital NCG", channel_id: "UC1", entries: [{ id: "Ey5YXBINl2Q", title: "Gameplay", duration: 600 }] }),
+      stdout: JSON.stringify({
+        channel: "Orbital NCG",
+        channel_id: "UC1",
+        entries: [{ id: "Ey5YXBINl2Q", title: "Gameplay", duration: 600 }],
+      }),
     });
     const listing = await listChannelVideos("https://www.youtube.com/@OrbitalNCG/videos");
     expect(listing.videos).toHaveLength(1);
@@ -274,7 +284,7 @@ describe("yt-dlp self-update (YTDLP_AUTO_UPDATE)", () => {
       args.includes("--update-to")
         ? { code: 1, stderr: "ERROR: Unable to write to C:\\Program Files\\yt-dlp.exe; try running as administrator\n" }
         : { code: 0, stdout: METADATA };
-    startYtDlpSelfUpdate("nightly");
+    void startYtDlpSelfUpdate("nightly");
     await expect(fetchMetadata(URL_)).resolves.toMatchObject({ duration: 3600 });
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("self-update failed (exit 1)"));
   });
@@ -299,21 +309,26 @@ describe("view signals", () => {
     { start_time: 0, end_time: 5, value: 0.21 },
     { start_time: 295, end_time: 300, value: 0.97 },
   ];
-  const SIGNALS = [
-    JSON.stringify(HEAT),
-    JSON.stringify([{ start_time: 0, end_time: 120, title: "Intro" }, { start_time: 120, end_time: 600, title: "The good bit" }]),
-    "1200000",
-    "40000",
-    "5000",
-    "20260801",
-    "600",
-    "250000",
-  ].join("\n") + "\n";
-  const commentsReply = JSON.stringify([
-    { text: "4:58 is the part everyone quotes", like_count: 1500 },
-    { text: "no timestamp here", like_count: 900 },
-    { text: "99:99 not a time", like_count: 2 },
-  ]) + "\n";
+  const SIGNALS =
+    [
+      JSON.stringify(HEAT),
+      JSON.stringify([
+        { start_time: 0, end_time: 120, title: "Intro" },
+        { start_time: 120, end_time: 600, title: "The good bit" },
+      ]),
+      "1200000",
+      "40000",
+      "5000",
+      "20260801",
+      "600",
+      "250000",
+    ].join("\n") + "\n";
+  const commentsReply =
+    JSON.stringify([
+      { text: "4:58 is the part everyone quotes", like_count: 1500 },
+      { text: "no timestamp here", like_count: 900 },
+      { text: "99:99 not a time", like_count: 2 },
+    ]) + "\n";
 
   it("reads the heat map, the chapters and the video's real numbers in one pass", async () => {
     fake.reply = () => ({ code: 0, stdout: SIGNALS });
@@ -352,9 +367,7 @@ describe("view signals", () => {
 
   it("skips the comments pass when there is nothing to read", async () => {
     fake.reply = (args) =>
-      args.includes("--write-comments")
-        ? { code: 0, stdout: commentsReply }
-        : { code: 0, stdout: SIGNALS.replace("\n5000\n", "\n3\n") }; // 3 comments
+      args.includes("--write-comments") ? { code: 0, stdout: commentsReply } : { code: 0, stdout: SIGNALS.replace("\n5000\n", "\n3\n") }; // 3 comments
     const signals = await ytdlp.fetchViewSignals(URL_, { comments: true });
     expect(fake.calls).toHaveLength(1);
     expect(signals.anchors).toEqual([]);

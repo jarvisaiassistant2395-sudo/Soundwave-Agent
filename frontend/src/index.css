@@ -44,7 +44,7 @@ body {
 /* ── Custom dark scrollbars ──────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #23242B transparent;
+  scrollbar-color: #23242b transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
@@ -54,11 +54,11 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: #23242B;
+  background: #23242b;
   border-radius: 9999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #34363F;
+  background: #34363f;
 }
 
 /* ── Scroll hint: fade the bottom edge of a scroll box with more below ── */
@@ -127,12 +127,7 @@ html.sw-overlay #root {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.04),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
   background-size: 200% 100%;
   animation: shimmer 1.6s linear infinite;
 }
@@ -142,7 +137,10 @@ html.sw-overlay #root {
   background-color: #13141c;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 12px;
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .surface-card:hover {
@@ -203,8 +201,12 @@ html.sw-overlay #root {
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0) 42%), #0b0c0f;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 28px -22px rgba(0, 0, 0, 0.9);
-  transition: border-color 0.18s ease, background-color 0.18s ease;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 12px 28px -22px rgba(0, 0, 0, 0.9);
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease;
 }
 .sw-card:hover {
   border-color: rgba(255, 255, 255, 0.11);
@@ -273,7 +275,10 @@ html.sw-overlay #root {
   padding: 4px 11px;
   font-size: 12px;
   color: #c6cbd6;
-  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
 }
 .sw-pill-button {
   cursor: pointer;
@@ -293,7 +298,10 @@ html.sw-overlay #root {
   font-size: 11px;
   color: #9aa1af;
   cursor: pointer;
-  transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background-color 0.16s ease;
 }
 .sw-chip:hover {
   border-color: rgba(34, 211, 238, 0.45);
@@ -336,7 +344,9 @@ html.sw-overlay #root {
   padding: 9px 12px;
   font-size: 13px;
   color: #f4f6fa;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 .sw-input::placeholder,
 .sw-textarea::placeholder {
@@ -382,7 +392,11 @@ html.sw-overlay #root {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.08s ease;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.08s ease;
 }
 .sw-btn:active {
   transform: translateY(1px);
@@ -431,7 +445,7 @@ html.sw-overlay #root {
 }
 .sw-bubble-agent {
   border-color: rgba(255, 255, 255, 0.07);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0)) , #0b0d12;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0)), #0b0d12;
   color: #e6e9ef;
 }
 .sw-bubble-user {
@@ -513,5 +527,24 @@ html.sw-overlay #root {
   .sw-card {
     animation: none !important;
     transition: none !important;
+  }
+
+  /*
+   * Everything else, including the pieces this stylesheet does not own: the
+   * thinking orb (thinking-orbs, a canvas animation), the progress bars, the
+   * scroll that follows a new message. A blanket rule rather than a list,
+   * because the list is what gets forgotten — the point of "reduce motion" is
+   * that it applies to the app, not to the animations someone remembered.
+   * framer-motion is covered separately (MotionConfig in App.tsx) because it
+   * animates inline transforms from JavaScript, where a media query cannot
+   * reach it.
+   */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

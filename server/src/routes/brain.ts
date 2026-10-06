@@ -58,7 +58,7 @@ const apiKey = z
 const model = z
   .string()
   .trim()
-  .regex(/^(?:models\/)?[a-z0-9][a-z0-9.\-]{2,80}$/i, "That isn't a Gemini model name.");
+  .regex(/^(?:models\/)?[a-z0-9][a-z0-9.-]{2,80}$/i, "That isn't a Gemini model name.");
 
 const putSchema = z.object({
   apiKey: apiKey.optional(),
@@ -74,7 +74,13 @@ router.put("/", settingsOnly, validate({ body: putSchema }), (req, res) => {
   const body = req.body as z.infer<typeof putSchema>;
   saveBrainSettings(body);
   const brain = activeBrain();
-  if (body.apiKey && passedKey && passedKey.key === body.apiKey && brain?.model === passedKey.model && Date.now() - passedKey.at < 10 * 60_000) {
+  if (
+    body.apiKey &&
+    passedKey &&
+    passedKey.key === body.apiKey &&
+    brain?.model === passedKey.model &&
+    Date.now() - passedKey.at < 10 * 60_000
+  ) {
     noteBrainOk(passedKey.model, passedKey.latencyMs);
   }
   passedKey = null;
@@ -119,12 +125,26 @@ router.post("/test", settingsOnly, validate({ body: testSchema }), async (req, r
     try {
       // A key test must reach Google even if a daily ceiling is configured
       // (and it is never cached — nothing opts in here).
-      const resp = await generateContent({ apiKey: key, model: testModel, purpose: "test", bypassBudget: true, request: testRequest(testModel), timeoutMs: 30_000 });
+      const resp = await generateContent({
+        apiKey: key,
+        model: testModel,
+        purpose: "test",
+        bypassBudget: true,
+        request: testRequest(testModel),
+        timeoutMs: 30_000,
+      });
       reply = visibleText(resp.candidates?.[0]?.content?.parts);
     } catch (err) {
       if (!(err instanceof GeminiError)) throw err;
       if (isActiveKey) noteBrainError(err, testModel);
-      return res.json({ ok: false, model: testModel, modelLabel: modelLabel(testModel), kind: err.kind, message: describeGeminiError(err, testModel), detail: err.detail.slice(0, 500) });
+      return res.json({
+        ok: false,
+        model: testModel,
+        modelLabel: modelLabel(testModel),
+        kind: err.kind,
+        message: describeGeminiError(err, testModel),
+        detail: err.detail.slice(0, 500),
+      });
     }
     const latencyMs = Date.now() - started;
     if (isActiveKey) noteBrainOk(testModel, latencyMs);
@@ -153,7 +173,15 @@ router.post("/test", settingsOnly, validate({ body: testSchema }), async (req, r
       }
     }
 
-    res.json({ ok: true, model: testModel, modelLabel: modelLabel(testModel), latencyMs, reply: reply.slice(0, 200), search, searchDetail });
+    res.json({
+      ok: true,
+      model: testModel,
+      modelLabel: modelLabel(testModel),
+      latencyMs,
+      reply: reply.slice(0, 200),
+      search,
+      searchDetail,
+    });
   } catch (e) {
     next(e);
   }

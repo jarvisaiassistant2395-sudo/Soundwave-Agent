@@ -7,7 +7,7 @@
 // The denylist cases use a throwaway fixture tree, never the real one, so the
 // repo stays clean and the assertions stay deterministic.
 
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -17,8 +17,7 @@ const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const audit = path.join(repoRoot, "scripts", "license-audit.mjs");
 const writer = path.join(repoRoot, "scripts", "write-binary-licenses.mjs");
 
-const run = (args: string[], opts: Record<string, unknown> = {}) =>
-  spawnSync(process.execPath, args, { encoding: "utf8", ...opts });
+const run = (args: string[], opts: Record<string, unknown> = {}) => spawnSync(process.execPath, args, { encoding: "utf8", ...opts });
 
 describe("the ship-licence audit", () => {
   it("passes on this repository and names what it checked", () => {
@@ -47,7 +46,9 @@ describe("the ship-licence audit", () => {
     // next to the component — an exemption without its reasoning is how these
     // things rot.
     expect(notices).toMatch(/num2words — LGPL-2\.1/);
-    expect(notices).toMatch(/NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration \+ MOSS cloning runtime and dependencies/);
+    expect(notices).toMatch(
+      /NOT INCLUDED IN THE DESKTOP INSTALLER — packaged Windows downloads the Kokoro narration \+ MOSS cloning runtime and dependencies/,
+    );
     expect(notices).toMatch(/OpenMOSS MOSS-TTS-Nano ONNX weights and audio-tokenizer weights — Apache-2\.0/);
     expect(notices).toMatch(/ONNX Runtime — MIT/);
     expect(notices).toMatch(/torchaudio — BSD-3-Clause/);
@@ -80,7 +81,10 @@ describe("the ship-licence audit", () => {
 
   it("keeps the automatic Kokoro install free of the cloning stack and GPL phonemizer", () => {
     const requirements = fs.readFileSync(path.join(repoRoot, "voiceclone", "requirements-kokoro.txt"), "utf8").toLowerCase();
-    const packages = requirements.split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).join("\n");
+    const packages = requirements
+      .split(/\r?\n/)
+      .filter((line) => line.trim() && !line.trim().startsWith("#"))
+      .join("\n");
     expect(packages).not.toMatch(/chatterbox|phonemizer|espeakng|torchaudio/);
     expect(requirements).toMatch(/fastapi/);
     expect(requirements).toMatch(/spacy/);
@@ -110,7 +114,10 @@ describe("the ship-licence audit", () => {
     pkg(path.join(modules, "naughty-lgpl"), "naughty-lgpl", "1.0.0", "LGPL-2.1");
     fs.writeFileSync(
       path.join(fixture, "server", "package.json"),
-      JSON.stringify({ name: "fixture", dependencies: { "left-pad": "^1.3.0", "naughty-copyleft": "^2.0.0", "naughty-nc": "^1.0.0", "naughty-lgpl": "^1.0.0" } }),
+      JSON.stringify({
+        name: "fixture",
+        dependencies: { "left-pad": "^1.3.0", "naughty-copyleft": "^2.0.0", "naughty-nc": "^1.0.0", "naughty-lgpl": "^1.0.0" },
+      }),
     );
     fs.writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ name: "fixture-root", private: true }));
 
@@ -121,13 +128,18 @@ describe("the ship-licence audit", () => {
       fs.copyFileSync(path.join(repoRoot, "scripts", script), path.join(fixture, "scripts", script));
     }
     fs.mkdirSync(path.join(fixture, "scripts", "licenses"), { recursive: true });
-    fs.copyFileSync(path.join(repoRoot, "scripts", "licenses", "GPL-3.0-or-later.txt"), path.join(fixture, "scripts", "licenses", "GPL-3.0-or-later.txt"));
+    fs.copyFileSync(
+      path.join(repoRoot, "scripts", "licenses", "GPL-3.0-or-later.txt"),
+      path.join(fixture, "scripts", "licenses", "GPL-3.0-or-later.txt"),
+    );
 
     const result = run([path.join(fixture, "scripts", "license-audit.mjs")], { cwd: fixture });
     expect(result.status, "the audit must fail the build on copyleft").toBe(1);
     expect(result.stderr).toMatch(/naughty-copyleft .* GPL/);
     expect(result.stderr).toMatch(/naughty-nc/);
-    expect(result.stderr, "an LGPL npm dependency is still refused — the Python list's exemption is not a general one").toMatch(/naughty-lgpl/);
+    expect(result.stderr, "an LGPL npm dependency is still refused — the Python list's exemption is not a general one").toMatch(
+      /naughty-lgpl/,
+    );
     expect(result.stderr).toMatch(/REFUSING/);
 
     // …and a clean tree of the same shape passes, so the failure above is the

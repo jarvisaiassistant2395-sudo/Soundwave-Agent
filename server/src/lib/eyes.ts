@@ -188,7 +188,9 @@ export const defaultEyes: Eyes = {
   async readVideo(url: string): Promise<ReadVideoResult> {
     const parsed = parseYouTubeUrl((url ?? "").trim());
     if (!parsed) {
-      throw new Error("That isn't a YouTube link — give me a youtube.com or youtu.be video link, or a video file path for make_shorts_from_video.");
+      throw new Error(
+        "That isn't a YouTube link — give me a youtube.com or youtu.be video link, or a video file path for make_shorts_from_video.",
+      );
     }
     const found = await fetchTranscript(parsed.toString());
     const { text, truncated } = capText(vttToText(found.vtt), READ_TEXT_MAX);
@@ -269,8 +271,12 @@ export const defaultEyes: Eyes = {
       throw new Error(`the reader answered ${read.status}`);
     } catch (err) {
       const why = directError || (direct.status ? `the site answered ${direct.status}` : "the page had no readable text");
-      const localNote = config.scraplingUrl ? "the local page reader also failed" : "no local page reader is installed (see scrapling/README.md)";
-      throw new Error(`I couldn't read ${url.hostname} (${why}; ${localNote}, and the reader service failed: ${(err as Error).message}).`);
+      const localNote = config.scraplingUrl
+        ? "the local page reader also failed"
+        : "no local page reader is installed (see scrapling/README.md)";
+      throw new Error(`I couldn't read ${url.hostname} (${why}; ${localNote}, and the reader service failed: ${(err as Error).message}).`, {
+        cause: err,
+      });
     }
   },
 

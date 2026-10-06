@@ -18,7 +18,12 @@ export class ApiError extends Error {
 }
 
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
-  res.locals.requestId = crypto.randomUUID();
+  // An id the caller supplied is echoed back (so a mobile client can correlate
+  // its own retry), but never trusted for anything but identifying the request.
+  const supplied = req.headers["x-request-id"];
+  const id = typeof supplied === "string" && /^[\w.-]{8,64}$/.test(supplied) ? supplied : crypto.randomUUID();
+  res.locals.requestId = id;
+  res.setHeader("X-Request-Id", id);
   next();
 }
 

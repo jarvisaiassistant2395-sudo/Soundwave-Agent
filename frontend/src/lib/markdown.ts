@@ -92,6 +92,9 @@ const SAFE_PROTOCOL = /^(https?:|mailto:)/i;
 /** A link target we are willing to put in an href, or null (it stays text). */
 export function safeHref(raw: string): string | null {
   const href = raw.trim().replace(/^<|>$/g, "");
+  // Rejecting control characters is the point of this check (they can be used
+  // to smuggle a second scheme past a naive test).
+  // eslint-disable-next-line no-control-regex -- rejecting control characters on purpose
   if (!href || /[\u0000-\u001f]/.test(href)) return null;
   return SAFE_PROTOCOL.test(href) ? href : null;
 }
@@ -267,7 +270,11 @@ export function parseMarkdown(source: string): Block[] {
 
     const heading = headingMatch(line);
     if (heading) {
-      blocks.push({ type: "heading", level: Math.min(6, heading[1]!.length) as 1 | 2 | 3 | 4 | 5 | 6, content: inlineMarkdown(heading[2]!.trim()) });
+      blocks.push({
+        type: "heading",
+        level: Math.min(6, heading[1]!.length) as 1 | 2 | 3 | 4 | 5 | 6,
+        content: inlineMarkdown(heading[2]!.trim()),
+      });
       i += 1;
       continue;
     }
@@ -282,7 +289,10 @@ export function parseMarkdown(source: string): Block[] {
 
     if (line.trimStart().startsWith(">")) {
       const quoted: string[] = [];
-      while (i < lines.length && (lines[i]!.trimStart().startsWith(">") || (!isBlank(lines[i]!) && quoted.length && !isBlank(lines[i - 1]!)))) {
+      while (
+        i < lines.length &&
+        (lines[i]!.trimStart().startsWith(">") || (!isBlank(lines[i]!) && quoted.length && !isBlank(lines[i - 1]!)))
+      ) {
         quoted.push(lines[i]!.replace(/^\s*>\s?/, ""));
         i += 1;
       }
@@ -292,7 +302,9 @@ export function parseMarkdown(source: string): Block[] {
 
     // A table: a row of cells, then a delimiter row.
     if (line.includes("|") && i + 1 < lines.length && isDelimiterRow(lines[i + 1]!)) {
-      const align = cells(lines[i + 1]!).map((cell) => (cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left")) as Array<"left" | "center" | "right">;
+      const align = cells(lines[i + 1]!).map((cell) =>
+        cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left",
+      ) as Array<"left" | "center" | "right">;
       const head = cells(line).map((cell) => inlineMarkdown(cell));
       i += 2;
       const rows: Inline[][][] = [];
@@ -353,7 +365,15 @@ export function parseMarkdown(source: string): Block[] {
 
     // A paragraph: consecutive plain lines, soft-wrapped into one.
     const paragraph: string[] = [];
-    while (i < lines.length && !isBlank(lines[i]!) && !headingMatch(lines[i]!) && !listMatch(lines[i]!) && !FENCE.test(lines[i]!) && !hrMatch(lines[i]!) && !lines[i]!.trimStart().startsWith(">")) {
+    while (
+      i < lines.length &&
+      !isBlank(lines[i]!) &&
+      !headingMatch(lines[i]!) &&
+      !listMatch(lines[i]!) &&
+      !FENCE.test(lines[i]!) &&
+      !hrMatch(lines[i]!) &&
+      !lines[i]!.trimStart().startsWith(">")
+    ) {
       paragraph.push(lines[i]!.trim());
       i += 1;
       if (i < lines.length && isDelimiterRow(lines[i]!) && paragraph.join(" ").includes("|")) break;
@@ -367,7 +387,10 @@ export function parseMarkdown(source: string): Block[] {
 
 /** The answer as plain text — what "Copy" puts on the clipboard. */
 export function markdownToPlainText(blocks: Block[]): string {
-  const inlineText = (nodes: Inline[]): string => nodes.map((node) => (node.type === "text" || node.type === "code" ? node.text : node.type === "break" ? "\n" : inlineText(node.children))).join("");
+  const inlineText = (nodes: Inline[]): string =>
+    nodes
+      .map((node) => (node.type === "text" || node.type === "code" ? node.text : node.type === "break" ? "\n" : inlineText(node.children)))
+      .join("");
   const blockText = (list: Block[]): string =>
     list
       .map((block) => {
@@ -379,7 +402,9 @@ export function markdownToPlainText(blocks: Block[]): string {
           case "code":
             return block.text;
           case "list":
-            return block.items.map((item, index) => `${block.ordered ? `${block.start + index}.` : "-"} ${inlineText(item.content)}`).join("\n");
+            return block.items
+              .map((item, index) => `${block.ordered ? `${block.start + index}.` : "-"} ${inlineText(item.content)}`)
+              .join("\n");
           case "quote":
             return blockText(block.blocks);
           case "table":

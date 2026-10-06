@@ -87,7 +87,8 @@ export function renameNotebook(notebook: Notebook, name: string, now: string): N
  * in twice updates it rather than listing it twice). Newest first, capped.
  */
 export function addSource(notebook: Notebook, source: NotebookSource, now: string): Notebook {
-  const sameFile = (a: NotebookSource) => a.kind === source.kind && (a.fileId && source.fileId ? a.fileId === source.fileId : a.name.toLowerCase() === source.name.toLowerCase());
+  const sameFile = (a: NotebookSource) =>
+    a.kind === source.kind && (a.fileId && source.fileId ? a.fileId === source.fileId : a.name.toLowerCase() === source.name.toLowerCase());
   const sources = [source, ...notebook.sources.filter((s) => !sameFile(s))].slice(0, MAX_NOTEBOOK_SOURCES);
   return { ...notebook, sources, updatedAt: now };
 }
@@ -100,6 +101,8 @@ export function removeSource(notebook: Notebook, sourceId: string, now: string):
 export function cleanNoteText(raw: unknown): string {
   const text = String(raw ?? "")
     .replace(/\r\n/g, "\n")
+    // Stripping control characters is the point of this line.
+    // eslint-disable-next-line no-control-regex -- sanitising text on purpose
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -155,7 +158,8 @@ export function notebookContext(notebook: Notebook, maxChars = NOTEBOOK_CONTEXT_
     blocks.push(sheets);
   }
   let out = blocks.join("\n\n");
-  if (out.length > maxChars) out = `${out.slice(0, maxChars)}\n\n[The notebook is longer than this; only the beginning of it is shown here.]`;
+  if (out.length > maxChars)
+    out = `${out.slice(0, maxChars)}\n\n[The notebook is longer than this; only the beginning of it is shown here.]`;
   return out;
 }
 

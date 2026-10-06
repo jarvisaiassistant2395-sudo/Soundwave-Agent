@@ -15,6 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
+import { writeJsonFile } from "./jsonFile.js";
 import { accessTokenFor, channelFor, listChannels, type ChannelRecord } from "./youtubeChannels.js";
 import { youtubeService } from "./youtube.js";
 
@@ -75,10 +76,7 @@ function readHistory(): History {
 
 function writeHistory(history: History): void {
   try {
-    fs.mkdirSync(path.dirname(historyFile()), { recursive: true });
-    const tmp = `${historyFile()}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(history, null, 2));
-    fs.renameSync(tmp, historyFile());
+    writeJsonFile(historyFile(), history);
   } catch (err) {
     console.warn(`[views] could not save ${historyFile()}: ${(err as Error).message}`);
   }
@@ -96,8 +94,7 @@ function baselineFor(snapshots: Snapshot[]): Snapshot | null {
 function recordSnapshot(history: History, channelId: string, insight: ChannelInsight, now: Date): void {
   const list = history[channelId] ?? [];
   const last = list[list.length - 1];
-  const unchanged =
-    last && last.views === insight.views && last.subscribers === insight.subscribers && last.videos === insight.videos;
+  const unchanged = last && last.views === insight.views && last.subscribers === insight.subscribers && last.videos === insight.videos;
   if (!unchanged || !last || Date.parse(last.at) < now.getTime() - MIN_SNAPSHOT_GAP_MS) {
     list.push({ at: now.toISOString(), views: insight.views, subscribers: insight.subscribers, videos: insight.videos });
     history[channelId] = list.slice(-MAX_SNAPSHOTS);
@@ -122,9 +119,7 @@ export async function channelInsights(opts: InsightsOptions = {}): Promise<Insig
   const now = opts.now ?? new Date();
   const recent = Math.min(10, Math.max(1, Math.round(opts.recent ?? 5)));
   const all = listChannels();
-  const wanted: ChannelRecord[] = opts.channel
-    ? ([channelFor(opts.channel)].filter(Boolean) as ChannelRecord[])
-    : all;
+  const wanted: ChannelRecord[] = opts.channel ? ([channelFor(opts.channel)].filter(Boolean) as ChannelRecord[]) : all;
 
   if (!wanted.length) {
     return {
@@ -147,9 +142,7 @@ export async function channelInsights(opts: InsightsOptions = {}): Promise<Insig
       const stats = await readChannel(channel, recent);
       const baseline = baselineFor(history[channel.id] ?? []);
       const gained =
-        baseline && typeof baseline.views === "number" && typeof stats.views === "number"
-          ? stats.views - baseline.views
-          : null;
+        baseline && typeof baseline.views === "number" && typeof stats.views === "number" ? stats.views - baseline.views : null;
       const insight: ChannelInsight = {
         id: channel.id,
         name: channel.name,
@@ -248,8 +241,7 @@ export async function legacyChannelInsight(opts: { recent?: number; now?: Date }
     const history = readHistory();
     const key = `legacy:${stats.channelTitle}`;
     const baseline = baselineFor(history[key] ?? []);
-    const gained =
-      baseline && typeof baseline.views === "number" && typeof stats.views === "number" ? stats.views - baseline.views : null;
+    const gained = baseline && typeof baseline.views === "number" && typeof stats.views === "number" ? stats.views - baseline.views : null;
     const insight: ChannelInsight = {
       id: key,
       name: stats.channelTitle,

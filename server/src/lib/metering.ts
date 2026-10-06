@@ -289,7 +289,12 @@ export function initMetering(): void {
   sweepTimer.unref?.();
 }
 
-export function resetMeteringForTests(): void {
+/** Stop the daily sweep (index.ts shutdown). */
+export function stopMetering(): void {
   if (sweepTimer) clearInterval(sweepTimer);
   sweepTimer = null;
+}
+
+export function resetMeteringForTests(): void {
+  stopMetering();
 }

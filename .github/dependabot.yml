@@ -1,0 +1,131 @@
+# ── Keep the dependency tree from drifting back into trouble ────────────────
+# There was no Dependabot or Renovate config anywhere in this repo. That is how
+# a 552-file tree reached 20+ open advisories — including a critical one in a
+# package the API ships (proxy-addr, pulled in by Express) — without anyone
+# noticing: nothing ever looked. The CI workflow audits the shipping trees on
+# every pull request; this file is what makes the updates arrive at all.
+#
+# Monthly and grouped. A grouped PR is reviewable in one sitting; 30 separate
+# PRs a week are ignored, and an ignored bot is the same as no bot.
+version: 2
+updates:
+  # ── The API ──────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "server"]
+    commit-message:
+      prefix: "server"
+    groups:
+      # Security-relevant updates ship together and get looked at first.
+      server-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Express 5 is a planned migration (U4), not a Dependabot PR: the route
+      # layer and the error middleware both need to change with it.
+      - dependency-name: express
+        versions: ["5.x"]
+
+  # ── The UI ───────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "frontend"]
+    commit-message:
+      prefix: "frontend"
+    groups:
+      frontend-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── The phone companion ──────────────────────────────────────────────────
+  # Nothing in mobile/ is published to a registry, but its Capacitor plugins
+  # and the Android Gradle plugin are the app that people install.
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "mobile"]
+    commit-message:
+      prefix: "mobile"
+    groups:
+      mobile-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: gradle
+    directory: /mobile/android
+    schedule:
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "mobile"]
+    commit-message:
+      prefix: "android"
+
+  # ── The Electron shell ───────────────────────────────────────────────────
+  # Electron itself is deliberately NOT grouped: a major Electron bump changes
+  # the main process's behaviour under the app, and it deserves its own PR.
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "desktop"]
+    commit-message:
+      prefix: "desktop"
+    groups:
+      desktop-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── The lint/format tooling at the root ──────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "tooling"
+    groups:
+      tooling:
+        patterns: ["*"]
+
+  # ── The images the server runs on ────────────────────────────────────────
+  # A Node base image that stops being patched is a vulnerability nobody sees.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: monthly
+      day: monday
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "docker"
+
+  # ── The actions themselves ───────────────────────────────────────────────
+  # A pinned action with an old entrypoint is a warning on every run
+  # (checkout@4 and setup-node@4 on Node 24 both were).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      day: monday
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci"

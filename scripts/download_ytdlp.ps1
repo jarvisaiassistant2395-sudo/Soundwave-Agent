@@ -7,6 +7,8 @@ if ($repoRoot -match "scripts$") {
     $repoRoot = Split-Path -Parent $repoRoot
 }
 
+. "$PSScriptRoot/checksum.ps1"
+
 $vendorDir = Join-Path $repoRoot "vendor\yt-dlp"
 if (-not (Test-Path $vendorDir)) {
     New-Item -ItemType Directory -Path $vendorDir -Force | Out-Null
@@ -26,22 +28,29 @@ Write-Host "[INFO] Downloading standalone yt-dlp.exe for the YouTube link import
 
 # Nightly first: it is the channel yt-dlp recommends for regular users, and
 # fixes for YouTube changes land there days or weeks before a stable release.
+# Each source carries its own release's SHA2-256SUMS, which is checked before
+# the binary is kept: this executable runs on the customer's PC.
 $downloadUrls = @(
-    "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe",
-    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    @{ exe = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe"; sums = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/SHA2-256SUMS" },
+    @{ exe = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"; sums = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS" }
 )
 
 $downloaded = $false
-foreach ($url in $downloadUrls) {
+foreach ($source in $downloadUrls) {
     try {
-        Write-Host " -> Fetching: $url"
-        Invoke-WebRequest -Uri $url -OutFile $ytdlpExe -UseBasicParsing -TimeoutSec 90
-        if ((Test-Path $ytdlpExe) -and ((Get-Item $ytdlpExe).Length -gt 1000000)) {
-            $downloaded = $true
-            break
+        Write-Host " -> Fetching: $($source.exe)"
+        Invoke-WebRequest -Uri $source.exe -OutFile $ytdlpExe -UseBasicParsing -TimeoutSec 90
+        if (-not ((Test-Path $ytdlpExe) -and ((Get-Item $ytdlpExe).Length -gt 1000000))) {
+            Write-Host " -> came back too small to be yt-dlp, trying mirror..."
+            continue
         }
+        # Throws on a mismatch (the file is deleted first), so a tampered or
+        # truncated download can never be the one that stays.
+        Assert-FileSha256 -Path $ytdlpExe -Uri $source.sums -FileName "yt-dlp.exe"
+        $downloaded = $true
+        break
     } catch {
-        Write-Host " -> Download failed from $url, trying mirror..."
+        Write-Host " -> Failed from $($source.exe): $($_.Exception.Message)"
     }
 }
 

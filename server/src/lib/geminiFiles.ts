@@ -133,7 +133,7 @@ function describeLocally(file: { name: string; mime: string; data: Buffer }) {
 
 /** Drop the oldest files once the store is over its budget. */
 function prune(index: FileIndex): FileIndex {
-  let files = [...index.files].sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1));
+  const files = [...index.files].sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1));
   let total = files.reduce((sum, f) => sum + f.bytes, 0);
   const dropped: StoredChatFile[] = [];
   while (files.length > MAX_STORED_FILES || total > MAX_STORED_BYTES) {
@@ -169,6 +169,9 @@ export interface SaveFileResult {
  * because the file is still worth sending to Gemini.
  */
 export function saveChatFile(file: { name: string; mime: string; data: Buffer }): SaveFileResult {
+  // A file name that arrives with control characters or a slash in it is
+  // sanitised here, on purpose.
+  // eslint-disable-next-line no-control-regex -- sanitising a filename on purpose
   const name = (file.name || "file").replace(/[\u0000-\u001f\\/]/g, "_").slice(0, 200);
   const mime = mimeFor(name, file.mime);
   const { shape } = describeLocally({ name, mime, data: file.data });
@@ -302,7 +305,10 @@ export interface PreparedQuestion {
  * neither — an honest note (which the model is told, so it can say so).
  */
 export async function prepareFiles(ids: string[]): Promise<PreparedQuestion> {
-  const wanted = ids.slice(0, MAX_FILES_PER_QUESTION).map(findChatFile).filter((f): f is StoredChatFile => Boolean(f));
+  const wanted = ids
+    .slice(0, MAX_FILES_PER_QUESTION)
+    .map(findChatFile)
+    .filter((f): f is StoredChatFile => Boolean(f));
   const attachments: GeminiAttachment[] = [];
   const contextBlocks: string[] = [];
   const fileParts: PreparedQuestion["fileParts"] = [];
@@ -314,18 +320,38 @@ export async function prepareFiles(ids: string[]): Promise<PreparedQuestion> {
       const kept = text.length > budget ? text.slice(0, budget) : text;
       budget -= kept.length;
       contextBlocks.push(`# File: ${file.name}\n${kept}`);
-      attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "read-here", chars: text.length, ...(file.note ? { note: file.note } : {}) });
+      attachments.push({
+        id: file.id,
+        name: file.name,
+        mime: file.mime,
+        bytes: file.bytes,
+        kind: file.kind,
+        method: "read-here",
+        chars: text.length,
+        ...(file.note ? { note: file.note } : {}),
+      });
       continue;
     }
 
     // Nothing readable here: Gemini gets the bytes when there is a key.
     const brain = activeBrain();
-    if (brain && (file.kind === "image" || file.kind === "pdf" || file.kind === "audio" || file.kind === "video" || file.kind === "other")) {
+    if (
+      brain &&
+      (file.kind === "image" || file.kind === "pdf" || file.kind === "audio" || file.kind === "video" || file.kind === "other")
+    ) {
       try {
         const uploaded = await geminiUpload(file);
         if (uploaded.geminiUri) {
           fileParts.push({ fileUri: uploaded.geminiUri, mimeType: uploaded.mime, name: uploaded.name });
-          attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "sent-to-gemini", note: "Gemini reads this one itself" });
+          attachments.push({
+            id: file.id,
+            name: file.name,
+            mime: file.mime,
+            bytes: file.bytes,
+            kind: file.kind,
+            method: "sent-to-gemini",
+            note: "Gemini reads this one itself",
+          });
           continue;
         }
       } catch (err) {
@@ -337,12 +363,37 @@ export async function prepareFiles(ids: string[]): Promise<PreparedQuestion> {
             const kept = heard.text.slice(0, budget);
             budget -= kept.length;
             contextBlocks.push(`# File: ${file.name} (a recording, transcribed)\n${kept}`);
-            attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "listened-here", chars: kept.length, note: heard.note });
+            attachments.push({
+              id: file.id,
+              name: file.name,
+              mime: file.mime,
+              bytes: file.bytes,
+              kind: file.kind,
+              method: "listened-here",
+              chars: kept.length,
+              note: heard.note,
+            });
           } else {
-            attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "listened-here", note: `${heard.note}; sending it to Gemini didn't work either (${reason})` });
+            attachments.push({
+              id: file.id,
+              name: file.name,
+              mime: file.mime,
+              bytes: file.bytes,
+              kind: file.kind,
+              method: "listened-here",
+              note: `${heard.note}; sending it to Gemini didn't work either (${reason})`,
+            });
           }
         } else {
-          attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "sent-to-gemini", note: `couldn't be sent to Gemini (${reason})` });
+          attachments.push({
+            id: file.id,
+            name: file.name,
+            mime: file.mime,
+            bytes: file.bytes,
+            kind: file.kind,
+            method: "sent-to-gemini",
+            note: `couldn't be sent to Gemini (${reason})`,
+          });
         }
         continue;
       }
@@ -355,9 +406,26 @@ export async function prepareFiles(ids: string[]): Promise<PreparedQuestion> {
         const kept = heard.text.slice(0, budget);
         budget -= kept.length;
         contextBlocks.push(`# File: ${file.name} (a recording, transcribed)\n${kept}`);
-        attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "listened-here", chars: kept.length, note: heard.note });
+        attachments.push({
+          id: file.id,
+          name: file.name,
+          mime: file.mime,
+          bytes: file.bytes,
+          kind: file.kind,
+          method: "listened-here",
+          chars: kept.length,
+          note: heard.note,
+        });
       } else {
-        attachments.push({ id: file.id, name: file.name, mime: file.mime, bytes: file.bytes, kind: file.kind, method: "listened-here", note: heard.note });
+        attachments.push({
+          id: file.id,
+          name: file.name,
+          mime: file.mime,
+          bytes: file.bytes,
+          kind: file.kind,
+          method: "listened-here",
+          note: heard.note,
+        });
       }
       continue;
     }

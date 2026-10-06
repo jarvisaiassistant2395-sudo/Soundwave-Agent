@@ -1,23 +1,36 @@
 # ── Soundwave AI — API image ──────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 COPY server/package.json server/package-lock.json* ./
 RUN npm ci || npm install
 
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY server/ .
 COPY --from=deps /app/node_modules ./node_modules
 RUN npm run prisma:generate && npm run build
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 RUN apk add --no-cache ffmpeg yt-dlp python3
 ENV NODE_ENV=production
+# Everything the app writes lives under /app/data (DATA_DIR + UPLOADS_DIR in
+# docker-compose.yml). Created and owned by the unprivileged user before it
+# drops to it, so a container that has never been mounted still starts.
+RUN mkdir -p /app/data && chown -R node:node /app/data /app
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY server/scripts ./scripts
+USER node
 EXPOSE 4000
+# Readiness, not liveness: /api/ready also answers 503 when the data store
+# could not be read or a hosted deploy came up on the JSON fallback, which is
+# exactly the deploy nobody wants traffic sent to.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# SIGTERM is what the server's shutdown path listens for (src/index.ts):
+# stop the schedulers, close the listener, flush the store.
+STOPSIGNAL SIGTERM
 CMD ["node", "dist/index.js"]

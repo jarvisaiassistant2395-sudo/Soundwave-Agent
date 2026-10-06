@@ -130,6 +130,14 @@ jobs:
         working-directory: mobile/android
         run: ./gradlew --no-daemon --stacktrace assembleRelease assembleDebug
 
+      # The Play Store takes an .app bundle, not an APK, and building it on
+      # every run is how the bundle stops being a thing nobody has tried until
+      # release day. It is built but not uploaded anywhere unless the Play
+      # credentials below exist.
+      - name: Build the Play bundle (AAB)
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon --stacktrace bundleRelease
+
       - name: Check the APK (signature, package, permissions)
         id: meta
         run: |
@@ -172,6 +180,64 @@ jobs:
           path: dist/SoundwaveCompanion-*.apk
           retention-days: 14
           if-no-files-found: error
+
+      # ── Play Store upload (internal track) ──────────────────────────────
+      # Skipped, with a notice, until the service-account JSON exists — the
+      # same shape as the update-feed step on the desktop side. An internal-track
+      # release is the smallest step that gets the companion off sideloading:
+      # the build is signed, versioned and installable from Play by testers,
+      # without anything going public.
+      #
+      # Set it up once:
+      #   1. Play Console → Setup → API access → create a service account, grant
+      #      it "Release to internal testing" in Users & permissions.
+      #   2. Download its JSON key and save it as the secret
+      #      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON.
+      #   3. Fill in the Play data-safety form (see docs/RELEASING.md): the app
+      #      records audio and talks to a PC on the local network — both are
+      #      declared there, and a wrong answer is what gets an app removed.
+      - name: Check the bundle
+        run: |
+          set -euo pipefail
+          aab=mobile/android/app/build/outputs/bundle/release/app-release.aab
+          ls -l "$aab"
+          # An unsigned or unzip-able bundle is worse than no bundle: catch it
+          # here, where the log says why, instead of in the Play Console.
+          unzip -l "$aab" | grep -q "base/manifest/AndroidManifest.xml"
+          echo "::notice title=Play bundle::$(du -h "$aab" | cut -f1) AAB built for the internal track"
+
+      # Writes the service-account JSON to a private file, or decides to skip.
+      # A separate step so the secret is never on the same line as the tool that
+      # reads it, and so the "no credentials yet" path is a notice rather than a
+      # red build (the same shape as the desktop update-feed step).
+      - name: Prepare the Play credentials
+        id: play_creds
+        env:
+          PLAY_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PLAY_JSON:-}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Play upload::skipped — no GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret. Add it to send builds to the internal track (see docs/RELEASING.md)."
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$PLAY_JSON" > "$RUNNER_TEMP/play-service-account.json"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to the Play internal track
+        id: play
+        if: steps.play_creds.outputs.ready == 'true'
+        continue-on-error: true
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJson: ${{ runner.temp }}/play-service-account.json
+          packageName: ai.soundwave.companion
+          releaseFiles: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          # The internal track, not production: testers get the signed build
+          # from Play, and nothing is public until someone promotes it.
+          tracks: internal
+          status: completed
 
       - name: Upload the debug APK (for the emulator test)
         id: debug_upload

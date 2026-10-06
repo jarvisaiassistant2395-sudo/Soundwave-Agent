@@ -138,9 +138,9 @@ export function Profile() {
     toast.success("Profile saved", user ? "Your name is updated in the workspace and on your account." : "Saved on this PC.");
   };
 
-  const useIdea = (idea: string) => {
+  const startIdea = (idea: string) => {
     const topic = ideaHook(idea);
-    navigate(`/agent?tab=generator&topic=${encodeURIComponent(topic)}`);
+    void navigate(`/agent?tab=generator&topic=${encodeURIComponent(topic)}`);
   };
 
   return (
@@ -179,7 +179,13 @@ export function Profile() {
         {editing && (
           <div className="space-y-4 border-t border-white/[0.06] px-5 py-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <TextField label="Display name" value={draftName} maxLength={60} onChange={(e) => setDraftName(e.target.value)} placeholder="Your name" />
+              <TextField
+                label="Display name"
+                value={draftName}
+                maxLength={60}
+                onChange={(e) => setDraftName(e.target.value)}
+                placeholder="Your name"
+              />
               <TextField
                 label="One-line title"
                 value={draftTitle}
@@ -216,7 +222,15 @@ export function Profile() {
                 Cancel
               </Button>
               {local.saved && (
-                <button type="button" className="ml-auto text-xs text-gray-500 hover:text-gray-300" onClick={() => { local.reset(); setDraftName("Creator Workspace"); setDraftTitle(""); }}>
+                <button
+                  type="button"
+                  className="ml-auto text-xs text-gray-500 hover:text-gray-300"
+                  onClick={() => {
+                    local.reset();
+                    setDraftName("Creator Workspace");
+                    setDraftTitle("");
+                  }}
+                >
                   Reset to defaults
                 </button>
               )}
@@ -233,7 +247,12 @@ export function Profile() {
           hint={shortsLoading ? undefined : `${shorts.length} in the library`}
           icon={<Clapperboard className="h-4 w-4" />}
         />
-        <StatTile label="Posted to YouTube" value={shortsLoading ? "…" : String(onYouTube)} hint={onYouTube ? "Live on your channel" : "Nothing published yet"} icon={<Youtube className="h-4 w-4" />} />
+        <StatTile
+          label="Posted to YouTube"
+          value={shortsLoading ? "…" : String(onYouTube)}
+          hint={onYouTube ? "Live on your channel" : "Nothing published yet"}
+          icon={<Youtube className="h-4 w-4" />}
+        />
         <StatTile
           label="Backgrounds left"
           value={orbital?.available != null ? String(orbital.available) : "—"}
@@ -274,9 +293,12 @@ export function Profile() {
         {trends?.ideas?.length ? (
           <ul className="mt-4 space-y-2">
             {trends.ideas.slice(0, 4).map((idea) => (
-              <li key={idea} className="flex items-start justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+              <li
+                key={idea}
+                className="flex items-start justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+              >
                 <p className="min-w-0 flex-1 text-sm text-gray-200">{idea}</p>
-                <Button size="sm" variant="subtle" className="shrink-0" onClick={() => useIdea(idea)}>
+                <Button size="sm" variant="subtle" className="shrink-0" onClick={() => startIdea(idea)}>
                   Make this
                 </Button>
               </li>
@@ -301,7 +323,7 @@ export function Profile() {
                 key={topic}
                 type="button"
                 className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-gray-300 transition-colors hover:border-cyan-500/50 hover:text-white"
-                onClick={() => useIdea(`“About ${topic}: the part nobody explains”`)}
+                onClick={() => startIdea(`“About ${topic}: the part nobody explains”`)}
               >
                 {topic}
               </button>
@@ -331,13 +353,22 @@ export function Profile() {
             </div>
           </dl>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link to="/settings/billing" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white">
+            <Link
+              to="/settings/billing"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white"
+            >
               <CreditCard className="h-3.5 w-3.5" /> Plan & billing
             </Link>
-            <Link to="/settings" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white">
+            <Link
+              to="/settings"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white"
+            >
               <SettingsIcon className="h-3.5 w-3.5" /> Settings
             </Link>
-            <Link to="/help" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white">
+            <Link
+              to="/help"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs font-medium text-gray-300 transition-colors hover:border-white/20 hover:text-white"
+            >
               <HelpCircle className="h-3.5 w-3.5" /> Help & docs
             </Link>
             {user && (
@@ -347,7 +378,7 @@ export function Profile() {
                 onClick={async () => {
                   await auth.signOut();
                   toast.info("Signed out", "You have been signed out of Soundwave AI.");
-                  navigate("/agent");
+                  void navigate("/agent");
                 }}
               >
                 Sign out
@@ -376,7 +407,9 @@ export function Profile() {
             <li className="flex items-center justify-between gap-3">
               <span>Trend digest</span>
               <span className="text-gray-300">
-                {trends?.available ? `${trends.findings.length} findings${trends.ideas.length ? `, ${trends.ideas.length} ideas` : ""}` : "Waiting for the first scan"}
+                {trends?.available
+                  ? `${trends.findings.length} findings${trends.ideas.length ? `, ${trends.ideas.length} ideas` : ""}`
+                  : "Waiting for the first scan"}
               </span>
             </li>
             <li className="flex items-center justify-between gap-3">

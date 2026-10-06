@@ -15,7 +15,7 @@ import { http } from "../lib/api";
 import { useOAuthProviders } from "../hooks/useOAuthProviders";
 import { Button } from "../components/ui/Button";
 import { getDesktop, openInBrowser } from "../lib/desktop";
-import { setupDone } from "./Setup";
+import { setupDone } from "../lib/setup";
 import { cn } from "../lib/cn";
 
 /** The app polls this often while the browser is open. */
@@ -25,9 +25,18 @@ const GIVE_UP_MS = 15 * 60_000;
 
 const GOOGLE_G = (
   <svg viewBox="0 0 48 48" className="h-5 w-5" aria-hidden>
-    <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z" />
-    <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
-    <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 34.9 26.7 36 24 36c-5.2 0-9.7-3.3-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z" />
+    <path
+      fill="#FFC107"
+      d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"
+    />
+    <path
+      fill="#FF3D00"
+      d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"
+    />
+    <path
+      fill="#4CAF50"
+      d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 34.9 26.7 36 24 36c-5.2 0-9.7-3.3-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z"
+    />
     <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C37 39.6 44 35 44 24c0-1.3-.1-2.6-.4-3.9z" />
   </svg>
 );
@@ -53,7 +62,7 @@ export function Welcome() {
 
   // Already linked (second launch, or the browser came back first): go in.
   useEffect(() => {
-    if (user) navigate(setupDone() ? "/agent" : "/setup", { replace: true });
+    if (user) void navigate(setupDone() ? "/agent" : "/setup", { replace: true });
   }, [user, navigate]);
 
   const finish = useCallback(
@@ -61,7 +70,7 @@ export function Welcome() {
       setPhase("claiming");
       try {
         await claimSignIn(loginId, secret);
-        navigate("/agent", { replace: true });
+        void navigate("/agent", { replace: true });
       } catch (e) {
         setPhase("idle");
         setProblem({ message: (e as Error).message || "Couldn't finish signing in.", canRetry: true });
@@ -160,8 +169,8 @@ export function Welcome() {
           </div>
           <h1 className="text-2xl font-bold text-white">Welcome to Soundwave AI</h1>
           <p className="mt-2 text-sm text-gray-400">
-            {inDesktop ? "Link this app to your Google account to get started." : "Sign in with Google to get started."} It takes one tap — Soundwave
-            never asks for a password.
+            {inDesktop ? "Link this app to your Google account to get started." : "Sign in with Google to get started."} It takes one tap —
+            Soundwave never asks for a password.
           </p>
         </div>
 
@@ -173,9 +182,10 @@ export function Welcome() {
                 This build has no Google app of its own
               </p>
               <p className="mt-2 text-gray-400">
-                Signing in needs a free Google OAuth client once. In Google Cloud → <span className="text-gray-200">Google Auth platform → Clients</span>, create a
-                client of type <span className="text-gray-200">Desktop app</span> and paste what you download here. (A packaged build already has one, so most people
-                never see this.)
+                Signing in needs a free Google OAuth client once. In Google Cloud →{" "}
+                <span className="text-gray-200">Google Auth platform → Clients</span>, create a client of type{" "}
+                <span className="text-gray-200">Desktop app</span> and paste what you download here. (A packaged build already has one, so
+                most people never see this.)
               </p>
               <textarea
                 value={clientJson}
@@ -218,7 +228,11 @@ export function Welcome() {
                 <li>Allow Soundwave to see your name, email and picture.</li>
                 <li>Come back here — the app notices on its own.</li>
               </ol>
-              <button type="button" className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300" onClick={() => void openAgain()}>
+              <button
+                type="button"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300"
+                onClick={() => void openAgain()}
+              >
                 <ExternalLink className="h-3.5 w-3.5" />
                 Didn&apos;t open? Open the Google page again
               </button>

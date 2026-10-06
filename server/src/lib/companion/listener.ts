@@ -19,7 +19,15 @@ import { resolveJobVideoFile } from "../jobFiles.js";
 import { SttError, getSttStatus, transcribe } from "../stt.js";
 import { normalizeVoiceId, synthesizeEdgeTTS } from "../edgeTts.js";
 import { chatTime, newMessageId, openJobs, replyToMessage, type ChatMessage, type ChatReply } from "../chatMessages.js";
-import { appendToConversation, findJob, getConversation, mergeIntoConversation, recentHistory, waitForChange, type JobSnapshot } from "../conversation.js";
+import {
+  appendToConversation,
+  findJob,
+  getConversation,
+  mergeIntoConversation,
+  recentHistory,
+  waitForChange,
+  type JobSnapshot,
+} from "../conversation.js";
 import { HISTORY_MESSAGES } from "../brain/chat.js";
 import { modelLabel } from "../brain/gemini.js";
 import { activeBrain, FALLBACK_MODEL, type ThinkingLevel } from "../brain/settings.js";
@@ -199,7 +207,9 @@ export function brainKit(host: string | null = null): KitResult {
   const brain = activeBrain();
   if (!brain) return { enabled: false, reason: "no_key", rev: "no_key" };
   const settings = loadMorningSettings();
-  const base = config.companionGeminiBase || (config.geminiApiBase !== "https://generativelanguage.googleapis.com" ? forPhone(config.geminiApiBase, host) : "");
+  const base =
+    config.companionGeminiBase ||
+    (config.geminiApiBase !== "https://generativelanguage.googleapis.com" ? forPhone(config.geminiApiBase, host) : "");
   const body = {
     apiKey: brain.apiKey,
     model: brain.model,
@@ -229,7 +239,16 @@ function memoryOpsFrom(input: unknown): MemoryOp[] {
     if (op?.op === "forget" && typeof op.id === "string") ops.push({ op: "forget", id: op.id.slice(0, 40) });
     else if (op?.op === "add" && op.note && typeof op.note === "object") {
       const note = op.note as Record<string, unknown>;
-      if (typeof note.id === "string" && typeof note.text === "string") ops.push({ op: "add", note: { id: note.id.slice(0, 40), text: note.text.slice(0, MAX_NOTE_CHARS * 2), at: Number(note.at) || Date.now(), from: "phone" } });
+      if (typeof note.id === "string" && typeof note.text === "string")
+        ops.push({
+          op: "add",
+          note: {
+            id: note.id.slice(0, 40),
+            text: note.text.slice(0, MAX_NOTE_CHARS * 2),
+            at: Number(note.at) || Date.now(),
+            from: "phone",
+          },
+        });
     }
   }
   return ops;
@@ -259,7 +278,9 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
         // Chat while the PC is off: is it allowed, and which kit/memory is current.
         brain: (() => {
           const kit = brainKit();
-          return kit.enabled ? { phoneChat: true, modelLabel: kit.modelLabel, kitRev: kit.rev } : { phoneChat: false, reason: kit.reason, kitRev: kit.rev };
+          return kit.enabled
+            ? { phoneChat: true, modelLabel: kit.modelLabel, kitRev: kit.rev }
+            : { phoneChat: false, reason: kit.reason, kitRev: kit.rev };
         })(),
         memoryRev: memoryAvailable() ? (await memorySnapshot()).rev : null,
       },
@@ -275,21 +296,41 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
   async merge(args) {
     const incoming = sanitizeMessages(args.messages)
       .slice(-100)
-      .flatMap((m): ChatMessage[] => (m.sender === "user" ? [{ ...m, via: "phone" }] : m.sender === "assistant" ? [{ ...m, answeredBy: "phone" }] : []));
+      .flatMap((m): ChatMessage[] =>
+        m.sender === "user" ? [{ ...m, via: "phone" }] : m.sender === "assistant" ? [{ ...m, answeredBy: "phone" }] : [],
+      );
     const ops = memoryOpsFrom(args.memoryOps);
     if (ops.length && memoryAvailable()) applyPhoneMemoryOps(ops);
     const snap = incoming.length ? mergeIntoConversation(incoming) : getConversation();
     // A briefing the phone made (and spoke) while the PC was off, or the PC's one it spoke offline: heard.
     for (const m of incoming) if (m.sender === "assistant" && m.briefingDate) markBriefingHeard(m.briefingDate, "phone");
-    if (Array.isArray(args.heard)) for (const d of args.heard.slice(0, 14)) if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) markBriefingHeard(d, "phone");
+    if (Array.isArray(args.heard))
+      for (const d of args.heard.slice(0, 14)) if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) markBriefingHeard(d, "phone");
     const memory = memoryAvailable() ? await memorySnapshot() : null;
-    return { result: { epoch: snap.epoch, rev: snap.rev, messages: snap.messages, merged: incoming.length, memoryOps: ops.length, memoryRev: memory?.rev ?? null, memory } };
+    return {
+      result: {
+        epoch: snap.epoch,
+        rev: snap.rev,
+        messages: snap.messages,
+        merged: incoming.length,
+        memoryOps: ops.length,
+        memoryRev: memory?.rev ?? null,
+        memory,
+      },
+    };
   },
 
   // "🌅 Morning Setup" on the phone: runs on the PC (opens the morning items here if allowed).
   async morning() {
     const now = Date.now();
-    appendToConversation({ id: newMessageId(now), sender: "user", text: "🌅 Morning Setup", time: chatTime(new Date(now)), at: now, via: "phone" });
+    appendToConversation({
+      id: newMessageId(now),
+      sender: "user",
+      text: "🌅 Morning Setup",
+      time: chatTime(new Date(now)),
+      at: now,
+      via: "phone",
+    });
     let reply: ChatReply;
     try {
       reply = await runMorningSetup({ via: "phone" });
@@ -383,7 +424,14 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
     let reply: ChatReply;
     try {
       // Same default as the app: publish quality unless 720p was asked for.
-      reply = await agentChat({ message, history, voice, resolution: args.resolution === "720p" ? "720p" : "1080p", userId: "local-user", via: "phone" });
+      reply = await agentChat({
+        message,
+        history,
+        voice,
+        resolution: args.resolution === "720p" ? "720p" : "1080p",
+        userId: "local-user",
+        via: "phone",
+      });
     } catch (err) {
       console.error("[companion] agent failed:", err);
       reply = { success: false, reply: `I couldn't process "${message}" just now: ${(err as Error).message}`, tag: "SYS" };
@@ -410,7 +458,9 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
     const asked = str(args.text, 4000).replace(/\s+/g, " ").trim();
     const text = asked.slice(0, MAX_COMPANION_SPEECH_CHARS);
     if (asked.length > text.length) {
-      console.warn(`[companion] speech text longer than ${MAX_COMPANION_SPEECH_CHARS} characters (${asked.length}) — speaking only the first part; the phone should send it in pieces`);
+      console.warn(
+        `[companion] speech text longer than ${MAX_COMPANION_SPEECH_CHARS} characters (${asked.length}) — speaking only the first part; the phone should send it in pieces`,
+      );
     }
     if (!text) throw new OpError("EMPTY", "Nothing to say.");
     const voice = normalizeVoiceId(args.voice || getConversation().voice);
@@ -432,7 +482,10 @@ const OPS: Record<string, (args: Args, ctx: OpContext) => Promise<OpResult>> = {
   async "video.read"(args) {
     const file = await videoFileFor(str(args.jobId, 120));
     const offset = typeof args.offset === "number" && args.offset >= 0 ? Math.floor(args.offset) : 0;
-    const length = Math.min(MAX_VIDEO_CHUNK, typeof args.length === "number" && args.length > 0 ? Math.floor(args.length) : MAX_VIDEO_CHUNK);
+    const length = Math.min(
+      MAX_VIDEO_CHUNK,
+      typeof args.length === "number" && args.length > 0 ? Math.floor(args.length) : MAX_VIDEO_CHUNK,
+    );
     if (offset >= file.size) return { result: { size: file.size, offset, length: 0 }, payload: Buffer.alloc(0) };
     const handle = await fs.promises.open(file.path, "r");
     try {
@@ -501,15 +554,25 @@ async function handlePair(req: Request, res: Response): Promise<void> {
     n,
     ok: true,
     t: Date.now(),
-    result: { deviceId: device.id, deviceKey: deviceKey.toString("base64"), pcId: session.pcId, pcName: pcName(), protocol: PROTOCOL_VERSION },
+    result: {
+      deviceId: device.id,
+      deviceKey: deviceKey.toString("base64"),
+      pcId: session.pcId,
+      pcName: pcName(),
+      protocol: PROTOCOL_VERSION,
+    },
   });
-  res.status(200).type("application/octet-stream").send(seal(session.key, reply, aad("pair", "s2c", session.pcId, String(n))));
+  res
+    .status(200)
+    .type("application/octet-stream")
+    .send(seal(session.key, reply, aad("pair", "s2c", session.pcId, String(n))));
 }
 
 async function handleRpc(req: Request, res: Response): Promise<void> {
   const deviceId = req.header("x-soundwave-device") ?? "";
   const device = deviceId ? findDevice(deviceId) : null;
-  if (!device) return plainError(res, 401, "UNKNOWN_DEVICE", "This phone isn't paired with the PC (anymore). Pair it again from Settings → Phone.");
+  if (!device)
+    return plainError(res, 401, "UNKNOWN_DEVICE", "This phone isn't paired with the PC (anymore). Pair it again from Settings → Phone.");
   const keys = keysFor(device);
   const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
   let header: Record<string, unknown>;
@@ -543,7 +606,10 @@ async function handleRpc(req: Request, res: Response): Promise<void> {
     out = frame({ n, ok: false, t: Date.now(), error: { code, message } });
   }
   if (res.writableEnded || res.destroyed) return;
-  res.status(200).type("application/octet-stream").send(seal(keys.s2c, out, aad("rpc", "s2c", device.id, n)));
+  res
+    .status(200)
+    .type("application/octet-stream")
+    .send(seal(keys.s2c, out, aad("rpc", "s2c", device.id, n)));
 }
 
 export function createCompanionApp() {
@@ -566,7 +632,14 @@ export function createCompanionApp() {
   });
 
   app.get("/companion/v1/hello", rateLimit(240), (_req, res) => {
-    res.json({ app: "soundwave", protocol: PROTOCOL_VERSION, pcId: loadState().pcId, pcName: pcName(), time: Date.now(), pairing: Boolean(activePairing()) });
+    res.json({
+      app: "soundwave",
+      protocol: PROTOCOL_VERSION,
+      pcId: loadState().pcId,
+      pcName: pcName(),
+      time: Date.now(),
+      pairing: Boolean(activePairing()),
+    });
   });
   app.post("/companion/v1/pair", rateLimit(30), express.raw({ type: () => true, limit: "64kb" }), (req, res, next) => {
     handlePair(req, res).catch(next);
@@ -576,7 +649,7 @@ export function createCompanionApp() {
   });
 
   app.use((_req, res) => plainError(res, 404, "NOT_FOUND", "Not here."));
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   app.use((err: Error & { status?: number; type?: string }, _req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent) return;
     if (err.type === "entity.too.large" || err.status === 413) return plainError(res, 413, "TOO_LARGE", "That's too big to send.");

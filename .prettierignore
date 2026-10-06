@@ -1,0 +1,26 @@
+# Generated, vendored, or not ours.
+node_modules/
+dist/
+build/
+release/
+out/
+coverage/
+*.min.js
+*.min.css
+
+# The Android project is Gradle's, and its XML/Java is formatted by the IDE.
+mobile/android/
+
+# Other people's trees.
+deploy/vendor/
+deploy/soundwave-agent/
+desktop/vendor/
+voiceclone/
+
+# Lockfiles: npm's formatting, not ours.
+package-lock.json
+
+# Long-form docs where the line breaks are deliberate.
+README.md
+THIRD-PARTY-NOTICES.txt
+docs/*.md

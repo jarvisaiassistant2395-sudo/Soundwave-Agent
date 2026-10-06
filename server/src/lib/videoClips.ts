@@ -44,15 +44,7 @@ import { probeMedia, resolveFfmpegPath, runFfmpegExport, type ExportSettings } f
 import { captionStyleFor } from "./brand.js";
 import { recordUsage, requireRoom, watermarkFor } from "./metering.js";
 import { STT_SAMPLE_RATE, SttError, encodeWav, resolveWhisper, transcribe, whisperBudgetMs } from "./stt.js";
-import {
-  heatWindows,
-  interestBrief,
-  rankByInterest,
-  snapToInterest,
-  trendTerms,
-  windowInterest,
-  type ViewSignals,
-} from "./brain/core/interest.js";
+import { heatWindows, interestBrief, snapToInterest, trendTerms, windowInterest, type ViewSignals } from "./brain/core/interest.js";
 import { loadTrendDigest } from "./trends.js";
 // What this channel's own posted clips did — the picker leans on results, not vibes.
 import { audienceBrief } from "./postSchedule.js";
@@ -62,7 +54,6 @@ import {
   MAX_CLIP_SECONDS,
   MAX_PICK_TRANSCRIPTS,
   MIN_CLIP_SECONDS,
-  audioProfile,
   buildPickerAsk,
   captionCues,
   candidateWindows,
@@ -80,7 +71,6 @@ import {
   parsePickerReply,
   pickMoments,
   planWindows,
-  rankWindows,
   snapToSpeech,
   speechRuns,
   withoutOverlaps,
@@ -108,7 +98,6 @@ import {
 import { activeBrain, FALLBACK_MODEL } from "./brain/settings.js";
 import { GeminiError, generateContent, isGemini3, visibleText } from "./brain/gemini.js";
 import { getActiveShortJobs } from "../routes/agentShort.js";
-
 
 /** Never read more than this much of a video's sound, however long it runs. */
 const MAX_PROFILE_HOURS = 4;
@@ -496,11 +485,7 @@ function speechEngine(): { available: boolean; problem: string | null } {
 }
 
 /** What the chat says about a clip's captions — the real reason, not a guess. */
-function captionNote(
-  cues: number,
-  heard: ListenOutcome,
-  opts: { canListen: boolean; fellBack: boolean },
-): string {
+function captionNote(cues: number, heard: ListenOutcome, opts: { canListen: boolean; fellBack: boolean }): string {
   if (cues > 0) {
     return opts.fellBack
       ? `Captions: ${cues} lines borrowed from a neighbouring window (this clip's own sound couldn't be listened to — ${heard.kind === "failed" ? heard.reason : "the speech engine was unavailable"})`
@@ -596,7 +581,10 @@ export async function checkSource(video: string): Promise<Source> {
 }
 
 /** The real thing: download a link (or take the file as it is). */
-async function fetchSource(source: Source, onProgress?: (s: string) => void): Promise<{ filePath: string; duration: number; name: string; url: string }> {
+async function fetchSource(
+  source: Source,
+  onProgress?: (s: string) => void,
+): Promise<{ filePath: string; duration: number; name: string; url: string }> {
   if (source.kind === "file" && source.filePath) {
     return { filePath: source.filePath, duration: source.duration, name: source.name, url: source.url };
   }
@@ -604,7 +592,12 @@ async function fetchSource(source: Source, onProgress?: (s: string) => void): Pr
   const imported = await importYouTubeLink(source.url, {
     onProgress: (pct) => onProgress?.(`Downloading the video… ${Math.round(pct)}%`),
   });
-  return { filePath: imported.filePath, duration: imported.duration || source.duration, name: imported.meta.title || source.name, url: imported.url };
+  return {
+    filePath: imported.filePath,
+    duration: imported.duration || source.duration,
+    name: imported.meta.title || source.name,
+    url: imported.url,
+  };
 }
 
 interface ClipJob {
@@ -628,7 +621,12 @@ function safeTrendDigest(): ReturnType<typeof loadTrendDigest> {
 }
 
 /** Fails every job in a run with one message, and says so in the chat. */
-async function failRun(jobs: ClipJob[], store: Awaited<ReturnType<typeof getStore>>, message: string, say: (text: string, extra?: Record<string, unknown>) => void): Promise<void> {
+async function failRun(
+  jobs: ClipJob[],
+  store: Awaited<ReturnType<typeof getStore>>,
+  message: string,
+  say: (text: string, extra?: Record<string, unknown>) => void,
+): Promise<void> {
   const trimmed = message.slice(0, 300);
   await Promise.all(jobs.map((j) => j.report(0, "Failed")));
   for (const job of jobs) {
@@ -751,7 +749,14 @@ async function runClips(run: QueuedClips): Promise<void> {
   const measured = await signalsPromise;
   const viewSignals: ViewSignals | null =
     measured || trends.length
-      ? { heat: measured?.heat ?? [], anchors: measured?.anchors ?? [], trends, stats: measured?.stats ?? {}, chapters: measured?.chapters, notes: measured?.notes }
+      ? {
+          heat: measured?.heat ?? [],
+          anchors: measured?.anchors ?? [],
+          trends,
+          stats: measured?.stats ?? {},
+          chapters: measured?.chapters,
+          notes: measured?.notes,
+        }
       : null;
   for (const line of interestBrief(viewSignals).slice(0, 4)) say(`✂️ ${line}`);
 
@@ -798,9 +803,12 @@ async function runClips(run: QueuedClips): Promise<void> {
     const engine = speechEngine();
     const canListen = engine.available;
     if (!canListen) {
-      say(`✂️ There's no speech engine on this PC${engine.problem ? ` (${engine.problem})` : ""} — picking on the sound alone, and the clips will have no captions.`, {
-        actionOutput: "Voice input isn't set up, so nothing can be listened to",
-      });
+      say(
+        `✂️ There's no speech engine on this PC${engine.problem ? ` (${engine.problem})` : ""} — picking on the sound alone, and the clips will have no captions.`,
+        {
+          actionOutput: "Voice input isn't set up, so nothing can be listened to",
+        },
+      );
     }
 
     // `null` = couldn't be listened to, "" = listened to and nothing was said.
@@ -916,7 +924,10 @@ async function runClips(run: QueuedClips): Promise<void> {
         })
       : // Nothing measured: the long-standing path, unchanged, topped up by the
         // model's picks as it always was.
-        withoutOverlaps([...modelPicks, ...pickMoments(windows, pickScores, total, count)], count).map((p) => ({ start: p.start, end: p.end }));
+        withoutOverlaps([...modelPicks, ...pickMoments(windows, pickScores, total, count)], count).map((p) => ({
+          start: p.start,
+          end: p.end,
+        }));
 
     /** A range the model chose keeps its title and reason; the rest are ours. */
     const forRange = (range: VideoWindow): ClipPick => {
@@ -935,7 +946,11 @@ async function runClips(run: QueuedClips): Promise<void> {
     const anchoredPicks = trimOverlaps(ranges.map(forRange), total, MIN_CLIP_SECONDS)
       .slice(0, count)
       .map((pick) => {
-        const anchored = snapToInterest(pick, viewSignals, { minSeconds: MIN_CLIP_SECONDS, maxSeconds: MAX_CLIP_SECONDS, durationSec: total });
+        const anchored = snapToInterest(pick, viewSignals, {
+          minSeconds: MIN_CLIP_SECONDS,
+          maxSeconds: MAX_CLIP_SECONDS,
+          durationSec: total,
+        });
         const snapped = snapToSpeech({ ...pick, start: anchored.start, end: anchored.end }, runs, 2.5, total);
         return { ...pick, start: snapped.start, end: snapped.end };
       });
@@ -947,9 +962,8 @@ async function runClips(run: QueuedClips): Promise<void> {
       .map((pick) => ({ pick, interest: interestFor(pick)?.score ?? 0 }))
       .sort((a, b) => b.interest - a.interest || a.pick.start - b.pick.start)
       .map((entry) => entry.pick);
-    const finalPicks = rankedPicks.length && Math.max(...rankedPicks.map((p) => interestFor(p)?.score ?? 0)) > 0
-      ? rankedPicks
-      : inVideoOrder(rankedPicks);
+    const finalPicks =
+      rankedPicks.length && Math.max(...rankedPicks.map((p) => interestFor(p)?.score ?? 0)) > 0 ? rankedPicks : inVideoOrder(rankedPicks);
     await all(44, `Cutting ${finalPicks.length === 1 ? "the clip" : `${finalPicks.length} clips`}…`);
     if (finalPicks.length > 1 && finalPicks.some((p) => (interestFor(p)?.score ?? 0) > 0)) {
       say("✂️ Clips arrive strongest first: the order is YouTube's own replay and comment data, then the sound and the words.", {
@@ -989,19 +1003,54 @@ async function runClips(run: QueuedClips): Promise<void> {
         await job.report(50, "Cutting the moment…");
         // The cut is an intermediate: keep it visually lossless (crf 18) so the
         // final composite isn't re-compressing an already soft picture.
-        await runFfmpeg(["-y", "-ss", pick.start.toFixed(3), "-t", length.toFixed(3), "-i", filePath, "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", videoOnly]);
+        await runFfmpeg([
+          "-y",
+          "-ss",
+          pick.start.toFixed(3),
+          "-t",
+          length.toFixed(3),
+          "-i",
+          filePath,
+          "-an",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "fast",
+          "-crf",
+          "18",
+          "-pix_fmt",
+          "yuv420p",
+          videoOnly,
+        ]);
         await job.report(58, "Taking its sound…");
-        await runFfmpeg(["-y", "-ss", pick.start.toFixed(3), "-t", length.toFixed(3), "-i", filePath, "-vn", "-c:a", "aac", "-b:a", "160k", audioOnly]);
+        await runFfmpeg([
+          "-y",
+          "-ss",
+          pick.start.toFixed(3),
+          "-t",
+          length.toFixed(3),
+          "-i",
+          filePath,
+          "-vn",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "160k",
+          audioOnly,
+        ]);
 
         // Captions: the clip's own sound is what they must match, so listen to
         // exactly that stretch. Only when that fails — the engine was busy with
         // the person, or too slow — fall back to an overlapping window's
         // transcript, and say which happened.
-        const heard = canListen ? await listen(pcm, pick.start, pick.start + length) : { kind: "failed" as const, reason: engine.problem || "there's no speech engine on this PC" };
+        const heard = canListen
+          ? await listen(pcm, pick.start, pick.start + length)
+          : { kind: "failed" as const, reason: engine.problem || "there's no speech engine on this PC" };
         let said = heard.kind === "said" ? heard.text : "";
         let fellBack = false;
         if (!said) {
-          const borrowed = snippets.find((text, index) => text && !(windows[index]!.end < range.start || windows[index]!.start > range.end)) ?? "";
+          const borrowed =
+            snippets.find((text, index) => text && !(windows[index]!.end < range.start || windows[index]!.start > range.end)) ?? "";
           if (borrowed) {
             said = borrowed;
             fellBack = true;
@@ -1034,7 +1083,8 @@ async function runClips(run: QueuedClips): Promise<void> {
           subtitleStyle: captionStyleFor(),
           settings,
           outputPath: outPath,
-          onProgress: (pct) => void job.report(Math.min(96, Math.max(64, Math.round(64 + pct * 0.32))), `Rendering the clip… ${Math.round(pct)}%`),
+          onProgress: (pct) =>
+            void job.report(Math.min(96, Math.max(64, Math.round(64 + pct * 0.32))), `Rendering the clip… ${Math.round(pct)}%`),
         });
         await job.report(97, "Saving the clip…");
         try {
@@ -1060,17 +1110,20 @@ async function runClips(run: QueuedClips): Promise<void> {
         const interestLine = measured?.evidence.length
           ? `\n${measured.evidence.slice(0, 2).join("\n")}${interestPct > 0 ? ` — ${interestPct}% measured interest` : ""}`
           : "";
-        say(`✂️ Clip ${i + 1} of ${finalPicks.length} — “${title}” (${clockRange(range)} of “${source.name}”)${pick.reason ? `\n${pick.reason}` : ""}${interestLine}`, {
-          jobId: job.id,
-          jobState: "done",
-          topic: title,
-          tag: "AUDIO",
-          videoUrl: outputUrl,
-          downloadUrl: outputUrl,
-          ...(interestPct > 0 ? { interest: interestPct } : {}),
-          ...(measured?.evidence.length ? { interestReason: measured.evidence.slice(0, 2).join(" · ") } : {}),
-          actionOutput: `From ${source.url}\n${note}`,
-        });
+        say(
+          `✂️ Clip ${i + 1} of ${finalPicks.length} — “${title}” (${clockRange(range)} of “${source.name}”)${pick.reason ? `\n${pick.reason}` : ""}${interestLine}`,
+          {
+            jobId: job.id,
+            jobState: "done",
+            topic: title,
+            tag: "AUDIO",
+            videoUrl: outputUrl,
+            downloadUrl: outputUrl,
+            ...(interestPct > 0 ? { interest: interestPct } : {}),
+            ...(measured?.evidence.length ? { interestReason: measured.evidence.slice(0, 2).join(" · ") } : {}),
+            actionOutput: `From ${source.url}\n${note}`,
+          },
+        );
       } catch (err) {
         const message = (err as Error).message || "unknown error";
         await store.updateJob(job.id, { status: "FAILED", errorMessage: message.slice(0, 300), completedAt: new Date().toISOString() });
@@ -1082,7 +1135,12 @@ async function runClips(run: QueuedClips): Promise<void> {
     if (finalPicks.length < jobs.length) {
       // A very short video can't fill every slot: the extra jobs mustn't spin forever.
       for (const job of jobs.slice(finalPicks.length)) {
-        await store.updateJob(job.id, { status: "FAILED", progress: 0, errorMessage: "The video was too short for another clip.", completedAt: new Date().toISOString() });
+        await store.updateJob(job.id, {
+          status: "FAILED",
+          progress: 0,
+          errorMessage: "The video was too short for another clip.",
+          completedAt: new Date().toISOString(),
+        });
         emitJob(job.id, { status: "FAILED", error: "The video was too short for another clip." });
       }
     }
@@ -1127,10 +1185,7 @@ async function pump(): Promise<void> {
 function schedulePump(): void {
   const state = loadRunState();
   if (!state.waiting.length) {
-    if (pumpTimer) {
-      clearInterval(pumpTimer);
-      pumpTimer = null;
-    }
+    stopClips();
     return;
   }
   if (pumpTimer) return;
@@ -1138,6 +1193,19 @@ function schedulePump(): void {
     void pump().catch((err) => console.warn("[clips] pump failed:", (err as Error).message));
   }, PUMP_INTERVAL_MS);
   pumpTimer.unref?.();
+}
+
+/**
+ * Stop offering queued clips to the renderer (index.ts shutdown). The queue
+ * itself is on disk (`clips-queue.json`), so whatever was waiting is picked up
+ * by the next session — this only stops this one from starting a new render on
+ * the way out.
+ */
+export function stopClips(): void {
+  if (pumpTimer) {
+    clearInterval(pumpTimer);
+    pumpTimer = null;
+  }
 }
 
 /**
@@ -1206,7 +1274,11 @@ export async function startClipsJob(opts: ClipsOptions): Promise<ClipsStarted> {
   if (!next) {
     // The queue is full: undo the jobs rather than leave them waiting forever.
     for (const id of jobIds) {
-      await store.updateJob(id, { status: "FAILED", errorMessage: `The clips queue is full (${MAX_WAITING} videos waiting).`, completedAt: new Date().toISOString() });
+      await store.updateJob(id, {
+        status: "FAILED",
+        errorMessage: `The clips queue is full (${MAX_WAITING} videos waiting).`,
+        completedAt: new Date().toISOString(),
+      });
       emitJob(id, { status: "FAILED", error: `The clips queue is full (${MAX_WAITING} videos waiting).` });
     }
     throw new Error(`I've already got ${MAX_WAITING} videos waiting to be clipped — ask me again once some of them are done.`);

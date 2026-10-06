@@ -118,7 +118,8 @@ export class YouTubeService {
       defaultTags: updates.defaultTags || current.defaultTags,
     };
     // New credentials (another account or client): the cached token and channel belong to the old ones.
-    const changed = (k: "clientId" | "clientSecret" | "refreshToken") => updates[k] !== undefined && (updates[k] ?? "").trim() !== (current[k] ?? "").trim();
+    const changed = (k: "clientId" | "clientSecret" | "refreshToken") =>
+      updates[k] !== undefined && (updates[k] ?? "").trim() !== (current[k] ?? "").trim();
     if (changed("clientId") || changed("clientSecret") || changed("refreshToken")) {
       delete merged.accessToken;
       delete merged.tokenExpiry;
@@ -286,7 +287,11 @@ export class YouTubeService {
         const ids = (list.items ?? []).map((i: any) => i.contentDetails?.videoId).filter(Boolean);
         if (ids.length) {
           const vids = await get(`videos?part=snippet,statistics&id=${ids.join(",")}`);
-          stats.latest = (vids.items ?? []).map((v: any) => ({ title: String(v.snippet?.title ?? ""), views: num(v.statistics?.viewCount), publishedAt: v.snippet?.publishedAt ?? null }));
+          stats.latest = (vids.items ?? []).map((v: any) => ({
+            title: String(v.snippet?.title ?? ""),
+            views: num(v.statistics?.viewCount),
+            publishedAt: v.snippet?.publishedAt ?? null,
+          }));
         }
       } catch {
         /* the numbers without the latest uploads */
@@ -342,7 +347,9 @@ export class YouTubeService {
     }
 
     const privacy = params.privacy || params.defaults?.defaultPrivacy || cfg.defaultPrivacy || "public";
-    const tags = Array.from(new Set([...(params.tags || []), ...(params.defaults?.defaultTags ?? cfg.defaultTags ?? []), "shorts", "viral"]));
+    const tags = Array.from(
+      new Set([...(params.tags || []), ...(params.defaults?.defaultTags ?? cfg.defaultTags ?? []), "shorts", "viral"]),
+    );
 
     const metadata = {
       snippet: {
@@ -384,17 +391,20 @@ export class YouTubeService {
     }
 
     // Step 2: Upload Video File Content
-    const fileStream = fs.createReadStream(params.videoPath);
-    const fileBuffer = fs.readFileSync(params.videoPath);
-
+    // Streamed, not buffered: an Enterprise export can be 2 GB, and
+    // readFileSync loaded all of it into RAM before the request even started.
+    // (`duplex: "half"` is what Node's fetch requires for a stream body.)
     const uploadRes = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
         "Content-Length": String(fileSize),
         "Content-Type": "video/mp4",
       },
-      body: fileBuffer,
-    });
+      body: fs.createReadStream(params.videoPath),
+      duplex: "half",
+      // The runtime accepts a stream here (that is what duplex: "half" is for);
+      // the bundled undici types still describe BodyInit as buffers and forms.
+    } as unknown as RequestInit);
 
     if (!uploadRes.ok) {
       const errTxt = await uploadRes.text();

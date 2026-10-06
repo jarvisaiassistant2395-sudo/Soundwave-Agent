@@ -100,6 +100,8 @@ export function tidyChatTitle(raw: unknown): string {
 export function cleanQuestion(raw: unknown): string {
   const text = String(raw ?? "")
     .replace(/\r\n/g, "\n")
+    // Stripping control characters is the point of this line.
+    // eslint-disable-next-line no-control-regex -- sanitising text on purpose
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
@@ -166,7 +168,8 @@ export function chatInstruction(notebook?: { name: string; brief: string; notes?
     `This chat belongs to the notebook "${notebook.name}" (${notebook.brief}). Everything in the notebook is available to you for every question.`,
   ];
   if (notebook.sources) parts.push("", "The notebook's sources (read on this PC):", notebook.sources);
-  if (notebook.notes) parts.push("", "The notebook's notes (the person wrote these; treat them as what they already know or decided):", notebook.notes);
+  if (notebook.notes)
+    parts.push("", "The notebook's notes (the person wrote these; treat them as what they already know or decided):", notebook.notes);
   parts.push("", "Prefer what the notebook contains over your general knowledge, and say when the notebook does not cover something.");
   return parts.join("\n");
 }

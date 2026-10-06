@@ -13,6 +13,10 @@ export class ApiRequestError extends Error {
   retryAfter?: number;
   constructor(err: ApiError, status: number) {
     super(err.message);
+    // Without this, `error.name` is "Error" and nothing that reports or logs a
+    // failure can tell an API error from a typo (the phone app's
+    // CompanionError sets it — this one had been missed).
+    this.name = "ApiRequestError";
     this.code = err.code;
     this.status = status;
     this.requestId = err.requestId;
@@ -37,8 +41,7 @@ async function parseError(res: Response): Promise<ApiRequestError> {
   const body = payload as Partial<ApiError> & { error?: Partial<ApiError> };
   const err = body.error ?? body;
   const code = err.code ?? "UNKNOWN_ERROR";
-  const message =
-    err.message ?? (res.status === 429 ? "Too many requests. Please slow down." : "Something went wrong.");
+  const message = err.message ?? (res.status === 429 ? "Too many requests. Please slow down." : "Something went wrong.");
   return new ApiRequestError({ code, message, requestId: err.requestId }, res.status);
 }
 
@@ -123,14 +126,9 @@ export async function api<T = unknown>(path: string, opts: RequestOptions = {}):
 
 export const http = {
   get: <T = unknown>(path: string, opts?: RequestOptions) => api<T>(path, { ...opts, method: "GET" }),
-  post: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) =>
-    api<T>(path, { ...opts, method: "POST", body }),
-  put: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) =>
-    api<T>(path, { ...opts, method: "PUT", body }),
-  patch: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) =>
-    api<T>(path, { ...opts, method: "PATCH", body }),
-  del: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) =>
-    api<T>(path, { ...opts, method: "DELETE", body }),
-  upload: <T = unknown>(path: string, formData: FormData, opts?: RequestOptions) =>
-    api<T>(path, { ...opts, method: "POST", formData }),
+  post: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) => api<T>(path, { ...opts, method: "POST", body }),
+  put: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) => api<T>(path, { ...opts, method: "PUT", body }),
+  patch: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) => api<T>(path, { ...opts, method: "PATCH", body }),
+  del: <T = unknown>(path: string, body?: unknown, opts?: RequestOptions) => api<T>(path, { ...opts, method: "DELETE", body }),
+  upload: <T = unknown>(path: string, formData: FormData, opts?: RequestOptions) => api<T>(path, { ...opts, method: "POST", formData }),
 };

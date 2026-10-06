@@ -24,24 +24,10 @@ vi.hoisted(() => {
 
 const { config } = await import("../src/config.js");
 const { createApp } = await import("../src/app.js");
-const {
-  GMAIL_SCOPES,
-  WORKSPACE_SCOPES,
-  gmailSentLog,
-  gmailService,
-  resetGmailForTests,
-  saveGmailSendPolicy,
-  finishGmailConnect,
-  startGmailConnect,
-} = await import("../src/lib/gmail.js");
-const {
-  MAX_LATE_MS,
-  cancelScheduledEmail,
-  listScheduledEmails,
-  resetScheduledEmailsForTests,
-  scheduleEmail,
-  sendDueScheduledEmails,
-} = await import("../src/lib/emailSchedule.js");
+const { GMAIL_SCOPES, WORKSPACE_SCOPES, gmailSentLog, resetGmailForTests, saveGmailSendPolicy, finishGmailConnect, startGmailConnect } =
+  await import("../src/lib/gmail.js");
+const { MAX_LATE_MS, cancelScheduledEmail, listScheduledEmails, resetScheduledEmailsForTests, scheduleEmail, sendDueScheduledEmails } =
+  await import("../src/lib/emailSchedule.js");
 const { getConversation, resetConversationForTests } = await import("../src/lib/conversation.js");
 const { youtubeService } = await import("../src/lib/youtube.js");
 const { toolsFor } = await import("../src/lib/brain/tools.js");
@@ -140,11 +126,18 @@ const toolContext = () =>
     platform: "win32" as NodeJS.Platform,
     effects: { log: [] as string[] },
   }) as {
-    effects: { log: string[]; emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>; emailSent?: Array<{ to: string; subject: string }> };
+    effects: {
+      log: string[];
+      emailScheduled?: Array<{ to: string; subject: string; when: string; at: number }>;
+      emailSent?: Array<{ to: string; subject: string }>;
+    };
     [key: string]: unknown;
   };
 
-const assistantLines = () => getConversation().messages.filter((m) => m.sender === "assistant").map((m) => m.text);
+const assistantLines = () =>
+  getConversation()
+    .messages.filter((m) => m.sender === "assistant")
+    .map((m) => m.text);
 
 beforeEach(() => {
   vi.unstubAllGlobals();
@@ -153,7 +146,11 @@ beforeEach(() => {
   sendGate = null;
   fs.rmSync(config.dataDir, { recursive: true, force: true });
   fs.mkdirSync(config.dataDir, { recursive: true });
-  youtubeService.saveConfig({ clientId: "schedule-test.apps.googleusercontent.com", clientSecret: "GOCSPX-schedule-test", refreshToken: "" });
+  youtubeService.saveConfig({
+    clientId: "schedule-test.apps.googleusercontent.com",
+    clientSecret: "GOCSPX-schedule-test",
+    refreshToken: "",
+  });
   resetGmailForTests();
   resetScheduledEmailsForTests();
   resetConversationForTests();
@@ -355,9 +352,7 @@ describe("email scheduled for a later moment", () => {
     // Exactly what a crash between "sending" and the answer leaves behind.
     const file = SCHEDULE_FILE();
     const saved = JSON.parse(fs.readFileSync(file, "utf8"));
-    saved.emails = saved.emails.map((e: Record<string, unknown>) =>
-      e.id === entry.id ? { ...e, status: "sending", attempts: 1 } : e,
-    );
+    saved.emails = saved.emails.map((e: Record<string, unknown>) => (e.id === entry.id ? { ...e, status: "sending", attempts: 1 } : e));
     fs.writeFileSync(file, JSON.stringify(saved, null, 2));
 
     const result = await sendDueScheduledEmails(new Date(2026, 9, 6, 17, 20, 0));
@@ -392,9 +387,15 @@ describe("email scheduled for a later moment", () => {
   });
 
   it("answers a bad address or an unreadable time straight away, and stores nothing", () => {
-    expect(() => scheduleEmail({ when: "at 5 pm", to: "not-an-address", subject: "x", body: "y" }, MORNING)).toThrowError(/valid To address/);
-    expect(() => scheduleEmail({ when: "whenever", to: "marko@example.com", subject: "x", body: "y" }, MORNING)).toThrowError(/can't read a time/);
-    expect(() => scheduleEmail({ when: "at 5 pm", to: "marko@example.com", subject: "x", body: "   " }, MORNING)).toThrowError(/needs something to say/);
+    expect(() => scheduleEmail({ when: "at 5 pm", to: "not-an-address", subject: "x", body: "y" }, MORNING)).toThrowError(
+      /valid To address/,
+    );
+    expect(() => scheduleEmail({ when: "whenever", to: "marko@example.com", subject: "x", body: "y" }, MORNING)).toThrowError(
+      /can't read a time/,
+    );
+    expect(() => scheduleEmail({ when: "at 5 pm", to: "marko@example.com", subject: "x", body: "   " }, MORNING)).toThrowError(
+      /needs something to say/,
+    );
     expect(() => scheduleEmail({ when: "now", to: "marko@example.com", subject: "x", body: "y" }, MORNING)).toThrow();
     expect(listScheduledEmails(MORNING).scheduled).toHaveLength(0);
   });
@@ -420,12 +421,21 @@ describe("email scheduled for a later moment", () => {
 
   it("shows what is waiting over the API, and cancels it there", async () => {
     await connectGmail();
-    const queued = scheduleEmail({ when: "tomorrow at 9am", to: "marko@example.com", subject: "Keys", body: "Keys are at the office." }, MORNING);
+    const queued = scheduleEmail(
+      { when: "tomorrow at 9am", to: "marko@example.com", subject: "Keys", body: "Keys are at the office." },
+      MORNING,
+    );
 
     const list = await request(app).get("/api/v1/email/scheduled");
     expect(list.status).toBe(200);
     expect(list.body.scheduled).toHaveLength(1);
-    expect(list.body.scheduled[0]).toMatchObject({ id: queued.id, to: "marko@example.com", subject: "Keys", status: "scheduled", when: "tomorrow at 09:00" });
+    expect(list.body.scheduled[0]).toMatchObject({
+      id: queued.id,
+      to: "marko@example.com",
+      subject: "Keys",
+      status: "scheduled",
+      when: "tomorrow at 09:00",
+    });
     // The text is readable before it goes: the person approves what will be sent.
     expect(list.body.scheduled[0].body).toBe("Keys are at the office.");
 
