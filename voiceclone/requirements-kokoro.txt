@@ -5,6 +5,17 @@
 # CPU PyTorch 2.7.0 and matching Torchaudio are installed first by the desktop
 # manager. Kokoro itself is installed separately with --no-deps: its [en] extra
 # pulls GPL phonemizer/espeak-ng, which Soundwave deliberately does not use.
+# attrs — MIT. kokoro/custom_stft.py opens with `from attr import attr`, and
+# that file is imported by kokoro/istftnet.py, which kokoro/model.py imports at
+# module level — so it is on the load path of every narration, even though
+# *no* installed package declares it (kokoro's own metadata never mentions it,
+# which is why `pip check` stays silent about it too). Without it the service
+# died at `from kokoro.model import KModel` with
+#   ModuleNotFoundError: No module named 'attr'
+# after setup had reported success. Listed here by hand; preflight.py now
+# walks the import closure of the engines and fails the setup if it is ever
+# missing again (voiceclone/test_preflight.py pins that walk).
+attrs>=23.2
 fastapi
 huggingface-hub
 misaki

@@ -90,9 +90,11 @@ pip install --no-deps kokoro
 python -m spacy download en_core_web_sm
 
 # Check it without downloading a single model (fast, no weights)
-python selftest.py           # 23 structural checks + the no-GPL guarantee
+python test_preflight.py     # the setup gate's own checks (no packages needed)
 python test_engine.py        # the phoneme/style-row path — the "hum instead of
                              # a voice" failure, pinned without the model
+python preflight.py          # is everything the service imports actually here?
+python selftest.py           # the real HTTP contract + the no-GPL guarantee
 
 # …and once, for real (downloads the model + one voice, then measures the audio
 # and writes selftest-output.wav so you can hear it yourself)
@@ -192,6 +194,36 @@ with stand-ins for torch/misaki (runs anywhere, no downloads), `_encode_wav`
 handles the third, and `selftest.py --real` measures the real output — duration,
 speech-band energy versus a low drone, broadband-ness, clipping — and refuses to
 call a hum a voice.
+
+## 3b. When setup "succeeded" but narration never starts
+
+Three separate failures have all looked like this, so `preflight.py` now checks
+for every one of them and `install.sh` refuses to report success without it:
+
+- **`attrs` is missing** (`ModuleNotFoundError: No module named 'attr'`) —
+  `kokoro/custom_stft.py` imports it, `istftnet.py` imports that file and
+  `model.py` imports istftnet, so it is on the load path of *every* narration.
+  Nothing declares it, so pip never installed it and `pip check` stayed silent.
+  `requirements*.txt` list it by hand; the desktop setup does too.
+- **A package the service imports is missing at all** — Kokoro is installed with
+  `--no-deps` on purpose (its `misaki[en]` extra is GPL), so pip never resolves
+  its requirements. `preflight.py` now walks the engines' own import closure
+  (`kokoro.model` → `istftnet` → `custom_stft` …) and prints
+  `missing: <name>` instead of letting the service die on first use.
+- **`en_core_web_sm` is missing** — misaki's `G2P.__init__` calls
+  `spacy.cli.download()` *itself* when the model is absent: a network fetch from
+  inside the running service, which on a machine with antivirus HTTPS scanning
+  (or no internet) ends as an SSL traceback at the first narration.
+  `preflight.py` prints
+  `missing-model: en_core_web_sm (not on PyPI — \`python -m spacy download en_core_web_sm\`)`
+  and `KokoroEngine` refuses that path with the same instruction. It is not a
+  pip package: only `spacy download` installs it, and the installer runs that
+  with `truststore` injected so the Windows certificate store is trusted.
+
+Verify an install at any time with `python preflight.py` (fast, no downloads)
+followed by `python selftest.py`; a healthy one prints
+`preflight ok: … imported modules and 1 spaCy model(s) verified` and
+`all checks passed`.
 
 ## 4. Other hardware
 

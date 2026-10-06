@@ -20,6 +20,12 @@
 # Cloned voices — MIT, code AND weights (github.com/resemble-ai/chatterbox).
 chatterbox-tts
 
+# attrs — MIT. kokoro/custom_stft.py imports `attr`; istftnet.py imports that
+# file and model.py imports istftnet, so it is needed for every narration. No
+# package declares it, so pip cannot install it for us (see
+# requirements-kokoro.txt, where the desktop-managed install does the same).
+attrs>=23.2
+
 # Kokoro's permissive dependency set (the model code itself is step 2 above).
 #   misaki         Apache-2.0  English G2P (dictionary + FallbackNetwork)
 #   spacy          MIT         tokeniser/tagger; misaki downloads en_core_web_sm

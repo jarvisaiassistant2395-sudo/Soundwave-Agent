@@ -18,6 +18,13 @@ This script closes that hole for good. It:
   1. parses every service module's imports and checks that each third-party
      module is actually installed — a *new* import added to server.py,
      kokoro_engine.py or moss_engine.py is caught here, not in production;
+  1b. walks the *import closure of the engines themselves* through the files
+     pip installed (`kokoro.model` → istftnet → custom_stft → misaki.en → …)
+     and checks those too. This is the check that was missing when kokoro —
+     installed with --no-deps, so pip never resolves its requirements — turned
+     out to import `attr` (attrs), which no package declares and `pip check`
+     therefore cannot see. Every import on the real load path is verified, not
+     just the ones our own files make;
   2. imports the exact modules the engines load at runtime (`kokoro.model`,
      `misaki.en`) and checks the pinned torch/torchaudio versions;
   3. imports `server` itself, which loads FastAPI, the engines and every
@@ -68,6 +75,8 @@ OPTIONAL_MODULES = {
 # The modules the engines genuinely cannot run without, even when the AST walk
 # above finds no direct import (imported lazily inside functions by design).
 REQUIRED_IMPORTS = (
+    "addict",  # misaki/token.py (a declared dep of misaki, kept explicit)
+    "attr",  # kokoro/custom_stft.py — `attrs`; undeclared, see the closure walk
     "fastapi",
     "huggingface_hub",
     "loguru",  # kokoro/model.py — the miss this script was written for
@@ -75,6 +84,8 @@ REQUIRED_IMPORTS = (
     "numpy",
     "onnxruntime",
     "pydantic",
+    "regex",  # misaki/en.py — the subtoken splitter
+    "safetensors",  # transformers loads Kokoro's weights through it
     "sentencepiece",
     "spacy",
     "torch",
@@ -82,6 +93,32 @@ REQUIRED_IMPORTS = (
     "transformers",
     "truststore",
     "uvicorn",
+)
+
+# The engines import packages, and those packages import more packages. The
+# files below are the whole load path of a narration (Kokoro) and of the text
+# front end (`misaki.en`), stated as (package, entry modules, modules to skip):
+# pip installs them with their own requirements *unresolved* (kokoro is a
+# --no-deps install, deliberately — see requirements-kokoro.txt), so anything
+# they import that no one declares has to be found by walking the files.
+# `skip` exists because a package can ship modules we never import whose own
+# deps are missing on purpose (misaki/espeak.py is the GPL path we refuse;
+# misaki/ja.py, ko.py, vi.py, zh.py, he.py are other languages, and
+# underthesea/nltk are not installed).
+# spaCy *model* packages. They are not on PyPI, so nothing in a requirements
+# file can install them, and `import spacy` succeeding tells you nothing about
+# whether they are there. This matters more than it looks: misaki's
+# G2P.__init__ calls spacy.cli.download() itself when one is missing, so a
+# machine without it does not fail here at setup — it fails at the first
+# narration, inside the running service, as an SSL/requests traceback from
+# antivirus HTTPS scanning or an offline laptop. KokoroEngine refuses that path
+# too (it raises with the fix command); this is the check that stops the setup
+# from being called a success in the first place.
+SPACY_MODELS = ("en_core_web_sm",)
+
+ENGINE_IMPORTS = (
+    {"package": "kokoro", "entries": ("model",), "skip": ()},
+    {"package": "misaki", "entries": ("en",), "skip": ("espeak", "ja", "ko", "vi", "zh", "he")},
 )
 
 # Pinned by desktop/src/kokoro-manager.cjs. A different build is a real bug.
@@ -106,6 +143,86 @@ def _third_party_imports(path: pathlib.Path) -> set[str]:
             if node.level == 0 and node.module:
                 names.add(node.module.split(".")[0])
     return names
+
+
+def _package_imports(package: str, entries: tuple[str, ...], skip: tuple[str, ...] = ()) -> set[str]:
+    """Third-party modules imported by a package, following its local imports.
+
+    Walks `entries` (module names inside `package`), and follows every relative
+    import it meets — so `kokoro.model` brings istftnet, which brings
+    custom_stft, which is how `attr` gets on the load path. Absolute imports of
+    the package itself (`from kokoro.custom_stft import …`) are followed too.
+    Modules whose names are in `skip` are never opened: a language we don't
+    speak can legitimately need a package we don't install.
+
+    Returns the top-level names of every import the closure makes. This never
+    imports anything — `kokoro` cannot be imported without torch, and this
+    check has to run (and name the real problem) on a machine where torch is
+    exactly what is missing.
+    """
+    found = importlib.util.find_spec(package)
+    if found is None or not found.submodule_search_locations:
+        return set()
+    directory = pathlib.Path(next(iter(found.submodule_search_locations)))
+    if not directory.is_dir():
+        return set()
+
+    names: set[str] = set()
+    seen: set[str] = set()
+
+    def walk(module: str) -> None:
+        module = module.split(".")[-1]
+        if module in seen or module in skip:
+            return
+        seen.add(module)
+        path = directory / f"{module}.py"
+        if not path.is_file():
+            package_dir = directory / module / "__init__.py"
+            if not package_dir.is_file():
+                return
+            path = package_dir
+        try:
+            tree = ast.parse(path.read_text(encoding="utf8"))
+        except (OSError, SyntaxError):
+            return
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    top = alias.name.split(".")[0]
+                    # `import kokoro.something` is local, not a dependency.
+                    if top == package:
+                        walk(".".join(alias.name.split(".")[1:]) or "__init__")
+                    else:
+                        names.add(top)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level and node.level > 0:
+                    # Relative: inside this package.
+                    if node.module:
+                        walk(node.module)
+                    for alias in node.names:
+                        walk(alias.name.split(".")[0])
+                elif node.module:
+                    top = node.module.split(".")[0]
+                    if top == package:
+                        walk(".".join(node.module.split(".")[1:]) or "__init__")
+                        for alias in node.names:
+                            walk(alias.name)
+                    else:
+                        # Only the top-level package: `from torch.nn.utils import
+                        # weight_norm` needs `torch`, and asking find_spec() about
+                        # the rest would import the package this check exists to
+                        # avoid importing.
+                        names.add(top)
+
+    for entry in entries:
+        walk(entry)
+    return names
+
+
+def _missing_spacy_models(models: tuple[str, ...] = SPACY_MODELS) -> list[str]:
+    """spaCy models are ordinary importable packages, so this is the same check
+    as any other — it just produces a different, more precise message."""
+    return [name for name in models if importlib.util.find_spec(name) is None]
 
 
 def _missing(modules: set[str]) -> list[str]:
@@ -142,14 +259,30 @@ def main() -> int:
             return 2
         imported |= _third_party_imports(path)
 
+    # The engines' own imports, walked through the files pip installed. This is
+    # the check that would have caught `attr` before the first short failed.
+    engine_imports: set[str] = set()
+    for spec in ENGINE_IMPORTS:
+        engine_imports |= _package_imports(spec["package"], spec["entries"], spec["skip"])
+    imported |= engine_imports
+
     missing = _missing(imported)
     # The curated list is a floor: it keeps this check honest even if the AST
     # walk above is ever fooled by a conditional import.
     missing = sorted(set(missing) | set(_missing(set(REQUIRED_IMPORTS))))
-    if missing:
+
+    # Every problem in one report: a machine can be missing a package *and* the
+    # model, and making the user run the setup twice to learn both is silly.
+    missing_models = _missing_spacy_models()
+    if missing or missing_models:
         for name in missing:
             print(f"missing: {name}")
-        print(f"preflight failed: {len(missing)} required module(s) are not installed")
+        for name in missing_models:
+            print(f"missing-model: {name} (not on PyPI — `python -m spacy download {name}`)")
+        print(
+            f"preflight failed: {len(missing)} missing module(s), "
+            f"{len(missing_models)} missing spaCy model(s)"
+        )
         return 2
 
     try:
@@ -159,6 +292,11 @@ def main() -> int:
         from kokoro.model import KModel  # noqa: F401  (imports loguru)
         from misaki import en  # noqa: F401  (never misaki.espeak)
     except Exception as error:  # noqa: BLE001 — reported, not raised
+        # A ModuleNotFoundError names the package that is missing, which is the
+        # one line support needs: report it the same way the walk above does, so
+        # the desktop app shows "loguru" or "attr" rather than a traceback tail.
+        if isinstance(error, ModuleNotFoundError) and error.name:
+            print(f"missing: {error.name}")
         print(f"broken-import: {type(error).__name__}: {error}")
         return 2
 
@@ -172,6 +310,8 @@ def main() -> int:
         # The whole service, exactly as uvicorn imports it.
         import server  # noqa: F401
     except Exception as error:  # noqa: BLE001 — reported, not raised
+        if isinstance(error, ModuleNotFoundError) and error.name:
+            print(f"missing: {error.name}")
         print(f"broken-import: {type(error).__name__}: {error}")
         return 2
 
@@ -180,7 +320,10 @@ def main() -> int:
         print(f"gpl-loaded: {', '.join(gpl)}")
         return 2
 
-    print(f"preflight ok: {len(imported)} imported modules verified, Kokoro + MOSS runtime importable")
+    print(
+        f"preflight ok: {len(imported)} imported modules and {len(SPACY_MODELS)} spaCy model(s) verified "
+        f"({len(engine_imports)} of them walked from the engines' own files), Kokoro + MOSS runtime importable"
+    )
     return 0
 
 

@@ -15,7 +15,16 @@ const { spawn } = require("node:child_process");
 // --no-deps and forgot its `loguru` requirement, so the package step appeared
 // to succeed and the service then died importing kokoro.model. The revision
 // bump makes every affected install re-run the (now complete) package step.
-const SETUP_REVISION = 4;
+//
+// Revision 5: the same class of miss, one layer deeper — kokoro/custom_stft.py
+// does `from attr import attr`, istftnet.py imports that file and model.py
+// imports istftnet, so *every* narration died at `from kokoro.model import
+// KModel` with "No module named 'attr'". No installed package declares attrs,
+// so pip never brought it in and `pip check` stayed silent; requirements-kokoro
+// .txt now lists it and preflight.py walks the engines' own import closure and
+// fails the setup naming the module. The bump re-runs the package step for
+// installs that were left broken by revision 4.
+const SETUP_REVISION = 5;
 // The managed stack now includes CPU MOSS-TTS-Nano cloning as well as Kokoro.
 // A runtime revision forces a restart so older Kokoro-only services are not
 // mistaken for a complete offline-ready install.
@@ -209,7 +218,10 @@ function failureLines(logTail = "", max = 6) {
   for (let i = lines.length - 1; i >= 0 && picked.length < max; i--) {
     const line = lines[i];
     if (RECOVERED_NOISE.test(line)) continue;
-    if (/error|exception|failed|refused|denied|timed out|timeout|unreachable|certificate|ssl|proxy|errno|winerror/i.test(line)) picked.unshift(line);
+    // `missing:` / `missing-model:` are preflight.py's own report lines; they
+    // are the only place the *name* of what is absent appears, so they must
+    // survive this filter even though they say neither "error" nor "failed".
+    if (/error|exception|failed|refused|denied|timed out|timeout|unreachable|certificate|ssl|proxy|errno|winerror|missing[-a-z]*:/i.test(line)) picked.unshift(line);
   }
   return picked.join("\n");
 }
@@ -249,12 +261,27 @@ function describeSetupFailure(error, logTail = "", logPath = "") {
     const host = hostIn(evidence);
     return `Local voice setup couldn't download from ${host || "a setup server"}${because}. If your internet is working, a firewall, antivirus, VPN, or proxy may be blocking it, or the server was briefly unavailable. Choose Retry. ${kept}${where}`;
   }
-  // A package the service imports is missing (the loguru case): the raw
-  // `No module named '…'` is kept verbatim so the name is searchable, and the
-  // repair is spelled out — Soundwave installs its own packages.
-  const missingModule = /ModuleNotFoundError: (No module named '([^']+)')|No module named '([^']+)'/.exec(evidence);
+  // A spaCy *model* is installed by download, not by pip, and misaki tries to
+  // fetch it from inside the running service when it is absent — which is how
+  // "the install worked but narration never starts" happens. Two sources: the
+  // preflight's `missing-model:` line, and KokoroEngine's own guard.
+  const missingModel = /missing-model:\s*([A-Za-z0-9_]+)|spaCy model '([A-Za-z0-9_]+)' is not installed/.exec(evidence);
+  if (missingModel) {
+    const name = missingModel[1] ?? missingModel[2];
+    return `The English pronunciation model (${name}) hasn't been downloaded yet, and it is not a Python package pip can fetch. Soundwave downloads it as part of local voice setup — choose Retry and it will be installed now. ${kept}${where}`;
+  }
+  // A package the service imports is missing (the loguru and attrs cases). Both
+  // spellings are matched: the traceback's `No module named '…'`, and the
+  // preflight's own `missing: <name>` (which is what the packaged setup shows,
+  // since the preflight runs before the service ever starts). The raw name is
+  // kept verbatim so it is searchable, and the repair is spelled out —
+  // Soundwave installs its own packages.
+  const missingModule =
+    /ModuleNotFoundError: (No module named '([^']+)')|No module named '([^']+)'/.exec(evidence) ??
+    /^missing:\s*([A-Za-z0-9_.\-]+)\s*$/m.exec(evidence);
   if (missingModule) {
-    return `A Python package the local voice service needs is missing (${missingModule[1] ?? `No module named '${missingModule[3]}'`}). Soundwave installs its own packages, so this is repaired automatically — choose Retry to reinstall it now. ${kept}${where}`;
+    const name = missingModule[1] ?? `No module named '${missingModule[3]}'`;
+    return `A Python package the local voice service needs is missing (${name}). Soundwave installs its own packages, so this is repaired automatically — choose Retry to reinstall it now. ${kept}${where}`;
   }
   if (/timed out during local voice setup/i.test(summary)) {
     return `A local voice setup step took too long and was stopped${because}. Choose Retry to continue where it left off. ${kept}${where}`;

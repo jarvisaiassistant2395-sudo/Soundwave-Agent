@@ -63,6 +63,29 @@ SAMPLE_RATE = 24_000
 REPO_ID = "hexgrad/Kokoro-82M"
 
 
+def _require_spacy_model(name: str) -> None:
+    """Refuse to start when misaki's tokeniser model is absent.
+
+    Deliberately *not* a download: setup owns installing this (the installer and
+    preflight.py both check it), so reaching here means the environment is
+    broken, and a service that quietly fetches a model mid-narration is worse
+    than one that says what is missing. When spaCy itself is absent this
+    returns — `from misaki import en` will have raised already, with its own
+    message.
+    """
+    try:
+        import spacy.util
+    except Exception:  # noqa: BLE001 — misaki's import error is the useful one
+        return
+    if spacy.util.is_package(name):
+        return
+    raise RuntimeError(
+        f"misaki's spaCy model '{name}' is not installed, and fetching it from "
+        f"inside the service is what used to fail without a message. "
+        f"Run: python -m spacy download {name} — or re-run the Soundwave voice setup."
+    )
+
+
 class KokoroEngine:
     """One language's G2P over a shared KModel. Thread-safe."""
 
@@ -74,6 +97,16 @@ class KokoroEngine:
         self._voices: dict[str, object] = {}
 
         from misaki import en  # Apache-2.0; never imports misaki.espeak
+
+        # misaki's own tokeniser is a spaCy model (en_core_web_sm). If it is not
+        # installed, misaki does not raise: G2P.__init__ calls
+        # spacy.cli.download() *itself*, from inside this process, at whatever
+        # moment the first narration happens. On a machine where that download
+        # cannot complete — offline, or HTTPS scanned by antivirus, which is how
+        # it usually fails on Windows — the user gets a requests/SSL traceback
+        # and no narration, long after setup said it succeeded. Check first, and
+        # fail with the one line that fixes it.
+        _require_spacy_model("en_core_web_sm")
 
         # fallback=None → misaki's built-in FallbackNetwork (Apache-2.0), which is
         # what upstream passes when espeak isn't available. espeak is never used.

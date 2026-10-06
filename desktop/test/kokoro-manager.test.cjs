@@ -686,6 +686,9 @@ test("the managed requirements declare every package the --no-deps Kokoro instal
     .filter((line) => line && !line.startsWith("#"));
   // loguru: declared by kokoro itself; the one that was missing.
   assert.ok(packages.some((p) => /^loguru\b/.test(p)), "loguru must be in requirements-kokoro.txt");
+  // attrs: imported by kokoro/custom_stft.py (via istftnet, via model.py) and
+  // declared by *nothing*, so only this file can bring it in.
+  assert.ok(packages.some((p) => /^attrs\b/.test(p)), "attrs must be in requirements-kokoro.txt");
   // The pieces kokoro.model / misaki.en import and pip will not bring in.
   for (const name of ["misaki", "transformers", "huggingface-hub", "spacy", "numpy"]) {
     assert.ok(
@@ -701,9 +704,13 @@ test("the managed requirements declare every package the --no-deps Kokoro instal
 
 test("the preflight checks the packages the service imports, including loguru, and ships with the app", () => {
   const preflight = fs.readFileSync(path.join(voicecloneDir, "preflight.py"), "utf8");
-  for (const name of ["loguru", "misaki", "torch", "torchaudio", "onnxruntime", "sentencepiece", "truststore"]) {
+  for (const name of ["loguru", "misaki", "torch", "torchaudio", "onnxruntime", "sentencepiece", "truststore", "attr", "addict", "regex", "safetensors"]) {
     assert.ok(preflight.includes(`"${name}"`), `preflight.py must require ${name}`);
   }
+  // And it must walk the engines' own files: a package installed with
+  // --no-deps can import something no one declares (attrs was exactly that).
+  assert.match(preflight, /ENGINE_IMPORTS/);
+  assert.match(preflight, /_package_imports/);
   // It must keep the GPL path out of the environment, like KokoroEngine does.
   assert.match(preflight, /phonemizer/);
   assert.match(preflight, /espeakng_loader/);
@@ -720,4 +727,30 @@ test("describeSetupFailure names the missing package and says it repairs itself"
   assert.match(message, /No module named 'loguru'/);
   assert.match(message, /repair/i);
   assert.doesNotMatch(message, /internet|couldn't download/i);
+});
+
+test("describeSetupFailure names the package the preflight reported (the attrs case)", () => {
+  // The packaged setup runs preflight.py, which prints `missing: <name>` — a
+  // line that says neither "error" nor "failed", so the name has to be kept
+  // deliberately. Without it the message said "1 missing module(s)" and no more.
+  const log = "missing: attrs\npreflight failed: 1 missing module(s), 0 missing spaCy model(s)";
+  const message = describeSetupFailure(new Error("python.exe exited with code 1."), log);
+  assert.match(message, /attrs/);
+  assert.match(message, /repair/i);
+  // Not a network problem, and not a model download.
+  assert.doesNotMatch(message, /internet|pronunciation model/i);
+});
+
+test("describeSetupFailure explains the missing pronunciation model", () => {
+  // en_core_web_sm is not a pip package: misaki downloads it from inside the
+  // service when it is absent, so the setup must fail loudly instead.
+  const preflightLog = "missing-model: en_core_web_sm (not on PyPI — `python -m spacy download en_core_web_sm`)\npreflight failed: 0 missing module(s), 1 missing spaCy model(s)";
+  const guardLog = "RuntimeError: misaki's spaCy model 'en_core_web_sm' is not installed, and fetching it from inside the service is what used to fail without a message.";
+  for (const log of [preflightLog, guardLog]) {
+    const message = describeSetupFailure(new Error("python.exe exited with code 1."), log);
+    assert.match(message, /en_core_web_sm/);
+    assert.match(message, /Retry/i);
+    // It must not be mistaken for "no internet" or a TLS interception.
+    assert.doesNotMatch(message, /internet|certificate|antivirus/i);
+  }
 });

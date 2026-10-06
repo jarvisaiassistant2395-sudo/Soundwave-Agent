@@ -127,6 +127,17 @@ def _hf_download(repo_id, filename):
 fake_hf.hf_hub_download = _hf_download
 sys.modules["huggingface_hub"] = fake_hf
 
+# spacy: the engine checks that misaki's tokeniser model is installed before
+# letting misaki try to download it from inside the service. Stubbed here like
+# everything else, with `present` flipping to test both answers.
+fake_spacy_util = types.ModuleType("spacy.util")
+fake_spacy_util.present = True
+fake_spacy_util.is_package = lambda name: fake_spacy_util.present and name == "en_core_web_sm"
+fake_spacy = types.ModuleType("spacy")
+fake_spacy.util = fake_spacy_util
+sys.modules["spacy"] = fake_spacy
+sys.modules["spacy.util"] = fake_spacy_util
+
 fake_misaki = types.ModuleType("misaki")
 fake_misaki_en = types.ModuleType("misaki.en")
 fake_misaki_en.G2P = FakeG2P
@@ -229,7 +240,21 @@ engine_b = KokoroEngine(device="cpu", british=True, model=FakeModel())
 check("a British engine builds the British G2P", engine_b.g2p.british is True)
 check("and the American one does not", engine.g2p.british is False)
 
-# ── 6. The licence guard is real, not decoration ────────────────────────────
+# ── 6. A missing tokeniser model is refused, not silently downloaded ────────
+# misaki's G2P.__init__ calls spacy.cli.download() itself when en_core_web_sm is
+# absent: a network fetch from inside the running service, whose failure mode is
+# an SSL/requests traceback at the first narration (antivirus HTTPS scanning is
+# the usual cause) long after setup reported success. The engine checks first.
+fake_spacy_util.present = False
+try:
+    KokoroEngine(device="cpu")
+    check("a missing spaCy model stops the engine", False, "no exception raised")
+except RuntimeError as exc:
+    check("a missing spaCy model stops the engine", "en_core_web_sm" in str(exc), str(exc)[:80])
+    check("and names the command that fixes it", "spacy download en_core_web_sm" in str(exc), str(exc)[:120])
+fake_spacy_util.present = True
+
+# ── 7. The licence guard is real, not decoration ────────────────────────────
 sys.modules["phonemizer"] = types.ModuleType("phonemizer")
 try:
     KokoroEngine(device="cpu")
